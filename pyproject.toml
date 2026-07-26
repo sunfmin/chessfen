@@ -44,5 +44,5 @@ addopts = "--strict-markers --strict-config"
 testpaths = ["tests"]
 
 [build-system]
-requires = ["uv_build>=0.11"]
+requires = ["uv_build>=0.11,<0.12"]
 build-backend = "uv_build"
