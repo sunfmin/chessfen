@@ -8,8 +8,8 @@ board is exact, so plain arithmetic on pixels is enough.
 $ uv run chessfen recognize board.png
 r3k3/2N5/8/8/8/8/8/8 w q - 0 1
 
-$ uv run chessfen recognize          # no path: takes the image from the clipboard
-r3k3/2N5/8/8/8/8/8/8 w q - 0 1
+$ uv run chessfen recognize          # no path: reads the image from the clipboard,
+r3k3/2N5/8/8/8/8/8/8 w q - 0 1       # and copies the FEN back onto it
 
 $ uv run chessfen render "r3k3/2N5/8/8/8/8/8/8 w q - 0 1" -o out.png --size 600
 ```
@@ -40,6 +40,7 @@ git clone https://github.com/sunfmin/chessfen && cd chessfen
 
 uv run chessfen recognize board.png            # print just the FEN
 uv run chessfen recognize                      # ... or read the clipboard image
+uv run chessfen recognize board.png --no-copy  # do not copy the FEN back out
 uv run chessfen recognize board.png --board    # FEN plus an ASCII position
 uv run chessfen recognize board.png --json     # per-square score / margin / confidence
 uv run chessfen recognize board.png --turn b --orientation black --castling none
@@ -48,16 +49,22 @@ uv run chessfen render "<fen>" -o out.png --size 600 --coordinates
 
 Full option list: `uv run chessfen recognize --help`, `uv run chessfen render --help`.
 
-**Screenshot straight to FEN.** Leave the image argument off and the board is taken from
-the clipboard, so the whole loop is `⌘⇧4` (or `⌘⇧⌃4` to copy instead of save), then:
+**Screenshot straight to FEN, and the FEN straight back out.** Leave the image argument
+off and the board is taken from the clipboard; on success the FEN is put *on* the
+clipboard, ready to paste into a board editor or an engine. So the whole loop is `⌘⇧⌃4`
+(screenshot to clipboard), then:
 
 ```bash
-uv run chessfen recognize
+uv run chessfen recognize          # prints the FEN, and copies it
 ```
 
-Copying image *files* in Finder works too — the first readable one is used. An empty
-clipboard, or a system with no clipboard tool installed, is reported as such instead of
-crashing.
+- The copy is announced on stderr, not done silently — it replaces what you had copied.
+- `--no-copy` turns it off, e.g. in a pipeline. stdout is always just the FEN (or the
+  JSON), so `$(uv run chessfen recognize)` is safe to interpolate either way.
+- If the clipboard cannot be written (no `xclip`/`wl-copy` on Linux), that is a warning,
+  not a failure: the FEN is already on stdout and the exit status stays 0.
+- Copying image *files* in Finder works as input too — the first readable one is used.
+  An empty clipboard is reported as such instead of crashing.
 
 **As a library**, in a project of your own:
 
@@ -85,7 +92,7 @@ terminal, your editor and CI cannot disagree:
 
 ```bash
 uv sync                       # optional; uv run self-heals anyway
-uv run pytest                 # 49 tests
+uv run pytest                 # 57 tests
 uv run ruff format && uv run ruff check
 uv run ty check
 ```

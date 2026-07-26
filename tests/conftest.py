@@ -23,6 +23,18 @@ def playout(seed: int, plies: int) -> chess.Board:
     return board
 
 
+@pytest.fixture(autouse=True)
+def copied(monkeypatch) -> list[str]:
+    """Records what the CLI would copy, and keeps the suite off the real clipboard.
+
+    Autouse on purpose: running the tests must never clobber what the developer has
+    copied. Tests that want the real writer patch ``subprocess`` instead.
+    """
+    recorded: list[str] = []
+    monkeypatch.setattr("chessfen.cli.copy_text", recorded.append)
+    return recorded
+
+
 @pytest.fixture
 def reference_image() -> Path:
     """A real screenshot: a different piece set, a highlighted square, inline coordinates."""

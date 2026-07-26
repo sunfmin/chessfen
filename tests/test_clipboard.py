@@ -10,7 +10,12 @@ from __future__ import annotations
 import pytest
 from PIL import Image
 
-from chessfen import ClipboardImageError, clipboard_image
+from chessfen import (
+    ClipboardImageError,
+    ClipboardWriteError,
+    clipboard_image,
+    copy_text,
+)
 from chessfen.cli import main
 
 EXPECTED_FEN = "r3k3/2N5/8/8/8/8/8/8 w q - 0 1"
@@ -75,6 +80,48 @@ def test_a_system_without_a_clipboard_tool_says_so(clipboard):
     clipboard(explode)
     with pytest.raises(ClipboardImageError, match="cannot read the clipboard"):
         clipboard_image()
+
+
+def test_copy_text_pipes_into_the_platform_tool(monkeypatch):
+    calls = []
+
+    def fake_run(command, *, input, check):
+        calls.append((command, input, check))
+
+    monkeypatch.setattr("chessfen.clipboard.sys.platform", "darwin")
+    monkeypatch.setattr("chessfen.clipboard.subprocess.run", fake_run)
+    copy_text("8/8/8/8/8/8/8/8 w - - 0 1")
+    assert calls == [(("pbcopy",), b"8/8/8/8/8/8/8/8 w - - 0 1", True)]
+
+
+def test_copy_text_tries_the_next_tool_when_one_is_missing(monkeypatch):
+    used = []
+
+    def fake_run(command, *, input, check):
+        if command[0] == "wl-copy":
+            raise FileNotFoundError(command[0])
+        used.append(command[0])
+
+    monkeypatch.setattr("chessfen.clipboard.sys.platform", "linux")
+    monkeypatch.setattr("chessfen.clipboard.subprocess.run", fake_run)
+    copy_text("fen")
+    assert used == ["xclip"]
+
+
+def test_copy_text_names_what_to_install_when_nothing_is_there(monkeypatch):
+    def fake_run(command, *, input, check):
+        raise FileNotFoundError(command[0])
+
+    monkeypatch.setattr("chessfen.clipboard.sys.platform", "linux")
+    monkeypatch.setattr("chessfen.clipboard.subprocess.run", fake_run)
+    with pytest.raises(ClipboardWriteError, match="wl-copy or xclip or xsel"):
+        copy_text("fen")
+
+
+def test_copy_text_on_an_unknown_platform_says_so(monkeypatch):
+    monkeypatch.setattr("chessfen.clipboard.sys.platform", "plan9")
+    with pytest.raises(ClipboardWriteError, match="a clipboard tool"):
+        copy_text("fen")
 
 
 def test_cli_falls_back_to_the_clipboard_when_no_path_is_given(

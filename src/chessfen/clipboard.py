@@ -1,16 +1,43 @@
-"""Take the board image from the clipboard, for the screenshot-and-paste workflow."""
+"""The clipboard, both ways: an image in, the resulting FEN back out.
+
+Reading goes through PIL, which already owns the platform quirks. Writing shells out to
+the platform's clipboard tool - a table of ~six commands, which is cheaper than taking a
+dependency for it and lets the error message name what is actually missing.
+"""
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
+from typing import Final
 
 from PIL import Image, ImageGrab, UnidentifiedImageError
 
 from .imaging import RgbImage, from_pil, load_rgb
 
+#: Clipboard writers per ``sys.platform``, tried in order until one is installed.
+_COPY_COMMANDS: Final = {
+    "darwin": (("pbcopy",),),
+    "win32": (("clip",),),
+    "linux": (
+        ("wl-copy",),
+        ("xclip", "-selection", "clipboard"),
+        ("xsel", "--clipboard", "--input"),
+    ),
+}
 
-class ClipboardImageError(ValueError):
+
+class ClipboardError(ValueError):
+    """Base for anything that goes wrong talking to the clipboard."""
+
+
+class ClipboardImageError(ClipboardError):
     """Raised when the clipboard holds no image this tool can read."""
+
+
+class ClipboardWriteError(ClipboardError):
+    """Raised when text cannot be put on the clipboard."""
 
 
 def clipboard_image() -> RgbImage:
@@ -32,6 +59,21 @@ def clipboard_image() -> RgbImage:
     if isinstance(grabbed, Image.Image):
         return from_pil(grabbed)
     return _first_readable(grabbed)
+
+
+def copy_text(text: str) -> None:
+    """Put ``text`` on the clipboard, ready to paste."""
+    candidates = _COPY_COMMANDS.get(sys.platform, ())
+    for command in candidates:
+        try:
+            subprocess.run(command, input=text.encode(), check=True)
+        except FileNotFoundError:
+            continue  # tool not installed; try the next one
+        except (OSError, subprocess.CalledProcessError) as error:
+            raise ClipboardWriteError(f"{command[0]} failed: {error}") from error
+        return
+    wanted = " or ".join(command[0] for command in candidates) or "a clipboard tool"
+    raise ClipboardWriteError(f"cannot write to the clipboard: install {wanted}")
 
 
 def _first_readable(paths: list[str]) -> RgbImage:

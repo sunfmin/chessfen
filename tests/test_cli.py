@@ -4,6 +4,7 @@ import json
 
 from PIL import Image
 
+from chessfen import ClipboardWriteError
 from chessfen.cli import main
 
 START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -36,6 +37,37 @@ def test_render_then_recognize_round_trips_through_the_cli(tmp_path, capsys):
     capsys.readouterr()
     assert main(["recognize", str(out)]) == 0
     assert capsys.readouterr().out.strip() == START_FEN
+
+
+def test_the_fen_lands_on_the_clipboard(reference_image, capsys, copied):
+    assert main(["recognize", str(reference_image)]) == 0
+    assert copied == ["r3k3/2N5/8/8/8/8/8/8 w q - 0 1"]
+    assert "copied to the clipboard" in capsys.readouterr().err
+
+
+def test_no_copy_leaves_the_clipboard_alone(reference_image, capsys, copied):
+    assert main(["recognize", str(reference_image), "--no-copy"]) == 0
+    assert copied == []
+    assert capsys.readouterr().err == ""
+
+
+def test_json_mode_copies_the_fen_not_the_report(reference_image, capsys, copied):
+    assert main(["recognize", str(reference_image), "--json"]) == 0
+    capsys.readouterr()
+    assert copied == ["r3k3/2N5/8/8/8/8/8/8 w q - 0 1"]
+
+
+def test_a_clipboard_that_refuses_is_a_warning_not_a_failure(
+    reference_image, capsys, monkeypatch
+):
+    def refuse(_text: str) -> None:
+        raise ClipboardWriteError("install xclip")
+
+    monkeypatch.setattr("chessfen.cli.copy_text", refuse)
+    assert main(["recognize", str(reference_image)]) == 0
+    out = capsys.readouterr()
+    assert out.out.strip() == "r3k3/2N5/8/8/8/8/8/8 w q - 0 1"
+    assert "could not copy the FEN" in out.err
 
 
 def test_a_picture_without_a_board_exits_nonzero_with_a_message(tmp_path, capsys):

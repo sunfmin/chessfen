@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from importlib.metadata import version
 
-from .clipboard import ClipboardImageError, clipboard_image
+from .clipboard import (
+    ClipboardError,
+    ClipboardImageError,
+    ClipboardWriteError,
+    clipboard_image,
+    copy_text,
+)
 from .geometry import BoardNotFoundError, BoardRect, find_board
 from .recognize import Castling, Orientation, Recognition, recognize
 from .render import (
@@ -22,7 +28,9 @@ __all__ = [
     "BoardNotFoundError",
     "BoardRect",
     "Castling",
+    "ClipboardError",
     "ClipboardImageError",
+    "ClipboardWriteError",
     "Highlight",
     "HighlightStyle",
     "Orientation",
@@ -30,6 +38,7 @@ __all__ = [
     "RenderOptions",
     "__version__",
     "clipboard_image",
+    "copy_text",
     "find_board",
     "recognize",
     "render_png",

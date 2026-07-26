@@ -9,7 +9,7 @@ from pathlib import Path
 
 import chess
 
-from .clipboard import ClipboardImageError, clipboard_image
+from .clipboard import ClipboardError, clipboard_image, copy_text
 from .geometry import BoardNotFoundError
 from .recognize import Castling, Orientation, Recognition, recognize
 from .render import RenderOptions, render_png
@@ -27,7 +27,7 @@ def main(argv: list[str] | None = None) -> int:
             case _:  # pragma: no cover - argparse rejects anything else
                 parser.error(f"unknown command {args.command!r}")
                 return 2
-    except (BoardNotFoundError, ClipboardImageError, ValueError) as error:
+    except (BoardNotFoundError, ValueError) as error:
         print(f"chessfen: {error}", file=sys.stderr)
         return 1
 
@@ -67,6 +67,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     read.add_argument("--board", action="store_true", help="also print an ASCII board")
     read.add_argument("--json", action="store_true", help="print a JSON report")
+    read.add_argument(
+        "--no-copy",
+        action="store_true",
+        help="do not put the FEN on the clipboard when done",
+    )
 
     write = commands.add_parser("render", help="draw a board image from a FEN")
     write.add_argument("fen")
@@ -87,17 +92,36 @@ def _recognize(args: argparse.Namespace) -> int:
     )
     if args.json:
         print(json.dumps(_report(result), indent=2))
-        return 0
-    print(result.fen)
-    if args.board:
-        print(result.board.unicode(borders=True, empty_square="."))
+    else:
+        print(result.fen)
+        if args.board:
+            print(result.board.unicode(borders=True, empty_square="."))
+    # Keep the notes below the result when both streams go to the same pipe.
+    sys.stdout.flush()
     for square, verdict in result.shaky.items():
         print(
             f"chessfen: low confidence on {chess.square_name(square)}: "
             f"{verdict.piece} score={verdict.score:.2f} margin={verdict.margin:.2f}",
             file=sys.stderr,
         )
+    if not args.no_copy:
+        _copy_fen(result.fen)
     return 0
+
+
+def _copy_fen(fen: str) -> None:
+    """Put the FEN on the clipboard, ready to paste elsewhere.
+
+    Announced on stderr rather than done silently, since it replaces whatever the user
+    had copied - and a failure here is a warning, not an error: the FEN is already on
+    stdout, so the run succeeded.
+    """
+    try:
+        copy_text(fen)
+    except ClipboardError as error:
+        print(f"chessfen: could not copy the FEN ({error})", file=sys.stderr)
+        return
+    print("chessfen: FEN copied to the clipboard", file=sys.stderr)
 
 
 def _report(result: Recognition) -> dict[str, object]:
