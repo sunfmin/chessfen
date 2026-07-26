@@ -1,0 +1,92 @@
+"""The clipboard adapter, with the platform clipboard itself stubbed out.
+
+A real clipboard cannot be part of a test run, so what is pinned here is our handling of
+the three things ``ImageGrab.grabclipboard`` can hand back: an image, a list of file
+paths, or nothing.
+"""
+
+from __future__ import annotations
+
+import pytest
+from PIL import Image
+
+from chessfen import ClipboardImageError, clipboard_image
+from chessfen.cli import main
+
+EXPECTED_FEN = "r3k3/2N5/8/8/8/8/8/8 w q - 0 1"
+
+
+@pytest.fixture
+def clipboard(monkeypatch):
+    """Set what the platform clipboard returns; a callable raises instead."""
+
+    def put(value):
+        def grab():
+            return value() if callable(value) else value
+
+        monkeypatch.setattr("chessfen.clipboard.ImageGrab.grabclipboard", grab)
+
+    return put
+
+
+def test_a_copied_screenshot_is_recognised(clipboard, reference_image):
+    with Image.open(reference_image) as handle:
+        clipboard(handle.convert("RGB"))
+    assert clipboard_image().shape == (786, 792, 3)
+
+
+def test_copied_image_with_transparency_is_flattened(clipboard):
+    clipboard(Image.new("RGBA", (10, 10), (0, 0, 0, 0)))
+    assert clipboard_image().tolist() == [[[255, 255, 255]] * 10] * 10
+
+
+def test_files_copied_from_a_file_manager_are_loaded(clipboard, reference_image):
+    clipboard([str(reference_image)])
+    assert clipboard_image().shape == (786, 792, 3)
+
+
+def test_non_image_files_on_the_clipboard_are_skipped(
+    clipboard, reference_image, tmp_path
+):
+    junk = tmp_path / "notes.txt"
+    junk.write_text("not an image")
+    clipboard([str(junk), str(reference_image)])
+    assert clipboard_image().shape == (786, 792, 3)
+
+
+def test_an_empty_clipboard_says_so(clipboard):
+    clipboard(None)
+    with pytest.raises(ClipboardImageError, match="no image"):
+        clipboard_image()
+
+
+def test_a_clipboard_of_only_junk_says_so(clipboard, tmp_path):
+    junk = tmp_path / "notes.txt"
+    junk.write_text("not an image")
+    clipboard([str(junk)])
+    with pytest.raises(ClipboardImageError, match="no readable image"):
+        clipboard_image()
+
+
+def test_a_system_without_a_clipboard_tool_says_so(clipboard):
+    def explode():
+        raise OSError("xclip not found")
+
+    clipboard(explode)
+    with pytest.raises(ClipboardImageError, match="cannot read the clipboard"):
+        clipboard_image()
+
+
+def test_cli_falls_back_to_the_clipboard_when_no_path_is_given(
+    clipboard, reference_image, capsys
+):
+    with Image.open(reference_image) as handle:
+        clipboard(handle.convert("RGB"))
+    assert main(["recognize"]) == 0
+    assert capsys.readouterr().out.strip() == EXPECTED_FEN
+
+
+def test_cli_reports_an_empty_clipboard_without_a_traceback(clipboard, capsys):
+    clipboard(None)
+    assert main(["recognize"]) == 1
+    assert "clipboard" in capsys.readouterr().err
