@@ -77,121 +77,13 @@ extension Game {
     }
 }
 
-/// The advantage bar: one number turned into a length.
-///
-/// Centipawns are unbounded and a bar is not, so the mapping has to squash. A logistic
-/// curve is the honest choice — it is roughly how a score translates into a winning chance,
-/// so equal-looking bars mean equally close games rather than equal pawn counts.
-func advantageFraction(_ score: Score?) -> Double {
-    guard let score else { return 0.5 }
-    switch score {
-    case .centipawns(let value):
-        return 1 / (1 + pow(10, -Double(value) / 400))
-    case .mate(let moves):
-        return moves > 0 ? 1 : 0
-    }
-}
-
-struct AdvantageBar: View {
-    let score: Score?
-    /// Which way up: the side at the bottom of the board fills from the bottom.
-    var orientation: Orientation = .whiteAtBottom
-
-    var body: some View {
-        let white = advantageFraction(score)
-        let fraction = orientation == .whiteAtBottom ? white : 1 - white
-        GeometryReader { proxy in
-            ZStack(alignment: .bottom) {
-                // Fixed colours rather than semantic ones: the two halves stand for white and
-                // black, so they cannot follow the interface's light and dark. The outline is
-                // what keeps the white half from disappearing into a light page — without it,
-                // an even position looks like a bar that is only half there.
-                Rectangle().fill(Color(red: 0.14, green: 0.14, blue: 0.16))
-                Rectangle()
-                    .fill(Color(white: 0.97))
-                    .frame(height: proxy.size.height * fraction)
-            }
-            .overlay(alignment: .center) {
-                Rectangle().fill(Color.red.opacity(0.6)).frame(height: 1)
-            }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 3))
-        .overlay(
-            RoundedRectangle(cornerRadius: 3)
-                .stroke(Color.secondary.opacity(0.45), lineWidth: 0.5)
-        )
-        .frame(width: 10)
-        .accessibilityLabel("优势条")
-        .accessibilityValue(score?.displayText ?? "未知")
-    }
-}
-
-/// A labelled row of capsules, one of which is current.
-///
-/// A Picker would say the same thing in less code, but these choices are the ones that stay on
-/// screen for the whole game — who started, which way up the board is — and a row of capsules
-/// reads as a standing fact with a way to change it, where a segmented control reads as a
-/// setting being adjusted.
-struct ChipPair<Value: Hashable>: View {
-    struct Option: Identifiable {
-        let value: Value
-        let label: String
-        var isEnabled = true
-        var id: Value { value }
-    }
-
-    let title: String
-    let options: [Option]
-    let selection: Value
-    let pick: (Value) -> Void
-
-    var body: some View {
-        HStack {
-            Text(title).font(.subheadline)
-            Spacer()
-            HStack(spacing: 8) {
-                ForEach(options) { option in
-                    Button {
-                        pick(option.value)
-                    } label: {
-                        Text(option.label)
-                            .font(.footnote)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(
-                                selection == option.value
-                                    ? Color.accentColor.opacity(0.22)
-                                    : Color.secondary.opacity(0.14),
-                                in: Capsule()
-                            )
-                            .opacity(option.isEnabled ? 1 : 0.4)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!option.isEnabled)
-                }
-            }
-        }
-    }
-}
-
-/// A score, coloured by who it favours.
-struct ScoreLabel: View {
-    let score: Score?
-    var prominent = false
-
-    var body: some View {
-        Text(score?.displayText ?? "—")
-            .font(prominent ? .title3.monospacedDigit().bold() : .body.monospacedDigit())
-            .foregroundStyle(tint)
-    }
-
-    private var tint: Color {
-        guard let score else { return .secondary }
-        return switch score {
-        case .mate: .purple
-        case .centipawns(let value) where value > 50: .primary
-        case .centipawns(let value) where value < -50: .primary
-        default: .secondary
+extension Game {
+    /// Who is on the clock, said as a state rather than as an instruction.
+    var chineseTurn: String {
+        switch state.outcome {
+        case .ongoing: "\(state.sideToMove.chinese)走棋"
+        case .checkmate: "\(state.sideToMove.opposite.chinese)将杀"
+        default: state.outcome.chinese
         }
     }
 }

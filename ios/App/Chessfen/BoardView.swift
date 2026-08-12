@@ -98,6 +98,15 @@ struct BoardView: View {
 
     private let style = BoardStyle.default
 
+    /// The two squares of the move just played, washed in the screen's green.
+    ///
+    /// Gold was tried and lost twice over: any gold near the wood either disappears into it or
+    /// impersonates the other square colour, and an opaque one bright enough to survive erased
+    /// the light/dark join it covered. Green is nowhere in the wood, so a thin wash of it is
+    /// plainly a mark at any strength — and being a wash, the checker pattern goes on showing
+    /// through it.
+    private static var lastMoveWash: Color { Palette.analysis.opacity(0.42) }
+
     /// The pieces as things that persist, so that a move is one piece travelling rather
     /// than the whole board being redrawn (see TrackedPlacement).
     @State private var tracked = TrackedPlacement()
@@ -184,8 +193,6 @@ struct BoardView: View {
 
         let light = Color(svg: style.lightSquare) ?? .white
         let dark = Color(svg: style.darkSquare) ?? .brown
-        let lightMoved = Color(svg: style.lightLastMove) ?? light
-        let darkMoved = Color(svg: style.darkLastMove) ?? dark
         let moved = lastMove?.squares ?? []
 
         for row in 0..<8 {
@@ -195,13 +202,10 @@ struct BoardView: View {
                     x: CGFloat(column) * cell, y: CGFloat(row) * cell, width: cell, height: cell
                 )
                 let isLight = (row + column).isMultiple(of: 2)
-                let isMoved = moved.contains(square)
-                context.fill(
-                    Path(box),
-                    with: .color(
-                        isLight ? (isMoved ? lightMoved : light) : (isMoved ? darkMoved : dark)
-                    )
-                )
+                context.fill(Path(box), with: .color(isLight ? light : dark))
+                if moved.contains(square) {
+                    context.fill(Path(box), with: .color(Self.lastMoveWash))
+                }
                 if checks.contains(square) { drawCheck(in: box, into: &context) }
                 if coordinates {
                     drawCoordinate(row: row, column: column, in: box, into: &context)
@@ -212,6 +216,10 @@ struct BoardView: View {
 
     /// Everything over the pieces: what is selected, where it may go, what recognition was
     /// unsure of, and what the engine would play.
+    ///
+    /// Ink for the first two and teal for the last, which is the whole colour scheme of the app in
+    /// one method: what you are doing is drawn in the board's own ink, and what the engine thinks
+    /// is the only thing on screen allowed to be teal.
     private func drawMarkers(into context: inout GraphicsContext, size: CGSize) {
         let cell = min(size.width, size.height) / 8
 
@@ -225,7 +233,7 @@ struct BoardView: View {
                 if selected == square {
                     context.stroke(
                         Path(box.insetBy(dx: cell * 0.04, dy: cell * 0.04)),
-                        with: .color(.accentColor),
+                        with: .color(Palette.ink.opacity(0.85)),
                         lineWidth: cell * 0.08
                     )
                 }
@@ -269,14 +277,14 @@ struct BoardView: View {
             // A ring around the piece being taken, so the piece stays visible.
             context.stroke(
                 Path(ellipseIn: box.insetBy(dx: box.width * 0.06, dy: box.width * 0.06)),
-                with: .color(.accentColor.opacity(0.75)),
+                with: .color(Palette.ink.opacity(0.7)),
                 lineWidth: box.width * 0.09
             )
         } else {
             let inset = box.width * 0.36
             context.fill(
                 Path(ellipseIn: box.insetBy(dx: inset, dy: inset)),
-                with: .color(.accentColor.opacity(0.65))
+                with: .color(Palette.ink.opacity(0.45))
             )
         }
     }
@@ -302,10 +310,11 @@ struct BoardView: View {
         var shaft = Path()
         shaft.move(to: start)
         shaft.addLine(to: base)
-        let colour = Color.green.opacity(0.7)
+        // Teal, because teal is the engine's voice everywhere else on the screen (Palette).
+        let colour = Palette.analysis.opacity(0.78)
         context.stroke(
             shaft, with: .color(colour),
-            style: StrokeStyle(lineWidth: cell * 0.13, lineCap: .round)
+            style: StrokeStyle(lineWidth: cell * 0.10, lineCap: .round)
         )
 
         var arrowhead = Path()
@@ -333,8 +342,13 @@ struct BoardView: View {
         // should use the whole width of a phone.
         let square = Recognizer.square(row: row, column: column, orientation: orientation)
         let isLight = (row + column).isMultiple(of: 2)
-        let ink = (isLight ? Color(svg: style.darkSquare) : Color(svg: style.lightSquare)) ?? .gray
-        let font = Font.system(size: box.width * 0.2, weight: .semibold)
+        // Held back to half strength: the coordinates share the first and last rank with pieces,
+        // and at full contrast a rank number behind a rook reads as a mistake rather than as a
+        // label. They only have to be findable when looked for.
+        let ink =
+            ((isLight ? Color(svg: style.darkSquare) : Color(svg: style.lightSquare)) ?? .gray)
+            .opacity(0.5)
+        let font = Font.system(size: box.width * 0.18, weight: .semibold)
 
         if row == 7 {
             let name = String(UnicodeScalar(UInt8(97 + square.file)))

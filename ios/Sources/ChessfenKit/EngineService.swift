@@ -24,9 +24,29 @@ public final class EngineService: @unchecked Sendable {
         public var multiPV: Int
 
         public init(threads: Int? = nil, hashMegabytes: Int = 256, multiPV: Int = 3) {
-            self.threads = threads ?? max(1, ProcessInfo.processInfo.activeProcessorCount - 2)
+            self.threads = threads ?? Self.threadsForThisMachine
             self.hashMegabytes = hashMegabytes
             self.multiPV = multiPV
+        }
+
+        /// Two cores fewer than the machine has, capped — and the cap is the point.
+        ///
+        /// A search thread is not free in memory either: each carries its own history tables,
+        /// `continuationHistory[2][2]` alone being 8 MiB, so the thread count multiplies the
+        /// engine's footprint as much as it divides its thinking time.
+        ///
+        /// Under the Simulator `activeProcessorCount` is the *Mac's*, so a 14-core machine
+        /// would start twelve search threads — three times what the phone the code is being
+        /// written for will use — on the same machine as Xcode. Two is enough to tell whether
+        /// the app works, which is all the Simulator is for. A device is at or under the
+        /// other cap already, so nothing about how the app plays in someone's hands changes.
+        static var threadsForThisMachine: Int {
+            let spare = max(1, ProcessInfo.processInfo.activeProcessorCount - 2)
+            #if targetEnvironment(simulator)
+                return min(spare, 2)
+            #else
+                return min(spare, 6)
+            #endif
         }
     }
 
@@ -73,6 +93,21 @@ public final class EngineService: @unchecked Sendable {
 
     private let generations = Atomic<UInt64>(0)
 
+    /// Whether searching is allowed at all, and who is waiting for it to be.
+    ///
+    /// The app pauses the engine whenever it is not in front of the user, and the gate lives
+    /// here rather than in the screens because a screen can forget and this cannot: every way
+    /// into a search passes it. What a search that wants to start while paused does depends on
+    /// what kind of search it is, and that distinction is drawn in `analyse` and in the
+    /// bounded callers below.
+    private struct Gate {
+        var isPaused = false
+        /// Keyed so a cancelled caller can take its own continuation back out.
+        var waiting: [UUID: CheckedContinuation<Void, Never>] = [:]
+    }
+
+    private let gate = Mutex(Gate())
+
     public init(
         bigNetURL: URL, smallNetURL: URL, configuration: Configuration = Configuration()
     ) throws {
@@ -103,6 +138,58 @@ public final class EngineService: @unchecked Sendable {
     @discardableResult
     public func setOption(_ name: String, _ value: String) -> Bool {
         cf_engine_set_option(handle.pointer, name, value)
+    }
+
+    // ----------------------------------------------------------------- paused
+
+    public var isPaused: Bool { gate.withLock { $0.isPaused } }
+
+    /// Stops searching, and holds anything that wants to search.
+    ///
+    /// Stopping is not abandoning: the running search still reports the best move it had
+    /// reached, so the screen on the way out does not go blank and the Score already written
+    /// against the current ply stands.
+    public func pause() {
+        let wasRunning = gate.withLock { gate -> Bool in
+            let changed = !gate.isPaused
+            gate.isPaused = true
+            return changed
+        }
+        guard wasRunning else { return }
+        cf_engine_stop(handle.pointer)
+    }
+
+    /// Lets searching happen again, and releases everything the gate was holding.
+    public func resume() {
+        let released = gate.withLock { gate -> [CheckedContinuation<Void, Never>] in
+            gate.isPaused = false
+            let waiting = Array(gate.waiting.values)
+            gate.waiting.removeAll()
+            return waiting
+        }
+        for continuation in released { continuation.resume() }
+    }
+
+    /// Holds until searching is allowed, or until the calling Task is cancelled.
+    ///
+    /// The mutex is what makes cancellation safe rather than a hang: `onCancel` can run before
+    /// the continuation has been stored, so the stored-check and the cancelled-check are both
+    /// taken under the lock and whichever gets there first wins.
+    private func waitWhilePaused() async {
+        let id = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let allowed = gate.withLock { gate -> Bool in
+                    guard gate.isPaused, !Task.isCancelled else { return true }
+                    gate.waiting[id] = continuation
+                    return false
+                }
+                if allowed { continuation.resume() }
+            }
+        } onCancel: {
+            let held = gate.withLock { $0.waiting.removeValue(forKey: id) }
+            held?.resume()
+        }
     }
 
     // -------------------------------------------------------------- analysis
@@ -162,7 +249,13 @@ public final class EngineService: @unchecked Sendable {
                 }
                 superseded.onFinish?()
 
-                let started = withCStrings(moves) { pointers in
+                // A standing Analysis belongs to a screen someone is looking at, so a paused
+                // engine does not start one — the screen asks again on the way back. A bounded
+                // search is a job whose answer is being waited on, and those hold at the gate
+                // instead (`review`, `evaluate`, `bestMove`) rather than coming back empty,
+                // which is why only the unbounded case is refused here.
+                let refused = budget == .untilStopped && isPaused
+                let started = refused ? false : withCStrings(moves) { pointers in
                     var limits = budget.cLimits
                     return cf_engine_go(
                         handle.pointer, startFEN, pointers,
@@ -207,6 +300,11 @@ public final class EngineService: @unchecked Sendable {
     /// Mirrored Time; the engine is never handicapped, so how well it plays is entirely a
     /// question of how long it was given.
     public func bestMove(for game: Game, budget: Budget) async -> Move? {
+        // The engine thinks about its move when there is someone there to see it played, not
+        // in a pocket. Held rather than skipped, because a turn that is the engine's stays the
+        // engine's however long the app was away.
+        await waitWhilePaused()
+        guard !Task.isCancelled else { return nil }
         var last: Analysis?
         for await analysis in analyse(game, budget: budget) { last = analysis }
         guard let uci = last?.bestMove else { return nil }
@@ -217,6 +315,8 @@ public final class EngineService: @unchecked Sendable {
     /// baseline a Review needs for its first move, which has no ply before it to compare
     /// against.
     public func evaluate(_ game: Game, budget: Budget) async -> Score? {
+        await waitWhilePaused()
+        guard !Task.isCancelled else { return nil }
         var last: Analysis?
         for await analysis in analyse(game, budget: budget) { last = analysis }
         return last?.best?.score
@@ -243,8 +343,21 @@ public final class EngineService: @unchecked Sendable {
                 onPly?(ply - 1, nil)
                 continue
             }
+            // A Review holds where it stands while the app is away, and a ply the app left in
+            // the middle of is done again rather than kept.
+            //
+            // Both halves matter, and neither used to happen. Pausing stops the running search,
+            // so a ply interrupted by it reports whatever Depth it had got to; and the loop
+            // would then start the next ply regardless, so every remaining one came back
+            // shallow too. A Review whose Scores are not all at one Depth cannot be compared
+            // against itself, which is the only thing it is for.
             var best: Analysis?
-            for await analysis in analyse(position, budget: .depth(depth)) { best = analysis }
+            repeat {
+                await waitWhilePaused()
+                if Task.isCancelled { break }
+                best = nil
+                for await analysis in analyse(position, budget: .depth(depth)) { best = analysis }
+            } while isPaused && !Task.isCancelled
             scores.append(best?.best?.score)
             onPly?(ply - 1, best?.best?.score)
             if Task.isCancelled { break }

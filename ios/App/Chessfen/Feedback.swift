@@ -37,12 +37,15 @@ import UIKit
     private static let soundKey = "chessfen.sound"
 
     private let engine = AVAudioEngine()
-    /// Three players so that two sounds in quick succession overlap instead of cutting each
-    /// other off — which is what happens when the engine plays itself.
+    /// Four players so that sounds in quick succession overlap instead of cutting each other
+    /// off — which is what happens when the engine replies the instant you move.
     private var players: [AVAudioPlayerNode] = []
     private var next = 0
     private var buffers: [Sound: AVAudioPCMBuffer] = [:]
     private var isRunning = false
+    /// When each sound was last played, so that a finger drumming on the board does not stack
+    /// ten copies of the same buffer into a single loud smear.
+    private var lastPlayed: [Sound: ContinuousClock.Instant] = [:]
     private let impact = UIImpactFeedbackGenerator(style: .light)
     private let heavyImpact = UIImpactFeedbackGenerator(style: .medium)
 
@@ -73,13 +76,20 @@ import UIKit
     func play(_ sound: Sound) {
         touch(sound)
         guard isSoundOn else { return }
+        // Two taps closer together than this are one gesture as far as the ear is concerned, and
+        // playing both only makes a louder version of one.
+        let now = ContinuousClock.now
+        if let last = lastPlayed[sound], now - last < .milliseconds(45) { return }
+        lastPlayed[sound] = now
+
         start()
         guard isRunning, let buffer = buffers[sound], !players.isEmpty else { return }
+        // Scheduled onto a player that is already running, never stopped and restarted: stopping
+        // a node mid-buffer cuts the waveform wherever it happens to be, and a waveform cut at a
+        // non-zero sample is exactly what a click is.
         let player = players[next % players.count]
         next += 1
-        player.stop()
         player.scheduleBuffer(buffer, at: nil, options: [], completionHandler: nil)
-        player.play()
     }
 
     /// The haptics, which are the half of this that works with the ringer off.
@@ -108,15 +118,22 @@ import UIKit
         for sound in Sound.allCases {
             buffers[sound] = Self.render(sound, format: format)
         }
-        for _ in 0..<3 {
+        for _ in 0..<4 {
             let player = AVAudioPlayerNode()
             engine.attach(player)
             engine.connect(player, to: engine.mainMixerNode, format: format)
             players.append(player)
         }
+        // Headroom. Four players can be sounding at once and the mixer sums them, so the ceiling
+        // has to sit low enough that a full house still lands under 1.0 — over it, the hardware
+        // clips, which is the crackle.
+        engine.mainMixerNode.outputVolume = 0.85
         engine.prepare()
         do {
             try engine.start()
+            // Left running with nothing scheduled, which is silence. A player that is already
+            // playing can be handed a buffer without being stopped first.
+            for player in players { player.play() }
             isRunning = true
         } catch {
             players = []
@@ -178,7 +195,14 @@ import UIKit
             case .refused:
                 value = sin(2 * .pi * 110 * t) * exp(-t * 24) * 0.35
             }
-            // A short fade at the very end, so stopping the buffer never clicks.
+            // Every sound is written at full scale above, because that is how the shape of it is
+            // easiest to reason about; the headroom is taken once, here. Four of these can sum in
+            // the mixer, and the sum has to stay inside 1.0 or the output clips.
+            value *= 0.42
+            // A ramp at both ends. The tail keeps the end of a buffer from clicking; the attack
+            // keeps the start from doing the same, which it otherwise does, because a noise burst
+            // beginning at its own peak is a step discontinuity and a step is a click.
+            if t < 0.0015 { value *= t / 0.0015 }
             let tail = seconds - t
             if tail < 0.004 { value *= tail / 0.004 }
             samples[frame] = Float(max(-1, min(1, value)))

@@ -1,5 +1,6 @@
 import ChessfenKit
 import Foundation
+import Synchronization
 import Testing
 
 /// The weights, found by path rather than copied into the test bundle: they are 112 MiB,
@@ -197,5 +198,200 @@ struct EngineTests {
         let service = try engine()
         let game = try #require(Game(startFEN: PGN.standardStartFEN))
         #expect(await service.review(game, depth: 4).isEmpty)
+    }
+
+    // ------------------------------------------------- the app coming and going
+    //
+    // Every test here resumes in a `defer`: the suite shares one engine, so an engine left
+    // paused by a failing test would hang every test after it rather than fail its own.
+
+    /// Runs `work` and gives up after `limit`, `nil` meaning it did not finish in time.
+    ///
+    /// Every test below turns on an unbounded search *ending*, and the way each of them regresses
+    /// is that it does not: the stream never finishes and the test hangs. A hung suite is a much
+    /// worse report than a failed expectation, so the deadline is what turns one into the other.
+    private func within<T: Sendable>(
+        _ limit: Duration, _ work: @escaping @Sendable () async -> T
+    ) async -> T? {
+        await withTaskGroup(of: T?.self) { group in
+            group.addTask { await work() }
+            group.addTask {
+                try? await Task.sleep(for: limit)
+                return nil
+            }
+            let first = await group.next() ?? nil
+            // Cancelling the loser terminates its stream, which stops the engine — so a search
+            // that outran the deadline does not carry on into the next test.
+            group.cancelAll()
+            return first
+        }
+    }
+
+    @Test("a paused engine does not take up a standing analysis")
+    func aPausedEngineRefusesAStandingAnalysis() async throws {
+        let service = try engine()
+        defer { service.resume() }
+        let game = try #require(Game(startFEN: PGN.standardStartFEN))
+
+        service.pause()
+        #expect(service.isPaused)
+
+        // The stream ends without a snapshot, rather than deepening forever: an unbounded
+        // Analysis belongs to a screen someone is looking at, and the screen asks again on the
+        // way back.
+        let seen = await within(.seconds(2)) {
+            var count = 0
+            for await _ in service.analyse(game, budget: .untilStopped) { count += 1 }
+            return count
+        }
+        #expect(seen == 0, "a paused engine started a standing analysis")
+    }
+
+    @Test("pausing stops the search already running")
+    func pausingStopsTheRunningSearch() async throws {
+        let service = try engine()
+        defer { service.resume() }
+        let game = try #require(Game(startFEN: PGN.standardStartFEN))
+
+        // The loop never breaks out. The app going away is the only thing that can end this
+        // stream, so this passes only if the pause is what ended it.
+        let seen = try #require(
+            await within(.seconds(5)) {
+                var count = 0
+                for await _ in service.analyse(game, budget: .untilStopped) {
+                    count += 1
+                    if count == 2 { service.pause() }
+                }
+                return count
+            },
+            "pausing did not stop the search that was running"
+        )
+        #expect(seen >= 2)
+    }
+
+    @Test("an analysis refused while away is taken up once the app is back")
+    func aResumedEngineTakesUpTheAnalysis() async throws {
+        let service = try engine()
+        defer { service.resume() }
+        let game = try #require(Game(startFEN: PGN.standardStartFEN))
+
+        service.pause()
+        let whileAway = await within(.seconds(2)) {
+            var count = 0
+            for await _ in service.analyse(game, budget: .untilStopped) { count += 1 }
+            return count
+        }
+        #expect(whileAway == 0)
+
+        service.resume()
+        #expect(!service.isPaused)
+        let afterwards = try #require(
+            await within(.seconds(5)) {
+                var count = 0
+                for await _ in service.analyse(game, budget: .untilStopped) {
+                    count += 1
+                    if count >= 2 { break }
+                }
+                return count
+            },
+            "a resumed engine never reported an analysis"
+        )
+        #expect(afterwards == 2)
+        await service.waitForSearchToFinish()
+    }
+
+    @Test("a bounded search waits for the app rather than coming back empty")
+    func aBoundedSearchHoldsWhilePaused() async throws {
+        let service = try engine()
+        defer { service.resume() }
+        let game = try #require(Game(startFEN: PGN.standardStartFEN))
+
+        let answered = Atomic<Bool>(false)
+        service.pause()
+        let search = Task {
+            let score = await service.evaluate(game, budget: .depth(6))
+            answered.store(true, ordering: .releasing)
+            return score
+        }
+
+        // Depth 6 from the start position takes a few milliseconds, so this is long enough for
+        // an engine that ignored the gate to have finished and given itself away.
+        try await Task.sleep(for: .milliseconds(400))
+        // Read out before asserting: `Atomic` is non-copyable, and `#expect` needs to be handed
+        // something it can capture.
+        let answeredWhilePaused = answered.load(ordering: .acquiring)
+        #expect(!answeredWhilePaused, "a paused engine answered a bounded search")
+
+        service.resume()
+        #expect(await search.value != nil, "a held search should run on the way back, not fail")
+    }
+
+    /// A long game of quiet, obviously legal moves.
+    ///
+    /// Length is the point rather than the chess: this is the game the Review tests below pause
+    /// in the middle of, and there has to *be* a middle. Every pawn one square, then the pieces
+    /// onto the squares the pawns left, so nothing here needs checking for legality by eye — and
+    /// no move repeats a position, which would have the engine scoring draws instead of thinking.
+    private static let longGame = [
+        "a2a3", "a7a6", "b2b3", "b7b6", "c2c3", "c7c6", "d2d3", "d7d6",
+        "e2e3", "e7e6", "f2f3", "f7f6", "g2g3", "g7g6", "h2h3", "h7h6",
+        // The knights go where the d- and e-pawns came from: a pawn on every third-rank square
+        // has blocked a3/c3/f3/h3 already.
+        "b1d2", "b8d7", "g1e2", "g8e7",
+        "c1b2", "c8b7", "f1g2", "f8g7", "d1c2", "d8c7",
+        "a1b1", "a8b8", "h1g1", "h8g8",
+    ]
+
+    @Test("a review makes no progress while the app is away")
+    func aReviewHoldsWhileTheAppIsAway() async throws {
+        let service = try engine()
+        defer { service.resume() }
+        let game = try #require(
+            Game(startFEN: PGN.standardStartFEN, uciMoves: Self.longGame)
+        )
+
+        let reported = Atomic<Int>(0)
+        await service.clear()
+        let reviewed = Task {
+            await service.review(game, depth: 10) { _, _ in
+                reported.wrappingAdd(1, ordering: .relaxed)
+            }
+        }
+
+        // Caught by watching rather than by sleeping a guessed interval: the pause has to land
+        // while there are plies still to do, and how long that takes is a fact about the
+        // machine. A Review that finished before it could be interrupted proves nothing, so it
+        // fails the test rather than passing it quietly.
+        var caught = 0
+        for _ in 0..<400 {
+            let done = reported.load(ordering: .acquiring)
+            if done >= 1, done < game.plies.count {
+                caught = done
+                break
+            }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        service.pause()
+        #expect(caught > 0, "the review was never caught mid-flight — lengthen the game")
+
+        // The regression this is here for. Pausing stops the running search, and the ply loop
+        // used to start the next ply regardless: the rest of the game would be scored while the
+        // app was away, at whatever Depth each search happened to reach before the next stop.
+        // A Review whose Scores are not all at one Depth cannot be compared against itself,
+        // which is the only thing it is for.
+        let atPause = reported.load(ordering: .acquiring)
+        try await Task.sleep(for: .milliseconds(400))
+        let afterWaiting = reported.load(ordering: .acquiring)
+        // Plus one for the ply that was already in flight when the pause landed and finished
+        // before it took effect. Anything beyond that is the Review carrying on regardless.
+        #expect(
+            afterWaiting <= atPause + 1,
+            "a paused review scored \(afterWaiting - atPause) more plies"
+        )
+
+        service.resume()
+        let scores = await reviewed.value
+        #expect(scores.count == game.plies.count)
+        #expect(scores.allSatisfy { $0 != nil }, "a paused review left holes: \(scores)")
     }
 }

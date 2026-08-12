@@ -1,13 +1,18 @@
 import ChessfenKit
 import SwiftUI
 
+/// The board, what the engine makes of it, and the few things you do to it.
+///
+/// No scrolling: the board is the hero and it has to sit still under a navigation bar, not slide
+/// beneath it. Everything else is a strip of fixed height below it, and the board takes whatever
+/// is left over — which on a small phone means a slightly smaller board rather than a screen
+/// that has to be dragged.
 struct GameScreen: View {
     let session: GameSession
     @Binding var path: [Step]
 
     @Environment(EngineHost.self) private var engine
     @Environment(GameLibrary.self) private var library
-    @Environment(\.scenePhase) private var scenePhase
 
     @State private var selected: Square?
     @State private var promotion: PromotionRequest?
@@ -19,40 +24,47 @@ struct GameScreen: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 12) {
-                standing
-                HStack(alignment: .top, spacing: 8) {
-                    AdvantageBar(
-                        score: session.analysis?.best?.score, orientation: session.orientation
-                    )
-                    board
+        GeometryReader { proxy in
+            let side = Self.boardSide(in: proxy.size)
+            VStack(spacing: 0) {
+                header
+                board.frame(width: side, height: side)
+                EvalBar(score: session.analysis?.best?.score, orientation: session.orientation)
+                    .frame(width: side)
+                    .padding(.top, 7)
+                // Everything below the board scrolls if it has to. The board itself is outside
+                // this, which is what keeps it from sliding under the navigation bar and from
+                // changing size when what is underneath it grows.
+                ScrollView {
+                    VStack(spacing: 0) {
+                        corrections
+                        engineLines
+                        notation
+                        controls
+                    }
                 }
-                enginePanel
-                movetext
-                browsing
-                variations
-                settings
+                .scrollBounceBehavior(.basedOnSize)
             }
-            .padding(.horizontal)
-            .padding(.bottom, 20)
+            .frame(maxWidth: .infinity)
         }
+        .background(Palette.parchment)
         .navigationTitle("对局")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Palette.parchment, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .tint(Palette.analysis)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    if session.origin == .recognised {
-                        Button {
-                            path.append(.confirm(PositionProposal(reopening: session)))
-                        } label: {
-                            Label("编辑局面", systemImage: "square.and.pencil")
-                        }
-                    }
                     Button {
                         path.append(.review(session))
                     } label: {
                         Label("复盘", systemImage: "chart.line.uptrend.xyaxis")
+                    }
+                    Button {
+                        path.append(.confirm(PositionProposal(reopening: session)))
+                    } label: {
+                        Label("改棋子", systemImage: "hand.point.up.left")
                     }
                     Toggle(isOn: $isSoundOn) {
                         Label("音效", systemImage: isSoundOn ? "speaker.wave.2" : "speaker.slash")
@@ -68,9 +80,9 @@ struct GameScreen: View {
             }
         }
         .onAppear {
-            // Re-attached on every appearance: the engine may have finished starting while
-            // the library was on screen, and coming back from a Review means the search
-            // this screen wants is not the one that just ran.
+            // Re-attached on every appearance: the engine may have finished starting while the
+            // library was on screen, and coming back from a Review means the search this screen
+            // wants is not the one that just ran.
             session.attach(engine: engine.service, library: library)
             session.retune()
         }
@@ -81,8 +93,12 @@ struct GameScreen: View {
             session.attach(engine: engine.service, library: library)
             session.retune()
         }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active {
+        // The Analysis this screen wants is unbounded, and the engine will not start one while
+        // the app is away — so leaving is a suspend and coming back is a fresh `retune`, not a
+        // search that was left running underneath. `EngineHost.isActive` rather than the scene
+        // phase, so there is one answer to when that is.
+        .onChange(of: engine.isActive) { _, active in
+            if active {
                 session.retune()
             } else {
                 session.suspend()
@@ -103,24 +119,81 @@ struct GameScreen: View {
 
     // ------------------------------------------------------------------ parts
 
-    private var standing: some View {
-        HStack(spacing: 8) {
-            Text(viewed.chineseStanding)
-                .font(.subheadline.weight(.medium))
-            if session.isThinking {
-                ProgressView().controlSize(.small)
-                // Mirrored Time means the engine takes about as long as the player did, which
-                // is usually right and sometimes far longer than anyone wants to sit through.
-                // This does not pick a different move — Stockfish reports its best line when
-                // stopped — it just stops waiting.
-                Button("马上走") { session.moveNow() }
-                    .font(.footnote)
-                    .buttonStyle(.bordered)
-                    .controlSize(.mini)
+    /// Who is on the clock, and what the engine currently thinks of it.
+    ///
+    /// Two lines: the state of the game and the number share a baseline, so the eye reads them
+    /// as one sentence; everything about how the number was arrived at sits under it.
+    private var header: some View {
+        VStack(spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(viewed.chineseTurn).eyebrow()
+                if viewed.state.inCheck, !viewed.isOver {
+                    Text("被将")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Palette.alarm)
+                }
+                Spacer(minLength: 8)
+                Text(headlineScore?.displayText ?? "—")
+                    .font(.clock(32))
+                    .foregroundStyle(headlineScore == nil ? Palette.inkSoft : Palette.analysis)
+                    .contentTransition(.numericText())
             }
-            Spacer()
-            ScoreLabel(score: session.analysis?.best?.score, prominent: true)
+
+            HStack(spacing: 8) {
+                if session.isThinking {
+                    // Mirrored Time means the engine takes about as long as the player just did,
+                    // which is right most of the time and longer than anyone wants to sit through
+                    // the rest of it. Stopping the search does not change which move it picks; it
+                    // just stops waiting.
+                    Button { session.moveNow() } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "forward.fill").font(.caption2)
+                            Text("马上走").font(.footnote.weight(.semibold))
+                        }
+                        .foregroundStyle(Palette.parchment)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 3)
+                        .background(Palette.analysis, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                } else if !session.isAtLatest {
+                    Button {
+                        selected = nil
+                        session.jumpToLatest()
+                    } label: {
+                        Text("在看第 \(session.cursor)/\(session.game.plies.count) 步 · 回到最新")
+                            .font(.caption)
+                            .foregroundStyle(Palette.analysis)
+                    }
+                    .buttonStyle(.plain)
+                } else if case .unavailable = engine.status {
+                    Text("没有引擎").font(.caption).foregroundStyle(Palette.alarm)
+                }
+                Spacer(minLength: 4)
+                SearchMeter(analysis: session.analysis)
+            }
+            .frame(height: 18)
         }
+        .padding(.horizontal, 16)
+        .padding(.top, 2)
+        .padding(.bottom, 8)
+    }
+
+    /// What the number at the top says. The engine's view of the position on screen, or nothing
+    /// at all until it has one — never a stale number from the previous position.
+    private var headlineScore: Score? { session.analysis?.best?.score }
+
+    /// How big the board is, and it depends on the screen and nothing else.
+    ///
+    /// It used to take whatever height was left over, which meant the board changed size when the
+    /// engine found a third line to show — the one thing on this screen that must never move. So
+    /// it is sized from the width, all but full bleed, and only shrinks on a screen too short to
+    /// leave anything for the panel underneath. Rounded to a multiple of eight so every square is
+    /// a whole number of points and no grid line lands on a half pixel.
+    static func boardSide(in size: CGSize) -> CGFloat {
+        let byWidth = size.width - 16
+        let byHeight = max(240, size.height - 300)
+        return (min(byWidth, byHeight) / 8).rounded(.down) * 8
     }
 
     private var board: some View {
@@ -129,6 +202,10 @@ struct GameScreen: View {
             orientation: session.orientation,
             lastMove: session.lastMove,
             checks: checkSquares,
+            // The doubtful squares stay ringed on the board being played on, right up until the
+            // first move — which is what replaces the old gate: the reading's own uncertainty is
+            // visible where it matters, and 改棋子 is one tap away (docs/adr/0011).
+            suspects: session.unconfirmedSquares,
             selected: selected,
             destinations: Set(candidateMoves.map(\.to)),
             captures: Set(candidateMoves.filter(\.isCapture).map(\.to)),
@@ -138,193 +215,202 @@ struct GameScreen: View {
         )
     }
 
-    @ViewBuilder private var enginePanel: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if let analysis = session.analysis {
-                HStack {
-                    Text("深度 \(analysis.depth)/\(analysis.selectiveDepth)")
-                    Spacer()
-                    Text("\(analysis.nodesPerSecond / 1000)k 结点/秒")
+    /// The way back to the editor, shown as a job to do rather than hidden in a menu — a piece
+    /// read wrong is the one thing about a photographed game that has to be easy to fix.
+    @ViewBuilder private var corrections: some View {
+        if session.canEditPosition {
+            Button {
+                path.append(.confirm(PositionProposal(reopening: session)))
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: session.shaky.isEmpty ? "hand.point.up.left" : "questionmark.circle")
+                    Text(correctionText)
+                        .font(.footnote)
+                        .multilineTextAlignment(.leading)
+                    Spacer(minLength: 4)
+                    Text("改棋子").font(.footnote.weight(.semibold))
+                    Image(systemName: "chevron.right").font(.caption2)
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(session.shaky.isEmpty ? Palette.ink : Palette.alarm)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background(
+                    (session.shaky.isEmpty ? Palette.chipRest : Palette.alarm.opacity(0.12)),
+                    in: RoundedRectangle(cornerRadius: 10)
+                )
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+        }
+    }
 
-                ForEach(Array(analysis.lines.enumerated()), id: \.offset) { index, line in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        ScoreLabel(score: line.score, prominent: index == 0)
-                            .frame(width: 62, alignment: .leading)
+    private var correctionText: String {
+        let count = session.shaky.count
+        return count == 0 ? "照片认错了棋子？" : "橙框那 \(count) 个格子拿不太准"
+    }
+
+    /// What the engine is looking at, three lines deep. A fixed height, because the lines change
+    /// several times a second as the search deepens and a moving layout would be unreadable.
+    private var engineLines: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            if let analysis = session.analysis, !analysis.lines.isEmpty {
+                ForEach(Array(analysis.lines.prefix(3).enumerated()), id: \.offset) { index, line in
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        ScoreCell(score: line.score, prominent: index == 0)
+                            .frame(width: 56, alignment: .leading)
                         Text(line.san.prefix(8).joined(separator: " "))
-                            .font(.footnote.monospaced())
+                            .font(.notation)
                             .lineLimit(1)
                             .truncationMode(.tail)
-                            .foregroundStyle(index == 0 ? .primary : .secondary)
+                            .foregroundStyle(index == 0 ? Palette.ink : Palette.inkSoft)
                     }
                 }
-            } else if engine.isReady, !viewed.isOver {
-                Text("引擎正在看这个局面…")
+            } else if viewed.isOver {
+                Text(viewed.resultToken == "*" ? "对局结束" : "终局 \(viewed.resultToken)")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.inkSoft)
             } else if case .unavailable(let reason) = engine.status {
-                Text(reason).font(.footnote).foregroundStyle(.orange)
+                Text(reason).font(.footnote).foregroundStyle(Palette.alarm)
+            } else {
+                Text("引擎在算").font(.footnote).foregroundStyle(Palette.inkSoft)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 92, alignment: .top)
+        .frame(maxWidth: .infinity, minHeight: 62, alignment: .topLeading)
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
         // The recommendation keeps changing as the search deepens, and that is the point
         // (docs/adr/0009) — so it must not make the layout jump while it does.
         .animation(.none, value: session.analysis?.depth)
     }
 
-    private var movetext: some View {
+    /// The moves, set on the page rather than in a card: it is a record, not a control.
+    private var notation: some View {
         ScrollView {
-            Text(movetextString)
+            Text(notationText)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .defaultScrollAnchor(.bottom)
-        .frame(height: 54)
-        .padding(8)
-        .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+        .frame(height: 40)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Palette.hairline).frame(height: 0.5).padding(.horizontal, 16)
+        }
     }
 
-    /// Walking through the game. Going back here is looking, not undoing — the moves stay
-    /// where they are, and playing something else from an earlier position keeps what used to
-    /// follow as a Variation rather than throwing it away.
-    private var browsing: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 10) {
-                Button {
+    private var controls: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 8) {
+                TransportButton(label: "上一步", symbol: "chevron.left") {
                     selected = nil
                     session.step(by: -1)
-                } label: {
-                    Label("上一步", systemImage: "chevron.left")
-                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
                 .disabled(session.cursor == 0)
+                .opacity(session.cursor == 0 ? 0.4 : 1)
 
-                Button {
+                TransportButton(label: "下一步", symbol: "chevron.right", trailingSymbol: true) {
                     selected = nil
                     session.step(by: 1)
-                } label: {
-                    Label("下一步", systemImage: "chevron.right")
-                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
                 .disabled(session.isAtLatest)
+                .opacity(session.isAtLatest ? 0.4 : 1)
 
-                Button {
+                TransportButton(label: "悔棋", symbol: "arrow.uturn.backward") {
                     selected = nil
                     session.undo()
-                } label: {
-                    Label("悔棋", systemImage: "arrow.uturn.backward")
-                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
                 .disabled(!session.isAtLatest || session.game.plies.isEmpty)
+                .opacity(!session.isAtLatest || session.game.plies.isEmpty ? 0.4 : 1)
             }
 
-            if !session.isAtLatest {
-                HStack {
-                    Text("在看第 \(session.cursor)/\(session.game.plies.count) 步")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("回到最新") {
-                        selected = nil
-                        session.jumpToLatest()
-                    }
-                    .font(.footnote)
+            if !session.variationsHere.isEmpty { variations }
+
+            // Two clusters to a line, twice. Four separate rows of one control each was mostly
+            // empty space, and pairing them is also truer: which way up the board is pairs with
+            // who started, and white's player only means anything next to black's.
+            HStack(spacing: 10) {
+                ChipCluster(
+                    title: "视角",
+                    options: [
+                        .init(value: Orientation.whiteAtBottom, label: "白在下"),
+                        .init(value: Orientation.blackAtBottom, label: "黑在下"),
+                    ],
+                    selection: session.orientation
+                ) { orientation in
+                    withAnimation(.snappy(duration: 0.2)) { session.orientation = orientation }
+                }
+                Spacer(minLength: 2)
+                ChipCluster(
+                    title: "先走",
+                    options: [
+                        .init(
+                            value: PieceColour.white, label: "白先走",
+                            isEnabled: session.canStart(withSideToMove: .white)
+                        ),
+                        .init(
+                            value: PieceColour.black, label: "黑先走",
+                            isEnabled: session.canStart(withSideToMove: .black)
+                        ),
+                    ],
+                    selection: session.startingSideToMove
+                ) { colour in
+                    selected = nil
+                    session.restart(withSideToMove: colour)
                 }
             }
-        }
-    }
 
-    @ViewBuilder private var variations: some View {
-        let lines = session.variationsHere
-        if !lines.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("这里还走过别的").font(.footnote).foregroundStyle(.secondary)
-                ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                    Button {
-                        selected = nil
-                        session.enterVariation(index)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.triangle.branch")
-                            Text(line.prefix(6).map(\.san).joined(separator: " "))
-                                .font(.footnote.monospaced())
-                                .lineLimit(1)
-                            Spacer()
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(
-                            Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 8)
-                        )
+            HStack(spacing: 10) {
+                ForEach([PieceColour.white, .black], id: \.self) { colour in
+                    ChipCluster(
+                        title: colour == .white ? "白方" : "黑方",
+                        options: Controller.allCases.map {
+                            .init(
+                                value: $0, label: $0.chinese,
+                                isEnabled: $0 == .hand || engine.isReady
+                            )
+                        },
+                        selection: session.controller(for: colour)
+                    ) { controller in
+                        session.setController(controller, for: colour)
                     }
-                    .buttonStyle(.plain)
+                    if colour == .white { Spacer(minLength: 2) }
                 }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private var settings: some View {
-        VStack(spacing: 10) {
-            // Which way up the board is, kept on screen next to who started, because they are
-            // the two things about a game that a picture cannot settle and a player may want
-            // to change at any point.
-            ChipPair(
-                title: "视角",
-                options: [
-                    .init(value: Orientation.whiteAtBottom, label: "白在下"),
-                    .init(value: Orientation.blackAtBottom, label: "黑在下"),
-                ],
-                selection: session.orientation
-            ) { orientation in
-                withAnimation(.snappy(duration: 0.2)) { session.orientation = orientation }
-            }
-
-            // Kept on screen for the whole game, not only at the start: it is how a game is
-            // restarted, and it says which side began even when that is twenty moves ago.
-            ChipPair(
-                title: "先走方",
-                options: [
-                    .init(
-                        value: PieceColour.white, label: "白先走",
-                        isEnabled: session.canStart(withSideToMove: .white)
-                    ),
-                    .init(
-                        value: PieceColour.black, label: "黑先走",
-                        isEnabled: session.canStart(withSideToMove: .black)
-                    ),
-                ],
-                selection: session.startingSideToMove
-            ) { colour in
-                selected = nil
-                session.restart(withSideToMove: colour)
             }
 
             if !session.game.plies.isEmpty {
-                Text("点「白先走」或「黑先走」会从头开始；已经走过的这局会留在对局记录里。")
+                Text("换先走方会重开一局，走过的这局留在记录里")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.inkSoft)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
+    }
 
-            ForEach([PieceColour.white, .black], id: \.self) { colour in
-                HStack {
-                    Text(colour.chinese).font(.subheadline)
-                    Spacer()
-                    Picker(colour.chinese, selection: controllerBinding(colour)) {
-                        ForEach(Controller.allCases, id: \.self) { controller in
-                            Text(controller.chinese).tag(controller)
-                        }
+    /// The lines that were played from here instead of the move that follows.
+    private var variations: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(Array(session.variationsHere.enumerated()), id: \.offset) { index, line in
+                Button {
+                    selected = nil
+                    session.enterVariation(index)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.triangle.branch").font(.caption2)
+                        Text(line.prefix(6).map(\.san).joined(separator: " "))
+                            .font(.notation)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
                     }
-                    .pickerStyle(.segmented)
-                    .frame(width: 150)
-                    .disabled(!engine.isReady)
+                    .foregroundStyle(Palette.analysis)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Palette.analysis.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
                 }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -358,8 +444,7 @@ struct GameScreen: View {
         }
     }
 
-    /// The game as it stands where the player is looking, which is the position everything on
-    /// this screen is about — the board, the legal moves, and what the engine is analysing.
+    /// The game where the player is looking, which is what everything on this screen is about.
     private var viewed: Game { session.viewed }
 
     private var pieces: [Square: Piece] {
@@ -386,7 +471,7 @@ struct GameScreen: View {
         session.analysis?.bestMove.flatMap { MoveSquares(uci: $0) }
     }
 
-    private var movetextString: AttributedString {
+    private var notationText: AttributedString {
         var text = AttributedString()
         var number = Int(session.game.startFEN.split(separator: " ").last.flatMap { Int($0) } ?? 1)
         var sideToMove: PieceColour =
@@ -394,39 +479,29 @@ struct GameScreen: View {
 
         for (index, ply) in session.game.plies.enumerated() {
             if sideToMove == .white {
-                text += plain("\(number). ")
+                text += styled("\(number). ", Palette.inkSoft)
             } else if text.characters.isEmpty {
-                text += plain("\(number)... ")
+                text += styled("\(number)... ", Palette.inkSoft)
             }
             // The move that led to the position on screen, so browsing has somewhere to point.
-            var san = plain(ply.san)
-            if index == session.cursor - 1 {
-                san.font = .footnote.monospaced().bold()
-                san.foregroundColor = .accentColor
-            }
+            let isCursor = index == session.cursor - 1
+            var san = styled(ply.san, isCursor ? Palette.analysis : Palette.ink)
+            if isCursor { san.font = .notation.weight(.bold) }
             text += san
             if !ply.variations.isEmpty {
-                var mark = plain(" (+\(ply.variations.count))")
-                mark.foregroundColor = .secondary
-                text += mark
+                text += styled("⁽\(ply.variations.count)⁾", Palette.inkSoft)
             }
-            text += plain(" ")
+            text += styled(" ", Palette.ink)
             if sideToMove == .black { number += 1 }
             sideToMove = sideToMove.opposite
         }
-        return text.characters.isEmpty ? plain("还没走棋。") : text
+        return text.characters.isEmpty ? styled("从这里开始走", Palette.inkSoft) : text
     }
 
-    private func plain(_ string: String) -> AttributedString {
+    private func styled(_ string: String, _ colour: Color) -> AttributedString {
         var piece = AttributedString(string)
-        piece.font = .footnote.monospaced()
+        piece.font = .notation
+        piece.foregroundColor = colour
         return piece
-    }
-
-    private func controllerBinding(_ colour: PieceColour) -> Binding<Controller> {
-        Binding(
-            get: { session.controller(for: colour) },
-            set: { session.setController($0, for: colour) }
-        )
     }
 }

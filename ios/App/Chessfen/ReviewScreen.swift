@@ -137,7 +137,7 @@ struct ReviewScreen: View {
                     )
             }
             Spacer()
-            ScoreLabel(score: run.score(atPly: ply), prominent: true)
+            ScoreCell(score: run.score(atPly: ply), prominent: true)
         }
     }
 

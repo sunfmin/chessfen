@@ -19,6 +19,12 @@ import Foundation
     private(set) var status: Status = .starting
     private(set) var service: EngineService?
 
+    /// Whether the app is in front of the user. The engine searches only while it is, and this
+    /// is the one place that decides so — screens observe it rather than reading the scene
+    /// phase for themselves, because two definitions of "in front of the user" would sooner or
+    /// later disagree about whether to be thinking.
+    private(set) var isActive = true
+
     var isReady: Bool { service != nil }
 
     func start() async {
@@ -26,6 +32,9 @@ import Foundation
         let outcome = await Task.detached(priority: .userInitiated) { Self.build() }.value
         switch outcome {
         case .success(let service):
+            // The app can perfectly well have left while 112 MiB of weights were being read,
+            // and an engine that arrives to an empty screen should arrive paused.
+            if !isActive { service.pause() }
             self.service = service
             status = .ready
         case .failure(let failure):
@@ -33,10 +42,20 @@ import Foundation
         }
     }
 
-    /// Stops whatever search is running. Screens observe their own lifetimes, so nothing
-    /// here has to know which one had a search going.
-    func suspend() {
-        service?.stop()
+    /// The app came to the front, or left it.
+    ///
+    /// An unbounded Analysis left running while nobody is looking is a phone getting warm in a
+    /// pocket over a position nobody is reading. Pausing stops the running search and holds a
+    /// Review where it stands; resuming lets the Review carry on at the same Depth, and lets
+    /// the screens start the Analysis they want again.
+    func setActive(_ active: Bool) {
+        guard active != isActive else { return }
+        isActive = active
+        if active {
+            service?.resume()
+        } else {
+            service?.pause()
+        }
     }
 
     // The build happens off the main thread, so everything it touches is nonisolated.

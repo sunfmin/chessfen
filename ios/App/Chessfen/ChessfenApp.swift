@@ -13,11 +13,12 @@ struct ChessfenApp: App {
                 .environment(engine)
                 .environment(library)
                 .task { await engine.start() }
-                .onChange(of: scenePhase) { _, phase in
-                    // An unbounded Analysis left running while the app is not on screen is
-                    // a phone getting warm in a pocket over a position nobody is looking
-                    // at. Whatever screen owns the search restarts it on the way back.
-                    if phase != .active { engine.suspend() }
+                // The only reader of the scene phase in the app: it is turned into
+                // `engine.isActive` here, and everything that cares watches that instead.
+                // `initial` matters for a launch that never reaches `.active` — into the
+                // background for a fetch, say — where there is no change to hear about.
+                .onChange(of: scenePhase, initial: true) { _, phase in
+                    engine.setActive(phase == .active)
                 }
         }
     }

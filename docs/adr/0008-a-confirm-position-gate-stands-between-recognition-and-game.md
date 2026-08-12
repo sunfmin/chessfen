@@ -1,5 +1,10 @@
 # A Confirm Position gate stands between Recognition and Game
 
+> **Revised by ADR-0011.** The gate is no longer mandatory: Recognition opens a Game and
+> the screen became the Piece Editor, entered when something came out wrong. Everything
+> below about *what can go wrong* and about validating a Position before Stockfish sees it
+> still holds — 0011 only moves where the screen sits in the flow.
+
 Recognition never flows straight into a Game. A mandatory screen shows the recognised
 Position beside the source image, highlights Shaky Squares, lets any square be edited,
 lets the Orientation be flipped, and exposes every Unknowable Field — side to move,

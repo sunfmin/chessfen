@@ -14,6 +14,15 @@ import PackageDescription
 // working build at the older speed.
 let stockfishDefines: [CXXSetting] = [
     .define("NDEBUG"),
+    // Pinned rather than inherited, because what Xcode hands a package target is the app's
+    // optimisation level and that is `-O0` in Debug. An unoptimised Stockfish is not a
+    // slightly slower Stockfish: with libc++ uninlined, a one-line `basic_string::__is_long`
+    // is the top entry in a profile, and the search burns cores to reach a depth an
+    // optimised build reaches in a fraction of the time. Debug builds are what a day of
+    // development actually runs, so they get the same `-O3` the Stockfish Makefile uses;
+    // the cost is that the vendored C++ cannot be stepped through, which is not something
+    // anyone does to it.
+    .unsafeFlags(["-O3"]),
     .define("IS_64BIT"),
     .define("USE_PREFETCH"),
     .define("USE_POPCNT"),

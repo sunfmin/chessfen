@@ -114,6 +114,36 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
         retune()
     }
 
+    // ------------------------------------------------------------- the reading
+
+    /// Whether this game's starting position can be taken back to the editor. True for anything
+    /// read off a picture, for as long as the game exists: the thing most likely to be wrong
+    /// about such a game is a piece, and finding that out ten moves later is the normal case.
+    var canEditPosition: Bool { origin == .recognised }
+
+    /// The squares recognition was unsure about, while they are still worth pointing at. Once a
+    /// move has been played the position has been accepted in practice, and rings on the board
+    /// would be nothing but noise.
+    var unconfirmedSquares: Set<Square> {
+        origin == .recognised && game.plies.isEmpty ? shaky : []
+    }
+
+    /// Swaps the position the game starts from. Only for a game nobody has moved in yet — which
+    /// is the case this exists for: correcting a piece straight after the photograph should fix
+    /// the game in front of you, not leave a second record behind.
+    func replaceStart(with fresh: Game) -> Bool {
+        guard game.plies.isEmpty else { return false }
+        searchTask?.cancel()
+        game = fresh
+        cursor = 0
+        analysis = nil
+        isThinking = false
+        lastHumanThink = nil
+        shaky = []
+        retune()
+        return true
+    }
+
     // ---------------------------------------------------------------- browsing
 
     /// The Game as it stands where the player is looking.
@@ -256,7 +286,12 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
         turnBegan = nil
 
         let position = viewed
-        guard let engine, !position.isOver else { return }
+        // Nothing starts while the engine is paused — not the standing Analysis, and not the
+        // engine's own move, which takes a bounded budget and so would otherwise slip past the
+        // gate in `analyse`. `retune` is called from more places than the app coming back
+        // (`onAppear`, the engine having just played), so the answer to "what should the engine
+        // be doing right now" has to include "nothing, nobody is watching".
+        guard let engine, !position.isOver, !engine.isPaused else { return }
 
         if isEngineTurn {
             isThinking = true

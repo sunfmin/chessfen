@@ -31,7 +31,7 @@ targets:
     info:
       path: Chessfen/Info.plist
       properties:
-        CFBundleDisplayName: Chessfen
+        CFBundleDisplayName: 棋镜
         UILaunchScreen:
           UIColorName: ""
         UISupportedInterfaceOrientations:

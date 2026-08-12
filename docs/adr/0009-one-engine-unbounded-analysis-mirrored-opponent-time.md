@@ -33,4 +33,12 @@ setting in this app.
   load while the player is away from it; the ceiling is a setting and can be removed.
 - With both Controllers set to the engine there is no human move to mirror, so the last
   mirrored duration carries over (3s until one exists).
-- Search must stop when the app leaves the foreground.
+- Search must stop when the app leaves the foreground, and the gate that enforces it sits in
+  the engine rather than in the screens — a screen can forget, and one that did would leave a
+  phone thinking in a pocket. What a search wanting to start while the app is away does depends
+  on what it is for: an unbounded Analysis is refused, because it belongs to a screen someone
+  is looking at and that screen asks again on the way back, while a bounded search is held and
+  run when the app returns, because someone is waiting on its answer. Holding is what a Review
+  in particular needs: stopping its searches one ply at a time and carrying on would score the
+  rest of the game at whatever Depth each got to, and a Review that is not at one uniform Depth
+  is not comparable with itself.

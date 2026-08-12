@@ -17,7 +17,10 @@ struct AboutScreen: View {
             List {
                 Section {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Chessfen").font(.title2.bold())
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text("棋镜").font(.title2.bold())
+                            Text("Chessfen").eyebrow()
+                        }
                         Text("拍下棋盘，认出局面，接着下。全部在这台设备上跑，不联网。")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
@@ -26,7 +29,7 @@ struct AboutScreen: View {
                 }
 
                 Section("版本") {
-                    row("应用", Self.version)
+                    row("棋镜", Self.version)
                     row("引擎", "Stockfish 18")
                     switch engine.status {
                     case .ready: row("引擎状态", "已就绪")

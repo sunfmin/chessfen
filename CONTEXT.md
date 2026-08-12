@@ -76,10 +76,25 @@ A FEN field that no image can show: side to move, castling rights, en passant sq
 and the clocks. Filled by declared default or by the user, never guessed silently.
 _Avoid_: missing field, default, metadata
 
+**Piece Editor**:
+Where a Position that came out of a Recognition wrong is put right — which piece stands
+on which Square, plus the two Unknowable Fields nothing else shows (castling rights and
+the en passant square). Only reachable while the Game has no moves, since replacing a
+starting Position under played moves would invalidate them. 改棋子 on screen.
+_Avoid_: confirm screen, gate, setup, board editor
+
+**Ply**:
+One move by one colour, as written into a Game: what was played, what it is called, and
+what a Review made of it. A Game is an ordered list of these. Distinct from a move, which
+is something the rules merely allow.
+_Avoid_: move, turn, half-move, step
+
 **Analysis**:
 What the engine reports about a Position: a Score, a Depth, and one or more Lines. Runs
 unbounded — it deepens for as long as it is left alone and its answer keeps changing, so
-an Analysis is always a snapshot at a Depth, never a verdict. Never mutates a Game.
+an Analysis is always a snapshot at a Depth, never a verdict. Left alone means in front of
+the player: an Analysis belongs to a screen someone is looking at, and the engine does not
+take one up while the app is away (docs/adr/0009). Never mutates a Game.
 _Avoid_: evaluation (ambiguous with the engine's static eval), hint, suggestion
 
 **Review**:
@@ -89,9 +104,17 @@ vary with how long each position happened to be looked at.
 _Avoid_: post-mortem, curve, retrospective
 
 **Line**:
-One principal variation — a sequence of moves the engine expects, with the Score it
-leads to. `MultiPV` yields several per Analysis.
-_Avoid_: PV, variation, branch
+A sequence of moves the engine expects, with the Score it leads to. `MultiPV` yields
+several per Analysis. A Line is a hypothesis and nothing was played.
+_Avoid_: PV, branch — and not Variation, which is the Game's word for moves that were
+actually played
+
+**Variation**:
+A line that was played from some Ply and then left behind, kept hanging off that Ply
+rather than discarded. Playing a different move from a rewound Game makes one; stepping
+back into it makes the line it replaces a Variation in its turn. This is exactly what
+PGN's brackets hold, which is why nothing is lost by taking a move back.
+_Avoid_: branch, alternative, undo history, side line
 
 **Best Move**:
 The first move of the highest-ranked Line of a completed Analysis.
