@@ -191,7 +191,12 @@ public enum PerspectiveCorrection {
                         x: corners[index].x + delta.x, y: corners[index].y + delta.y
                     )
                     trial.corners = corners
-                    let trialScore = score(trial, in: image, size: size)
+                    // Each score renders the quad through Core Image, whose intermediates
+                    // are autoreleased. The descent is one synchronous loop, so without a
+                    // pool per trial those intermediates — megabytes per render — pile up
+                    // until the loop ends; on a phone they reached three gigabytes and the
+                    // system killed the app.
+                    let trialScore = autoreleasepool { score(trial, in: image, size: size) }
                     if trialScore > bestScore {
                         bestScore = trialScore
                         best = trial
@@ -208,6 +213,12 @@ public enum PerspectiveCorrection {
         }
         return (best, bestScore)
     }
+
+    /// One renderer for every rectification the descent makes. A `CIContext` is a piece of
+    /// the GPU's plumbing, and building one per score call made the descent pay that cost
+    /// hundreds of times over — the descent is the reason this method exists, and it is
+    /// the caller that runs it hundreds of times.
+    private static let renderContext = CIContext(options: [.useSoftwareRenderer: false])
 
     /// The quad's contents, straightened into a `size`-by-`size` picture.
     public static func rectified(
@@ -231,8 +242,7 @@ public enum PerspectiveCorrection {
               output.extent.width >= 1, output.extent.height >= 1
         else { return nil }
 
-        let context = CIContext(options: [.useSoftwareRenderer: false])
-        guard let rendered = context.createCGImage(output, from: output.extent),
+        guard let rendered = renderContext.createCGImage(output, from: output.extent),
               let straightened = RGBImage(cgImage: rendered)
         else { return nil }
         return straightened.resized(width: size, height: size)

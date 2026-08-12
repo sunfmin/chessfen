@@ -262,6 +262,26 @@ import Foundation
         game.deletingPathExtension().appendingPathExtension("png")
     }
 
+    /// Keeps a photograph the moment it is taken, before anything has tried to read it.
+    ///
+    /// Recognition is where the app is most likely to die — it is the only thing it does
+    /// that can cost minutes and gigabytes — and a picture that died with it cannot be
+    /// taken again. The file lives beside the games under its own name, distinct from a
+    /// game's sidecar, and it never shows up as an entry: the library lists PGNs only.
+    @discardableResult
+    func keepPhotograph(_ image: RGBImage) -> URL? {
+        guard let data = image.pngData else { return nil }
+        let stamp = Self.stampFormatter.string(from: Date())
+        var url = directory.appending(path: "chessfen-photo-\(stamp).png")
+        var suffix = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = directory.appending(path: "chessfen-photo-\(stamp)-\(suffix).png")
+            suffix += 1
+        }
+        guard folder.write(data, to: url) else { return nil }
+        return url
+    }
+
     func writePicture(_ image: RGBImage, for game: URL) {
         guard let data = image.pngData else { return }
         folder.write(data, to: Self.pictureURL(for: game))
