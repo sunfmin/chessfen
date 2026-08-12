@@ -33,6 +33,22 @@ public struct PGN: Hashable, Sendable {
         tags.first { $0.name == name }?.value
     }
 
+    /// Sets a tag, adds it if it was not there, and removes it for nil.
+    ///
+    /// In place where it already sits, because the order tags are written in is part of the file:
+    /// the roster comes first and re-adding a tag at the end would move it out of its place.
+    public mutating func setTag(_ name: String, to value: String?) {
+        guard let value else {
+            tags.removeAll { $0.name == name }
+            return
+        }
+        if let index = tags.firstIndex(where: { $0.name == name }) {
+            tags[index].value = value
+        } else {
+            tags.append(Tag(name, value))
+        }
+    }
+
     // ------------------------------------------------------------------ writing
 
     public var text: String {

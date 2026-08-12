@@ -399,23 +399,22 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     // --------------------------------------------------------------- storage
 
     var pgn: PGN {
-        var roster = tags
-        func set(_ name: String, _ value: String) {
-            if let index = roster.firstIndex(where: { $0.name == name }) {
-                roster[index].value = value
-            } else {
-                roster.append(PGN.Tag(name, value))
-            }
+        var written = PGN(game: game, tags: tags)
+        // Event is only filled in when the game is not in a collection. It used to be set to the
+        // app's name unconditionally, which would have rubbed out the collection of every filed game
+        // on its next move — the tag naming the collection and the tag naming the app are the same
+        // tag, and the file is the only place either of them lives (docs/adr/0010).
+        if written.tag("Event").map(GameLibrary.unfiledEvents.contains) ?? true {
+            written.setTag("Event", to: "Chessfen")
         }
-        set("Event", "Chessfen")
-        set("White", controller(for: .white).playerName)
-        set("Black", controller(for: .black).playerName)
-        set("Result", game.resultToken)
-        set(GameOrigin.tagName, origin.tagValue)
-        if roster.first(where: { $0.name == "Date" }) == nil {
-            roster.append(PGN.dateTag())
+        written.setTag("White", to: controller(for: .white).playerName)
+        written.setTag("Black", to: controller(for: .black).playerName)
+        written.setTag("Result", to: game.resultToken)
+        written.setTag(GameOrigin.tagName, to: origin.tagValue)
+        if written.tag("Date") == nil {
+            written.tags.append(PGN.dateTag())
         }
-        return PGN(game: game, tags: roster)
+        return written
     }
 
     /// Writes after every move. A game is a few kilobytes of text, so there is no reason for

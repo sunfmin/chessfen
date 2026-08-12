@@ -5,9 +5,16 @@ import UIKit
 
 @testable import Chessfen
 
+@MainActor private var report: [String] = []
+@MainActor private func print(_ line: String) { report.append(line) }
+
 @MainActor
 @Test("diagnostics: what does a hosted SwiftUI screen expose")
 func diagnostics() async throws {
+    defer {
+        try? report.joined(separator: "\n")
+            .write(to: ScreenImage.directory.appending(path: "diagnostics.txt"), atomically: true, encoding: .utf8)
+    }
     for name in [
         "_AXSSetAutomationEnabled", "AXSSetAutomationEnabled", "_AXSAutomationEnabled",
         "_AXSApplicationAccessibilityEnabled", "_AXSSetApplicationAccessibilityEnabled",

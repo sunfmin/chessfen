@@ -23,6 +23,15 @@ struct LibraryScreen: View {
     @State private var photoItem: PhotosPickerItem?
     @State private var isRecognising = false
     @State private var failure: String?
+    /// The game being renamed, and the name being typed for it.
+    @State private var renaming: GameLibrary.Entry?
+    @State private var nameDraft = ""
+    /// The game a brand new collection is being made for.
+    @State private var filing: GameLibrary.Entry?
+    /// The collection being renamed, and the name being typed for either job — one field, because
+    /// only one of these dialogs can be up at a time.
+    @State private var renamingCollection: String?
+    @State private var collectionDraft = ""
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -122,6 +131,42 @@ struct LibraryScreen: View {
         } message: {
             Text(failure ?? "")
         }
+        .alert("给这一局起个名字", isPresented: .constant(renaming != nil)) {
+            TextField("名字", text: $nameDraft)
+            Button("好") {
+                if let entry = renaming { library.rename(entry, to: Self.trimmed(nameDraft)) }
+                renaming = nil
+            }
+            Button("取消", role: .cancel) { renaming = nil }
+        } message: {
+            Text("作品集里按名字排，所以「第 002 题」这样的名字会排在你想的地方。留空就用存下来的时间。")
+        }
+        .alert("新建作品集", isPresented: .constant(filing != nil)) {
+            TextField("作品集名字", text: $collectionDraft)
+            Button("好") {
+                if let entry = filing, let name = Self.trimmed(collectionDraft) {
+                    library.file(entry, under: name)
+                }
+                filing = nil
+            }
+            Button("取消", role: .cancel) { filing = nil }
+        }
+        .alert("重命名作品集", isPresented: .constant(renamingCollection != nil)) {
+            TextField("作品集名字", text: $collectionDraft)
+            Button("好") {
+                if let old = renamingCollection, let name = Self.trimmed(collectionDraft) {
+                    library.renameCollection(old, to: name)
+                }
+                renamingCollection = nil
+            }
+            Button("取消", role: .cancel) { renamingCollection = nil }
+        }
+    }
+
+    /// A typed name, or nil for one that was only spaces — which is how a name is taken back off.
+    private static func trimmed(_ text: String) -> String? {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return clean.isEmpty ? nil : clean
     }
 
     // ------------------------------------------------------------------ parts
@@ -230,45 +275,115 @@ struct LibraryScreen: View {
                     .padding(.vertical, 10)
             }
 
-            ForEach(library.entries) { entry in
+            ForEach(library.collections) { collection in
+                // A heading only once there is more than one pile. With everything unfiled the list
+                // is the list, and 未归类 above it would be naming the absence of an idea.
+                if let name = collection.name {
+                    collectionHeader(name, count: collection.entries.count)
+                } else if library.collections.count > 1 {
+                    collectionHeader(nil, count: collection.entries.count)
+                }
+                ForEach(collection.entries) { entry in
+                    row(entry)
+                }
+            }
+        }
+    }
+
+    /// A collection's name, and what can be done to the collection itself.
+    private func collectionHeader(_ name: String?, count: Int) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: name == nil ? "tray" : "folder.fill")
+                .font(.caption2)
+                .foregroundStyle(Palette.inkSoft)
+            Text(name ?? "未归类").font(.footnote.weight(.semibold)).foregroundStyle(Palette.ink)
+            Text("\(count)").font(.caption2).foregroundStyle(Palette.inkSoft)
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 10)
+        .padding(.horizontal, 2)
+        .contextMenu {
+            if let name {
                 Button {
-                    open(entry)
+                    collectionDraft = name
+                    renamingCollection = name
                 } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: entry.origin.symbol)
-                            .font(.footnote)
-                            .foregroundStyle(
-                                entry.origin == .recognised ? Palette.parchment : Palette.ink
-                            )
-                            .frame(width: 30, height: 30)
-                            .background(
-                                entry.origin == .recognised ? Palette.analysis : Palette.chipRest,
-                                in: RoundedRectangle(cornerRadius: 8)
-                            )
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(entry.title)
-                                .font(.subheadline.weight(.medium))
-                                .foregroundStyle(Palette.ink)
-                            Text(entry.detail)
-                                .font(.caption)
-                                .foregroundStyle(Palette.inkSoft)
-                        }
-                        Spacer(minLength: 0)
-                        Image(systemName: "chevron.right")
-                            .font(.caption2)
-                            .foregroundStyle(Palette.inkSoft)
-                    }
-                    .padding(12)
-                    .background(Palette.raised, in: RoundedRectangle(cornerRadius: 12))
+                    Label("重命名作品集", systemImage: "pencil")
                 }
-                .buttonStyle(.plain)
-                .contextMenu {
-                    Button(role: .destructive) {
-                        library.delete(entry)
+            }
+        }
+    }
+
+    private func row(_ entry: GameLibrary.Entry) -> some View {
+        Button {
+            open(entry)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: entry.origin.symbol)
+                    .font(.footnote)
+                    .foregroundStyle(
+                        entry.origin == .recognised ? Palette.parchment : Palette.ink
+                    )
+                    .frame(width: 30, height: 30)
+                    .background(
+                        entry.origin == .recognised ? Palette.analysis : Palette.chipRest,
+                        in: RoundedRectangle(cornerRadius: 8)
+                    )
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(entry.title)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(Palette.ink)
+                    Text(entry.detail)
+                        .font(.caption)
+                        .foregroundStyle(Palette.inkSoft)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(Palette.inkSoft)
+            }
+            .padding(12)
+            .background(Palette.raised, in: RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button {
+                nameDraft = entry.name ?? ""
+                renaming = entry
+            } label: {
+                Label("重命名", systemImage: "pencil")
+            }
+            Menu {
+                // The collections that exist, with a tick against the one this game is already in,
+                // so the menu doubles as the answer to "where is this filed".
+                ForEach(library.collectionNames, id: \.self) { name in
+                    Button {
+                        library.file(entry, under: name)
                     } label: {
-                        Label("删除", systemImage: "trash")
+                        Label(name, systemImage: entry.collection == name ? "checkmark" : "folder")
                     }
                 }
+                Button {
+                    collectionDraft = ""
+                    filing = entry
+                } label: {
+                    Label("新建作品集…", systemImage: "folder.badge.plus")
+                }
+                if entry.collection != nil {
+                    Button {
+                        library.file(entry, under: nil)
+                    } label: {
+                        Label("移出作品集", systemImage: "tray.and.arrow.up")
+                    }
+                }
+            } label: {
+                Label("归到作品集", systemImage: "folder")
+            }
+            Divider()
+            Button(role: .destructive) {
+                library.delete(entry)
+            } label: {
+                Label("删除", systemImage: "trash")
             }
         }
     }
