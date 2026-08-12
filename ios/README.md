@@ -19,7 +19,8 @@ ios/
 ├── Resources/Nets/        # the two NNUE files (Git LFS)
 ├── Tests/                 # 116 tests
 └── App/                   # the SwiftUI shell: screens and nothing else
-    └── project.yml        # the Xcode project is generated from this
+    ├── project.yml        # the Xcode project is generated from this
+    └── ScreenTests/       # the screens, drawn into PNGs and held to what they say
 ```
 
 The split is the point: everything that decides anything lives in `ChessfenKit`, which has no
@@ -82,6 +83,32 @@ xcrun devicectl device install app --device <udid> \
     /tmp/dd/Build/Products/Release-iphoneos/Chessfen.app
 xcrun devicectl device process launch --device <udid> --terminate-existing com.sunfmin.chessfen
 ```
+
+## The screens, photographed
+
+```bash
+cd ios/App
+xcodebuild test -project Chessfen.xcodeproj -scheme Chessfen \
+    -destination 'platform=iOS Simulator,name=iPhone 17'
+open out/game-in-play.png
+```
+
+Nine pictures land in `ios/App/out`: a game under way, a board straight off a photograph, one
+filed into a collection, a reopened game, the engine on its own clock, a Variation offered
+where it branches, a mate, practice, and the whole screen at night. They are not in the
+repository — they are written to be looked at, and they are rewritten by every run.
+
+The only thing faked is the search. `Engine` is a protocol the app's `EngineService` conforms
+to, so a test can hand a screen a scripted `Analysis` and everything above the search — the
+retune, the Score written against the Ply, every view — is the app's own code. `ScreenImage.write`
+is the only glue: it puts the view in a real window on the simulator's scene, waits for it to
+settle, writes the PNG, and hands back everything the screen said. A new screenshot is a new
+subject passed to it, not new plumbing.
+
+The words come from the accessibility tree, which is also the point: a screen that says nothing
+to that tree says nothing to VoiceOver either. SwiftUI only builds it when something is
+listening, so the helper switches automation on through `libAccessibility` — a test-only lever,
+and the reason `#expect(rendered.says("+0.38"))` can be written at all.
 
 ## How the app hangs together
 

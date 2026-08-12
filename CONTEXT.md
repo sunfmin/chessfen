@@ -136,6 +136,14 @@ play a side, hand-move both to replay a book game, swap sides, or let the engine
 itself.
 _Avoid_: opponent, mode, player type, difficulty
 
+**Asked Move**:
+One move played by the engine because somebody asked for it, for whichever colour is on
+the clock — not a Controller, which stands until it is changed, and not advice left on
+screen. It is asked for by holding a button, and the time it is held is the time the
+engine gets: the same bargain as Mirrored Time, with a thumb in place of the clock. 让引擎走
+on screen.
+_Avoid_: hint, auto-move, assist, take over
+
 **Mirrored Time**:
 How long the engine thinks before moving a colour it controls: about as long as the
 player took over their own last move. The engine is never handicapped — it plays at full
