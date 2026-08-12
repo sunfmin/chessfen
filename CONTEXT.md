@@ -38,14 +38,23 @@ The canonical vector artwork for the twelve pieces, as SVG path data. One table 
 both Templates and on-screen board drawing, so the two cannot disagree.
 _Avoid_: assets, sprites, icons
 
+**Local Light**:
+How bright the board's own light squares are beside one Cell. A piece body's brightness
+says nothing on its own — the paper in a photograph runs from bright at the lit edge of
+the page to dim at the other — so white is told from black by the ratio to this, never by
+a fixed brightness.
+_Avoid_: exposure, white balance, threshold, brightness
+
 **Score / Margin**:
 Score is a Silhouette's agreement (IoU) with its winning Template. Margin is the gap to
-the runner-up piece type. Both are per-Square.
+the runner-up piece type. Colour Margin is how far the body sat from the line between
+white and black, as a fraction of the Local Light. All three are per-Square.
 _Avoid_: confidence (reserved for the derived boolean), probability, accuracy
 
 **Shaky Square**:
-A Square whose Score or Margin is below the accept threshold — the ones a human should
-glance at. The recogniser is allowed to be wrong, never *quietly* wrong.
+A Square whose Score, Margin or Colour Margin is below the accept threshold — the ones a
+human should glance at. The recogniser is allowed to be wrong, never *quietly* wrong, and
+that covers reading a piece as the wrong colour as much as reading it as the wrong shape.
 _Avoid_: uncertain, failed, error
 
 **Orientation**:

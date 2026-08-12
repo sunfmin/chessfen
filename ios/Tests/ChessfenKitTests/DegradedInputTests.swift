@@ -54,6 +54,42 @@ func tinySquaresAreAdmitted() throws {
     #expect(!result.shaky.isEmpty)
 }
 
+/// Multiplies brightness by a ramp across the picture, left to right — which is what a
+/// lamp to one side of a page, or a window behind a screen, does to the pixels. Squares and
+/// pieces darken together, so nothing about the board changes except how much light fell on
+/// it.
+private func shaded(_ image: RGBImage, from: Double, to: Double) -> RGBImage {
+    var pixels = image.pixels
+    for y in 0..<image.height {
+        for x in 0..<image.width {
+            let factor = from + (to - from) * Double(x) / Double(max(1, image.width - 1))
+            let base = (y * image.width + x) * 3
+            for channel in 0..<3 {
+                pixels[base + channel] = UInt8((Double(pixels[base + channel]) * factor).rounded())
+            }
+        }
+    }
+    return RGBImage(width: image.width, height: image.height, pixels: pixels)
+}
+
+@Test("a board lit from one side is read at the dark end too")
+func unevenLightingIsRead() throws {
+    // The position, and the ramp, of a photograph of a book page taken under a lamp: the
+    // paper reads 230 at the lit edge and 110 at the other, and the white king and rook at
+    // the dark end came back black. Anything absolute cuts a board like this in half —
+    // 0.45 × 255 is 115, below any fixed line drawn between white pieces and black ones.
+    let fen = "r4rk1/pp3ppp/8/2p2p2/4Pq2/NP1Pn2P/PBP1Q3/R5KR w - - 0 1"
+    var style = BoardStyle()
+    style.lightSquare = "#ffffff"
+    style.darkSquare = "#808080"
+    let board = try #require(
+        BoardRenderer.image(fen: fen, options: BoardRenderer.Options(size: 640, style: style))
+    )
+    let result = try Recognizer.recognise(shaded(board, from: 1, to: 0.45), castling: .none)
+    #expect(result.fen == fen)
+    #expect(result.shaky.map(\.square.description) == [])
+}
+
 @Test("a board pasted off centre onto a page is still found")
 func boardPastedOntoAPageIsFound() throws {
     let screenshot = try referenceScreenshot()

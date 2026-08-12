@@ -136,7 +136,12 @@ enough from that colour are ink. Then:
 
 **3. Colour.** Erode the outline away and take the median brightness of what is left.
 Whether the artwork outlines white pieces in black or black pieces in white, the body
-wins — and the answer does not depend on the square underneath, so dark themes work.
+wins. That brightness is then read *against the light squares beside it*, never against a
+fixed number: a photograph of a page under a lamp runs from 230 at the lit edge to 110 at
+the other, so any absolute white/black line cuts such a board in half — its white pieces
+at the dark end come back black. As a fraction of that local light, white bodies land
+above ~0.6 and black bodies below ~0.36 wherever they stand, and the line goes half way
+between. A body near the line makes the square shaky, however well its shape matched.
 
 **4. Type.** The 12 templates are rasterised at import from python-chess's own SVG piece
 set, so no PNG assets are checked in and the templates cannot drift from the renderer in
@@ -167,9 +172,10 @@ wrong for contrived ones (white promoting on the eighth rank), so pass
 
 ## Confidence, and known limits
 
-`--json` reports per-square `score` (silhouette IoU) and `margin` (gap to the runner-up
-piece type); weak squares also go to stderr in plain mode. The design goal is that the
-tool is never *quietly* wrong.
+`--json` reports per-square `score` (silhouette IoU), `margin` (gap to the runner-up piece
+type) and `color margin` (how far the body sat from the line between white and black);
+weak squares also go to stderr in plain mode. The design goal is that the tool is never
+*quietly* wrong.
 
 Verified working: any board size from ~200 px up, arbitrary square palettes (including
 dark themes and near-zero contrast between the two square colours), coordinates inside
@@ -181,7 +187,8 @@ Known limits:
 - **Squares below ~35 px** with unfamiliar piece artwork start to confuse similar
   silhouettes. Flagged as low confidence rather than silently swapped.
 - **Radial-gradient highlights** (lichess's check halo) break the flat-background
-  assumption for that one square. Also flagged, not hidden.
+  assumption for that one square, and drag the body brightness towards the line between
+  white and black. Also flagged, not hidden.
 - The image must be **mostly the board**: padding, borders and margins are fine, a
   screenshot of a whole page with sidebars is not — crop it first.
 - **3D board renderings** are out of scope; this is for 2D diagrams.

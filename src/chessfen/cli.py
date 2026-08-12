@@ -139,6 +139,7 @@ def _report(result: Recognition) -> dict[str, object]:
                 "piece": verdict.piece.symbol() if verdict.piece else None,
                 "score": round(verdict.score, 4),
                 "margin": round(verdict.margin, 4),
+                "color margin": round(verdict.color_margin, 4),
                 "confident": verdict.confident,
             }
             for square, verdict in sorted(result.verdicts.items())
