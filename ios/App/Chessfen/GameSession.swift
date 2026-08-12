@@ -138,6 +138,18 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
         retune()
     }
 
+    /// The collection this game is filed under, according to its own file.
+    ///
+    /// Read from the tags rather than carried alongside them, so that it cannot disagree with what
+    /// the library shows — and so a game that has never been saved has no collection, which is the
+    /// truth about it.
+    var collection: String? {
+        guard let event = tags.first(where: { $0.name == "Event" })?.value,
+            !GameLibrary.unfiledEvents.contains(event)
+        else { return nil }
+        return event
+    }
+
     // ------------------------------------------------------------- the reading
 
     /// Whether this game's starting position can be taken back to the editor. True for anything

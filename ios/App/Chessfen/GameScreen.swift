@@ -42,6 +42,7 @@ struct GameScreen: View {
                 // changing size when what is underneath it grows.
                 ScrollView {
                     VStack(spacing: 0) {
+                        series
                         corrections
                         engineLines
                         notation
@@ -228,6 +229,63 @@ struct GameScreen: View {
             isInteractive: session.isHandTurn,
             onTap: tap
         )
+    }
+
+    /// Where this game sits in its collection, and the way to the next one.
+    ///
+    /// Working through a set is the reason collections exist, and going back to the library between
+    /// every position is the thing that makes anyone stop. The order is the library's own — by name
+    /// — read fresh each time rather than captured when the game opened, so renaming a game during a
+    /// session moves it where you just said it goes.
+    @ViewBuilder private var series: some View {
+        if let collection = session.collection, let place = placeInSeries {
+            HStack(spacing: 10) {
+                seriesButton("上一局", symbol: "chevron.left", at: place.index - 1)
+                VStack(spacing: 1) {
+                    Text(collection)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Palette.ink)
+                        .lineLimit(1)
+                    Text("第 \(place.index + 1)/\(place.entries.count) 局")
+                        .font(.caption2)
+                        .foregroundStyle(Palette.inkSoft)
+                }
+                .frame(maxWidth: .infinity)
+                seriesButton("下一局", symbol: "chevron.right", at: place.index + 1)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Palette.chipRest, in: RoundedRectangle(cornerRadius: 10))
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+        }
+    }
+
+    private func seriesButton(_ label: String, symbol: String, at index: Int) -> some View {
+        let target = placeInSeries?.entries[safe: index]
+        return Button {
+            if let target { drill(to: target) }
+        } label: {
+            HStack(spacing: 3) {
+                if symbol == "chevron.left" { Image(systemName: symbol).font(.caption2) }
+                Text(label).font(.caption.weight(.semibold))
+                if symbol == "chevron.right" { Image(systemName: symbol).font(.caption2) }
+            }
+            .foregroundStyle(target == nil ? Palette.inkSoft : Palette.analysis)
+        }
+        .buttonStyle(.plain)
+        .disabled(target == nil)
+        .opacity(target == nil ? 0.4 : 1)
+    }
+
+    /// The games in this one's collection, and which one this is. Nil for a game that is not in a
+    /// collection, or one not yet written to disk — there is nothing to be next to.
+    private var placeInSeries: (entries: [GameLibrary.Entry], index: Int)? {
+        guard let collection = session.collection, let url = session.url,
+            let entries = library.collections.first(where: { $0.name == collection })?.entries,
+            let index = entries.firstIndex(where: { $0.url == url })
+        else { return nil }
+        return (entries, index)
     }
 
     /// The way back to the editor, shown as a job to do rather than hidden in a menu — a piece
@@ -459,6 +517,29 @@ struct GameScreen: View {
     }
 
     // ------------------------------------------------------------------ doing
+
+    /// Opens the next game in the collection in place of this one.
+    ///
+    /// It replaces the top of the path rather than pushing, so working through fifty positions does
+    /// not build a stack of fifty screens to come back through — and the way back is still the
+    /// library, which is where it was.
+    ///
+    /// How you are working carries over: which way up the board is, whether the engine is advising,
+    /// and who is playing each side. Those are settings for the session you are having, not facts
+    /// about the game, and having to set them again for every position is exactly the friction that
+    /// makes a set of fifty not get done.
+    private func drill(to entry: GameLibrary.Entry) {
+        session.suspend()
+        let next = GameSession(entry: entry, library: library)
+        next.attach(engine: engine.service, library: library)
+        next.orientation = session.orientation
+        next.setPractising(session.isPractising)
+        for colour in [PieceColour.white, .black] {
+            next.setController(session.controller(for: colour), for: colour)
+        }
+        selected = nil
+        path[path.count - 1] = .game(next)
+    }
 
     private func tap(_ square: Square) {
         guard session.isHandTurn else { return }
