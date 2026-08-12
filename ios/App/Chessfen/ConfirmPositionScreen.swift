@@ -80,6 +80,15 @@ struct ConfirmPositionScreen: View {
     /// True while 按住看照片 is held. Separate from the mode so releasing goes back to whatever was
     /// set rather than to a fourth state nobody chose.
     @State private var isPeeking = false
+    /// The photograph, converted once and then kept.
+    ///
+    /// Held rather than computed, because turning an `RGBImage` into something SwiftUI can draw
+    /// builds a fresh RGBA buffer and a fresh `CGImage` every single call — about five megabytes for
+    /// a board — and a computed property is read on every pass of the body. Behind a backdrop that
+    /// is several conversions per frame for as long as the screen is open: it took the app to three
+    /// and a half gigabytes and the system killed it. The picture cannot change while this screen is
+    /// up, so it is converted on the way in and after that it is just an image.
+    @State private var photoImage: Image?
 
     enum Brush: Hashable {
         case piece(Piece)
@@ -128,7 +137,7 @@ struct ConfirmPositionScreen: View {
                     // Only for a picture that cannot be laid over the board — one stored before the
                     // board was cut out of it. Anything that can be is better seen in place, and
                     // two ways to look at the same photograph is one too many.
-                    if proposal.picture != nil, boardPhoto == nil {
+                    if proposal.picture != nil, !hasBoardPhoto {
                         Button {
                             isPictureShowing = true
                         } label: {
@@ -164,10 +173,16 @@ struct ConfirmPositionScreen: View {
                 }
             }
         }
+        // Converted here and nowhere else. A sheet's content closure runs on its own renders too,
+        // so this used to be a second place a five-megabyte conversion could happen repeatedly.
+        .onAppear {
+            guard photoImage == nil, let picture = proposal.picture else { return }
+            photoImage = Image(rgb: picture)
+        }
         .sheet(isPresented: $isPictureShowing) {
-            if let picture = proposal.picture, let image = Image(rgb: picture) {
+            if let photoImage {
                 NavigationStack {
-                    image
+                    photoImage
                         .resizable()
                         .scaledToFit()
                         .navigationTitle("照片")
@@ -226,22 +241,24 @@ struct ConfirmPositionScreen: View {
         .padding(.horizontal, 16)
     }
 
-    /// The photograph, cut to the board, ready to lie under the pieces.
+    /// Whether the stored picture can be laid over the board.
     ///
-    /// Only for a picture that is square: one cut to the board is square by construction, and a
-    /// picture that is not was stored before the board was cut out of it, so it would sit under the
-    /// pieces misaligned — which is worse than not offering the comparison at all. Those still open
-    /// in the sheet, which asks nothing of the coordinates.
-    private var boardPhoto: Image? {
-        guard let picture = proposal.picture, picture.width == picture.height, picture.width > 0
-        else { return nil }
-        return Image(rgb: picture)
+    /// It can when it is square: a picture cut to the board is square by construction, and one that
+    /// is not was stored before the board was cut out of it, so it would sit under the pieces
+    /// misaligned — worse than not offering the comparison at all. Those open in the sheet instead,
+    /// which asks nothing of the coordinates. Answered from the dimensions rather than from the
+    /// converted image, so the control row is there on the first frame and does not pop in.
+    private var hasBoardPhoto: Bool {
+        guard let picture = proposal.picture else { return false }
+        return picture.width == picture.height && picture.width > 0
     }
 
     private var isShowingPhotoAlone: Bool { isPeeking || photo == .alone }
 
     private var backdrop: BoardView.Backdrop? {
-        guard let boardPhoto, photo != .off || isPeeking else { return nil }
+        guard hasBoardPhoto, let boardPhoto = photoImage, photo != .off || isPeeking else {
+            return nil
+        }
         if isShowingPhotoAlone {
             return .init(image: boardPhoto, opacity: 1, saturation: 1, showsPieces: false)
         }
@@ -253,7 +270,7 @@ struct ConfirmPositionScreen: View {
     /// How much of the photograph is showing. Directly under the board, because that is the thing
     /// it changes and the comparison happens up there.
     @ViewBuilder private var photoControl: some View {
-        if boardPhoto != nil {
+        if hasBoardPhoto {
             HStack(spacing: 10) {
                 ChipCluster(
                     title: "照片",

@@ -8,6 +8,12 @@ public struct Line: Hashable, Sendable {
     public let san: [String]
 
     public var bestMove: String? { uciMoves.first }
+
+    public init(score: Score, uciMoves: [String], san: [String]) {
+        self.score = score
+        self.uciMoves = uciMoves
+        self.san = san
+    }
 }
 
 /// What the engine reports about a Position at one Depth.
@@ -32,4 +38,27 @@ public struct Analysis: Hashable, Sendable {
 
     public var best: Line? { lines.first }
     public var bestMove: String? { best?.bestMove }
+
+    /// Everything but the Lines has a default, because everything but the Lines is telemetry.
+    /// What builds one of these by hand is a test putting a screen into a state — and a screen
+    /// that needed the node count to render would be a screen with a bug in it.
+    public init(
+        depth: Int,
+        selectiveDepth: Int = 0,
+        lines: [Line],
+        nodes: UInt64 = 0,
+        nodesPerSecond: UInt64 = 0,
+        timeMilliseconds: UInt64 = 0,
+        hashFull: Int = 0,
+        isPartial: Bool = false
+    ) {
+        self.depth = depth
+        self.selectiveDepth = max(selectiveDepth, depth)
+        self.lines = lines
+        self.nodes = nodes
+        self.nodesPerSecond = nodesPerSecond
+        self.timeMilliseconds = timeMilliseconds
+        self.hashFull = hashFull
+        self.isPartial = isPartial
+    }
 }

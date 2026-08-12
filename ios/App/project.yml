@@ -28,6 +28,11 @@ targets:
     dependencies:
       - package: ChessfenKit
         product: ChessfenKit
+    # A shared scheme, so `xcodebuild test` finds the screenshots from a terminal rather than
+    # only from Xcode's UI.
+    scheme:
+      testTargets:
+        - ScreenTests
     info:
       path: Chessfen/Info.plist
       properties:
@@ -60,3 +65,23 @@ targets:
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
         ENABLE_USER_SCRIPT_SANDBOXING: YES
         DEAD_CODE_STRIPPING: YES
+
+  # The screens, drawn into PNGs by the real app code and checked for what they must show.
+  # Hosted by the app rather than standing alone, because what it renders is the app's own
+  # views and it reaches them with `@testable import Chessfen`.
+  ScreenTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: ScreenTests
+    dependencies:
+      - target: Chessfen
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sunfmin.chessfen.screentests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "6.0"
+        SWIFT_APPROACHABLE_CONCURRENCY: YES
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Chessfen.app/Chessfen
+        BUNDLE_LOADER: $(TEST_HOST)

@@ -71,7 +71,7 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     private var turnBegan: ContinuousClock.Instant?
     private var lastHumanThink: Duration?
 
-    private var engine: EngineService?
+    private var engine: (any Engine)?
     private weak var library: GameLibrary?
 
     init(
@@ -112,7 +112,7 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
         )
     }
 
-    func attach(engine: EngineService?, library: GameLibrary?) {
+    func attach(engine: (any Engine)?, library: GameLibrary?) {
         self.engine = engine
         self.library = library
     }

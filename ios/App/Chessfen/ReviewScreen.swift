@@ -13,7 +13,7 @@ import SwiftUI
     private(set) var total = 0
     private(set) var isRunning = false
 
-    func start(service: EngineService, game: Game, depth: Int) async {
+    func start(service: any Engine, game: Game, depth: Int) async {
         guard !isRunning else { return }
         isRunning = true
         total = game.plies.count

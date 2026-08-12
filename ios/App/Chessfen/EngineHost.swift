@@ -17,7 +17,7 @@ import Foundation
     }
 
     private(set) var status: Status = .starting
-    private(set) var service: EngineService?
+    private(set) var service: (any Engine)?
 
     /// Whether the app is in front of the user. The engine searches only while it is, and this
     /// is the one place that decides so — screens observe it rather than reading the scene
@@ -26,6 +26,15 @@ import Foundation
     private(set) var isActive = true
 
     var isReady: Bool { service != nil }
+
+    init() {}
+
+    /// A host that is handed its engine rather than reading 112 MiB of weights to build one: how a
+    /// screenshot test puts the screens into the state the app reaches a moment after it opens.
+    init(_ engine: any Engine) {
+        service = engine
+        status = .ready
+    }
 
     func start() async {
         guard service == nil, status == .starting else { return }
