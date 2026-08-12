@@ -143,8 +143,17 @@ extension RGBImage {
         let longer = max(width, height)
         guard longer > longestSide, longestSide > 0 else { return self }
         let scale = Double(longestSide) / Double(longer)
-        let newWidth = max(1, Int((Double(width) * scale).rounded()))
-        let newHeight = max(1, Int((Double(height) * scale).rounded()))
+        return resized(
+            width: max(1, Int((Double(width) * scale).rounded())),
+            height: max(1, Int((Double(height) * scale).rounded()))
+        )
+    }
+
+    /// The picture stretched to exactly this size, aspect ratio be damned — which is what
+    /// a rectified board wants, a board being square whatever the camera made of it.
+    public func resized(width newWidth: Int, height newHeight: Int) -> RGBImage {
+        guard newWidth > 0, newHeight > 0 else { return self }
+        guard newWidth != width || newHeight != height else { return self }
         guard let source = cgImage else { return self }
 
         var rgba = [UInt8](repeating: 255, count: newWidth * newHeight * 4)

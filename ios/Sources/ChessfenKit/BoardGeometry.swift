@@ -110,6 +110,23 @@ public enum BoardGeometry {
         return best
     }
 
+    /// How cleanly the 64 Cell means of this rectangle fall into two alternating groups.
+    ///
+    /// The measure the axis-aligned search maximises, exposed because the search over
+    /// quads maximises the same thing. Whole-Cell means make it sharply sensitive to a
+    /// misaligned grid — a grid half a square out blends light and dark together — which is
+    /// what a descent needs and what the corner-patch measure below deliberately is not.
+    public static func gridScore(_ grey: LumaImage, _ rect: BoardRect) -> Double {
+        guard rect.size >= 8 * minimumCell, rect.left >= 0, rect.top >= 0,
+              rect.left + rect.size <= grey.width, rect.top + rect.size <= grey.height
+        else { return 0 }
+        let edges = (0...8).map { edge(rect.size, $0) }
+        let spans = (0..<8).map { edges[$0 + 1] - edges[$0] }
+        return gridScore(
+            summedArea(grey), left: rect.left, top: rect.top, edges: edges, spans: spans
+        )
+    }
+
     /// Robust contrast between the two square colours, used as the accept/reject gate —
     /// and, once perspective correction is in play, as the judge between rectifications.
     ///

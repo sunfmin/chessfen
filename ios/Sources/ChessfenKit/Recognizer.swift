@@ -14,9 +14,16 @@ public enum CastlingGuess: String, Hashable, Sendable, CaseIterable {
 /// The recognised Position plus the evidence behind it.
 public struct Recognition: Sendable {
     public let fen: String
+    /// The picture the reading was actually taken from — rectified and scaled, if it had
+    /// to be. `rect` and the Shaky Squares are in *its* coordinates, so an overlay drawn
+    /// over this image lines up.
+    public let image: RGBImage
     public let rect: BoardRect
     public let orientation: Orientation
     public let verdicts: [Square: SquareVerdict]
+    /// How cleanly the two square colours separated — the same measure that decided the
+    /// picture held a board at all.
+    public let checkerScore: Double
 
     /// The Shaky Squares, in board order — the ones worth a human glance.
     public var shaky: [(square: Square, verdict: SquareVerdict)] {
@@ -70,10 +77,60 @@ public enum Recognizer {
         }
         return Recognition(
             fen: fen(verdicts, turn: turn, castling: castling),
+            image: image,
             rect: rect,
             orientation: orientation,
-            verdicts: verdicts
+            verdicts: verdicts,
+            checkerScore: BoardGeometry.checkerScore(image.luma, rect)
         )
+    }
+
+    /// A checker score this good means the picture needs no straightening — a screenshot
+    /// or a scan, where warping could only make things worse.
+    public static let alreadyStraightScore = 6.0
+
+    /// How many candidate quads earn a full refinement.
+    public static let quadsRefined = 4
+
+    /// Recognises the Position in a photograph, straightening it first if it needs it.
+    ///
+    /// The axis-aligned reading is tried first and kept as the thing to beat: a screenshot
+    /// arriving through this door is read exactly as it would have been through the other
+    /// one, and never rectified on spec. Only a picture that reads poorly — or not at all —
+    /// pays for the search over quads.
+    public static func recognise(
+        photograph source: RGBImage,
+        turn: PieceColour = .white,
+        orientation requested: Orientation? = nil,
+        castling: CastlingGuess = .fromHomeSquares
+    ) async throws -> Recognition {
+        let image = source.scaled(toLongestSide: workingResolution)
+        let direct = try? recognise(
+            image, turn: turn, orientation: requested, castling: castling
+        )
+        if let direct, direct.checkerScore >= alreadyStraightScore { return direct }
+
+        // Refining is a descent per quad, so only the most promising few earn one. Their
+        // unrefined scores are cheap and rank them well enough to choose.
+        let candidates = await PerspectiveCorrection.candidates(in: image)
+            .map { (quad: $0, score: PerspectiveCorrection.score($0, in: image)) }
+            .sorted { $0.score > $1.score }
+            .prefix(quadsRefined)
+
+        var best = direct
+        for candidate in candidates {
+            let refined = PerspectiveCorrection.refined(candidate.quad, in: image)
+            guard refined.score > (best?.checkerScore ?? 0),
+                  let rectified = PerspectiveCorrection.rectified(image, quad: refined.quad),
+                  let candidate = try? recognise(
+                      rectified, turn: turn, orientation: requested, castling: castling
+                  ),
+                  candidate.checkerScore > (best?.checkerScore ?? 0)
+            else { continue }
+            best = candidate
+        }
+        guard let best else { throw RecognitionError.boardNotFound }
+        return best
     }
 
     /// Maps a grid Cell (row 0 = top of the picture) to a board square.
