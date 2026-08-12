@@ -112,6 +112,16 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
         )
     }
 
+    /// A saved game, opened ready to play: the engine attached and the library it saves back to.
+    /// Defined once because more than one screen opens games now — the library and a collection.
+    static func opened(
+        _ entry: GameLibrary.Entry, engine: EngineHost, library: GameLibrary
+    ) -> GameSession {
+        let session = GameSession(entry: entry, library: library)
+        session.attach(engine: engine.service, library: library)
+        return session
+    }
+
     func attach(engine: (any Engine)?, library: GameLibrary?) {
         self.engine = engine
         self.library = library
