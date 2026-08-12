@@ -1,9 +1,9 @@
 import ChessfenKit
 import Foundation
 
-// A desktop entry point for the same engine and (later) the same recogniser the app runs,
-// so a doubt can be settled with a shell command instead of a simulator. Grows in step
-// with the package; today it can vet a FEN and count moves.
+// A desktop entry point for the same recogniser and the same engine the app runs, so a doubt
+// can be settled with a shell command instead of a simulator — and so the Swift reading of a
+// picture can be diffed against the Python one it was ported from.
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 
@@ -11,6 +11,15 @@ func fail(_ message: String) -> Never {
     FileHandle.standardError.write(Data("chessfen-cli: \(message)\n".utf8))
     exit(1)
 }
+
+/// Where the NNUE weights are. They are 112 MiB and live in the repository, not in this
+/// binary. A developer tool may reasonably know where the repository it was built from is;
+/// anyone moving things about can say so.
+let netsDirectory =
+    ProcessInfo.processInfo.environment["CHESSFEN_NETS"].map { URL(filePath: $0) }
+    ?? URL(filePath: #filePath)  // Sources/chessfen-cli/main.swift
+    .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    .appending(path: "Resources/Nets")
 
 switch arguments.first {
 case "validate":
@@ -62,6 +71,16 @@ case "analyse":
         }
     }
 
+case "icon":
+    guard arguments.count >= 2 else {
+        fail("usage: chessfen-cli icon <out.png> [side]  (default 1024)")
+    }
+    let side = arguments.count >= 3 ? Int(arguments[2]) ?? 1024 : 1024
+    guard AppIconArt.write(to: URL(filePath: arguments[1]), side: side) else {
+        fail("could not write \(arguments[1])")
+    }
+    print("wrote \(arguments[1]) at \(side)×\(side)")
+
 default:
-    fail("usage: chessfen-cli <validate|perft|analyse> ...")
+    fail("usage: chessfen-cli <validate|perft|analyse|icon> ...")
 }
