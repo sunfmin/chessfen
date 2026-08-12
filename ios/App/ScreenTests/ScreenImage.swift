@@ -1,3 +1,4 @@
+import Darwin
 import SwiftUI
 import UIKit
 
@@ -39,6 +40,7 @@ enum ScreenImage {
         style: UIUserInterfaceStyle = .light,
         of subject: () -> some View
     ) async -> Rendered {
+        _ = isListening
         let window = newWindow(style: style)
         let controller = UIHostingController(rootView: subject())
         controller.overrideUserInterfaceStyle = style
@@ -69,6 +71,21 @@ enum ScreenImage {
     }
 
     // ----------------------------------------------------------------- plumbing
+
+    /// Puts something on the other end of the accessibility tree, once.
+    ///
+    /// SwiftUI does not build that tree unless somebody is listening: with no VoiceOver there are
+    /// no elements, and a screenshot test that asks what the screen says gets silence. This is the
+    /// switch the UI-testing runner throws before it reads a screen, and it is only reachable by
+    /// hand — which is fair enough for a lever no shipping app has any business pulling.
+    private static let isListening: Bool = {
+        guard let library = dlopen("/usr/lib/libAccessibility.dylib", RTLD_NOW),
+            let symbol = dlsym(library, "_AXSSetAutomationEnabled")
+        else { return false }
+        typealias Listen = @convention(c) (Bool) -> Void
+        unsafeBitCast(symbol, to: Listen.self)(true)
+        return true
+    }()
 
     /// A window the size of the device the test is running on, on the host app's own scene so
     /// that the safe areas are a real phone's rather than nothing at all.

@@ -330,7 +330,10 @@ struct BoardView: View {
         let start = centre(move.from)
         let end = centre(move.to)
         let angle = atan2(end.y - start.y, end.x - start.x)
-        let head = cell * 0.34
+        // Wide enough to be read at a glance across a room, because that is what it is for: the one
+        // mark on the board that is the engine talking, over artwork with strokes of its own. A
+        // hairline arrow over a drawn knight is a scratch; this is a gesture.
+        let head = cell * 0.46
         // Stop the shaft short of the point so the head is not drawn over itself.
         let tip = CGPoint(x: end.x - cos(angle) * cell * 0.06, y: end.y - sin(angle) * cell * 0.06)
         let base = CGPoint(x: tip.x - cos(angle) * head, y: tip.y - sin(angle) * head)
@@ -342,21 +345,21 @@ struct BoardView: View {
         let colour = Palette.analysis.opacity(0.78)
         context.stroke(
             shaft, with: .color(colour),
-            style: StrokeStyle(lineWidth: cell * 0.10, lineCap: .round)
+            style: StrokeStyle(lineWidth: cell * 0.18, lineCap: .round)
         )
 
         var arrowhead = Path()
         arrowhead.move(to: tip)
         arrowhead.addLine(
             to: CGPoint(
-                x: base.x + cos(angle + .pi / 2) * head * 0.5,
-                y: base.y + sin(angle + .pi / 2) * head * 0.5
+                x: base.x + cos(angle + .pi / 2) * head * 0.62,
+                y: base.y + sin(angle + .pi / 2) * head * 0.62
             )
         )
         arrowhead.addLine(
             to: CGPoint(
-                x: base.x + cos(angle - .pi / 2) * head * 0.5,
-                y: base.y + sin(angle - .pi / 2) * head * 0.5
+                x: base.x + cos(angle - .pi / 2) * head * 0.62,
+                y: base.y + sin(angle - .pi / 2) * head * 0.62
             )
         )
         arrowhead.closeSubpath()

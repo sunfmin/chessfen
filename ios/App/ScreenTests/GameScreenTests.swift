@@ -80,18 +80,23 @@ struct GameScreenScreenshots {
         // Whose move it is, and what the engine says about it — the two things at the top.
         #expect(rendered.says("白方走棋"))
         #expect(rendered.says("+0.38"), "the deeper snapshot should have replaced the shallow one")
-        #expect(rendered.says("深 26/34"))
+        #expect(rendered.says("搜索深度 26"))
         // Three Lines, in the engine's own numerals, deepest search first.
         #expect(rendered.says("d4 exd4 cxd4 Bb6"))
         #expect(rendered.says("O-O d6 d4 Bb6"))
         #expect(rendered.count(of: "+0.") >= 3)
-        // The record, and the transport that walks it.
+        // The record, and the whole walk through it.
         #expect(rendered.says("Nf6"), "the notation should carry the game")
+        #expect(rendered.says("最初"))
         #expect(rendered.says("上一步"))
-        #expect(rendered.says("悔棋"))
-        // Who plays each side, on screen rather than in a menu.
-        #expect(rendered.says("白方"))
-        #expect(rendered.says("黑方"))
+        #expect(rendered.says("下一步"))
+        #expect(rendered.says("让引擎走"), "one move from the engine, for whoever is on the clock")
+        // Who plays each side, said in words while the game is under way.
+        #expect(rendered.says("白方 手动 · 黑方 引擎 · 白在下 · 看引擎"))
+        #expect(
+            !rendered.says("白先走"),
+            "the setup chips should be folded away once there are moves"
+        )
         // And the Score reached the game itself, which is what a Review will overwrite later.
         #expect(session.game.plies.last?.evaluation == .centipawns(38))
     }
@@ -114,8 +119,62 @@ struct GameScreenScreenshots {
 
         #expect(rendered.says("拿不太准"), "the shaky squares should be counted, not hidden")
         #expect(rendered.says("改棋子"))
-        #expect(rendered.says("先走"), "who starts is still open until a move is played")
         #expect(rendered.says("从这里开始走"))
+        // Nothing is played yet, so every setup question is still a question: the chips are out.
+        #expect(rendered.says("白先走"))
+        #expect(rendered.says("黑先走"))
+        #expect(rendered.says("翻转棋盘"))
+        #expect(rendered.says("手动"))
+        // Nothing to walk through yet, but the engine can be asked to open.
+        #expect(!rendered.says("上一步"))
+        #expect(rendered.says("让引擎走"))
+    }
+
+    /// A game opened again from the library, which opens where it began.
+    @Test("a saved game reopens at its first position, ready to be walked forward")
+    func reopenedGame() async throws {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
+        let entry = GameLibrary.Entry(
+            url: URL(filePath: "/games/chessfen-2026-08-12-190000.pgn"),
+            pgn: PGN(game: game, tags: [PGN.Tag("White", "手动"), PGN.Tag("Black", "引擎")]),
+            modified: Date(timeIntervalSince1970: 1_786_000_000)
+        )
+        let session = GameSession(entry: entry)
+
+        let rendered = await ScreenImage.write("game-reopened") {
+            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
+        }
+
+        #expect(session.cursor == 0, "a reopened game opens at the position it began in")
+        #expect(rendered.says("在看第 0/8 步"))
+        #expect(rendered.says("回到最新"))
+        #expect(rendered.says("1. e4 e5"), "the moves are all there to be walked through")
+    }
+
+    /// A finished game. The engine has nothing to search and so says nothing, and the screen has to
+    /// say who won anyway.
+    @Test("a game that ended in mate reads as won, not as level")
+    func matedGame() async throws {
+        // 1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 4. Qxf7#
+        let mate = ["e2e4", "e7e5", "f1c4", "b8c6", "d1h5", "g8f6", "h5f7"]
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: mate))
+        let session = GameSession(game: game, origin: .fresh)
+        #expect(game.state.outcome == .checkmate)
+
+        // An engine with nothing to say, which is what a real one does with a finished position.
+        let rendered = await ScreenImage.write("game-mated") {
+            screen(session, engine: ScriptedEngine([]))
+        }
+
+        #expect(rendered.says("白方将杀"))
+        #expect(rendered.says("白方胜"), "the bar reads the result rather than sitting half and half")
+        #expect(rendered.says("1-0"), "and the number the screen has been showing resolves into it")
+        #expect(rendered.says("复盘"), "with the one thing left to do said where the lines were")
+        #expect(!rendered.says("和棋"))
+        #expect(!rendered.says("未知"), "a finished game is not an unknown one")
+        // There is nothing left to play, so the one button that plays a move is out.
+        #expect(!session.canPlayBestMove)
+        #expect(rendered.says("Qxf7#"), "the record ends where the game did")
     }
 
     /// Practice: the engine plays on but says nothing, so the screen has to account for the

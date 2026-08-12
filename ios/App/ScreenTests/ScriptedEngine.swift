@@ -17,6 +17,9 @@ final class ScriptedEngine: Engine {
     /// looks like.
     private let isEndless: Bool
     private let paused = Mutex(false)
+    /// The searches still running, so that `stop` can wind them up the way the real engine does —
+    /// which is what letting go of 让引擎走 does.
+    private let running = Mutex<[AsyncStream<Analysis>.Continuation]>([])
 
     init(_ snapshots: [Analysis], isEndless: Bool = false) {
         self.snapshots = snapshots
@@ -26,13 +29,27 @@ final class ScriptedEngine: Engine {
     var isPaused: Bool { paused.withLock { $0 } }
     func pause() { paused.withLock { $0 = true } }
     func resume() { paused.withLock { $0 = false } }
-    func stop() {}
     func clear() async {}
+
+    /// Winds up whatever is running, which ends its stream — a stopped search has still reported
+    /// everything it found, exactly as Stockfish does.
+    func stop() {
+        let winding = running.withLock { current -> [AsyncStream<Analysis>.Continuation] in
+            let all = current
+            current = []
+            return all
+        }
+        for continuation in winding { continuation.finish() }
+    }
 
     func analyse(_ game: Game, budget: EngineService.Budget) -> AsyncStream<Analysis> {
         AsyncStream { continuation in
             for snapshot in snapshots { continuation.yield(snapshot) }
-            if !isEndless { continuation.finish() }
+            if isEndless {
+                running.withLock { $0.append(continuation) }
+            } else {
+                continuation.finish()
+            }
         }
     }
 

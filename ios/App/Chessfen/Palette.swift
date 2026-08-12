@@ -137,28 +137,123 @@ struct ChipCluster<Value: Hashable>: View {
     }
 }
 
-/// A transport button: back a move, on a move, take one off.
+/// A transport button: to the beginning, back a move, on a move, take one off.
+///
+/// `corners` is what lets three of them be built into one control. Where the eye is looking is a
+/// single idea with three ways to say it, so the three read as one segmented block and only the
+/// outer edges are rounded; taking a move off is a different kind of act and sits apart.
 struct TransportButton: View {
     let label: String
     let symbol: String
     var trailingSymbol = false
+    var corners = RectangleCornerRadii.every(11)
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
-                if !trailingSymbol { Image(systemName: symbol) }
+            HStack(spacing: 4) {
+                if !trailingSymbol { Image(systemName: symbol).font(.caption) }
                 Text(label)
-                if trailingSymbol { Image(systemName: symbol) }
+                if trailingSymbol { Image(systemName: symbol).font(.caption) }
             }
             .font(.subheadline.weight(.medium))
             .foregroundStyle(Palette.ink)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 9)
-            .background(Palette.chipRest, in: RoundedRectangle(cornerRadius: 10))
+            // Twelve, so the button is the 44 points a thumb is entitled to. It is the control
+            // used most on this screen and it used to be the smallest thing on it.
+            .padding(.vertical, 12)
+            .background(Palette.chipRest, in: UnevenRoundedRectangle(cornerRadii: corners))
         }
         .buttonStyle(.plain)
     }
+}
+
+/// A button whose work happens while it is held down: pressing starts it, letting go finishes it.
+///
+/// The only one in the app, and it belongs to the engine. How long it is held is how long the engine
+/// thinks (Mirrored Time, docs/adr/0009 — it is never handicapped, and time is the only dial), so
+/// the control has to *be* the dial rather than a switch beside one. It fills as the search deepens,
+/// which is the same gauge the header draws, under the thumb that is filling it.
+struct HoldButton: View {
+    let label: String
+    let symbol: String
+    /// Whether it is being held right now. Owned by the screen, because the screen has to say what
+    /// the deck reads while it is.
+    let isHeld: Bool
+    /// How far the search has got, 0...1. Drawn only while the button is held: a search is running
+    /// under this screen most of the time, and a meter standing at three quarters with nobody's
+    /// thumb on it says the button is busy when it is waiting.
+    var fill: Double = 0
+    var isEnabled = true
+    let onPress: () -> Void
+    let onRelease: () -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: symbol).font(.caption)
+            Text(label)
+        }
+        .font(.subheadline.weight(.medium))
+        .foregroundStyle(isHeld ? Palette.analysis : Palette.ink)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background {
+            ZStack(alignment: .leading) {
+                Palette.chipRest
+                GeometryReader { proxy in
+                    Palette.analysis.opacity(0.3)
+                        .frame(width: proxy.size.width * (isHeld ? min(max(fill, 0), 1) : 0))
+                        .animation(.easeOut(duration: 0.3), value: fill)
+                        .animation(.easeOut(duration: 0.2), value: isHeld)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 11))
+        }
+        .opacity(isEnabled ? 1 : 0.4)
+        .contentShape(RoundedRectangle(cornerRadius: 11))
+        // A drag of no distance, which is a press: `onEnded` arrives wherever the finger lifts, so
+        // sliding off the button still plays the move rather than leaving a search running.
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    guard isEnabled, !isHeld else { return }
+                    onPress()
+                }
+                .onEnded { _ in
+                    guard isHeld else { return }
+                    onRelease()
+                }
+        )
+    }
+}
+
+extension RectangleCornerRadii {
+    /// The same radius on all four corners.
+    static func every(_ radius: CGFloat) -> Self {
+        .init(
+            topLeading: radius, bottomLeading: radius,
+            bottomTrailing: radius, topTrailing: radius
+        )
+    }
+
+    /// Rounded on the leading edge only — the left end of a segmented block.
+    static func leading(_ radius: CGFloat, joined: CGFloat = 3) -> Self {
+        .init(
+            topLeading: radius, bottomLeading: radius,
+            bottomTrailing: joined, topTrailing: joined
+        )
+    }
+
+    /// Rounded on the trailing edge only — the right end of one.
+    static func trailing(_ radius: CGFloat, joined: CGFloat = 3) -> Self {
+        .init(
+            topLeading: joined, bottomLeading: joined,
+            bottomTrailing: radius, topTrailing: radius
+        )
+    }
+
+    /// Barely rounded on every corner — the middle of one.
+    static func joined(_ radius: CGFloat = 3) -> Self { every(radius) }
 }
 
 // ------------------------------------------------------------------- numbers
@@ -173,8 +268,9 @@ struct SearchMeter: View {
     let analysis: Analysis?
 
     /// Full depth as far as this display is concerned. Searches run deeper, and the gauge simply
-    /// sits full when they do — past this point another ply is not news.
-    private static let deepEnough = 34.0
+    /// sits full when they do — past this point another ply is not news. Shared with the hold
+    /// button, so a search reads as equally far along wherever it is drawn.
+    static let deepEnough = 34.0
 
     var body: some View {
         HStack(spacing: 7) {
@@ -185,8 +281,11 @@ struct SearchMeter: View {
                 Text("深 \(analysis.depth)/\(analysis.selectiveDepth)")
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(Palette.inkSoft)
+                gauge
             }
-            gauge
+            // Nothing at all when no search has reported: an empty track is a gauge reading zero,
+            // and there is no search for it to be reading zero about — over a finished game it is
+            // just a grey line left on the page.
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("搜索深度 \(analysis?.depth ?? 0)")
@@ -220,9 +319,20 @@ struct EvalBar: View {
     let score: Score?
     /// The side at the left of the bar is the side at the bottom of the board.
     var orientation: Orientation = .whiteAtBottom
+    /// Set once the game has ended, and then the bar reads the result instead of a Score. A
+    /// finished game gives the engine nothing to search, so the number goes away — and a bar left
+    /// to draw a missing number sits exactly half and half, which is the picture of a level game.
+    /// Somebody who has just been mated is not level.
+    var finish: Finish?
+
+    /// How a game ended, as far as a bar is concerned.
+    enum Finish: Hashable {
+        case won(PieceColour)
+        case drawn
+    }
 
     var body: some View {
-        let white = advantageFraction(score)
+        let white = finish?.whiteShare ?? advantageFraction(score)
         let fraction = orientation == .whiteAtBottom ? white : 1 - white
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
@@ -230,9 +340,17 @@ struct EvalBar: View {
                 Rectangle()
                     .fill(Color(hex: 0xFFFCF7))
                     .frame(width: proxy.size.width * fraction)
+                // A draw is the one result that is genuinely half and half, so it cannot be said
+                // with a length: it is said by taking both colours off the bar. Nobody won it.
+                if finish == .drawn {
+                    Rectangle().fill(Palette.walnut.opacity(0.45))
+                }
             }
+            // The balance point, and only while there is still a balance to be off.
             .overlay(alignment: .center) {
-                Rectangle().fill(Palette.analysis).frame(width: 1)
+                if finish == nil {
+                    Rectangle().fill(Palette.analysis).frame(width: 1)
+                }
             }
         }
         .frame(height: 6)
@@ -242,7 +360,33 @@ struct EvalBar: View {
         .overlay(Capsule().stroke(Palette.walnut.opacity(0.35), lineWidth: 0.5))
         .animation(.easeOut(duration: 0.35), value: fraction)
         .accessibilityLabel("优势条")
-        .accessibilityValue(score?.displayText ?? "未知")
+        .accessibilityValue(finish?.chinese ?? score?.displayText ?? "未知")
+    }
+}
+
+extension EvalBar.Finish {
+    /// How much of the bar White holds at the end: all of it, none of it, or a bar that is neither.
+    var whiteShare: Double {
+        switch self {
+        case .won(let colour): colour == .white ? 1 : 0
+        case .drawn: 0.5
+        }
+    }
+
+    var chinese: String {
+        switch self {
+        case .won(let colour): "\(colour.chinese)胜"
+        case .drawn: "和棋"
+        }
+    }
+
+    /// The result in the numerals a scoresheet uses, set to be read in the clock face the Score was
+    /// read in — so "1/2-1/2" is written the way it is printed rather than as five characters.
+    var scoreline: String {
+        switch self {
+        case .won(let colour): colour == .white ? "1-0" : "0-1"
+        case .drawn: "½-½"
+        }
     }
 }
 

@@ -40,6 +40,21 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     /// True while the engine is thinking about a move it is going to play itself, as opposed
     /// to advising.
     private(set) var isThinking = false
+
+    /// How the running search is getting on — how long it has been at it and how deep it has got.
+    ///
+    /// Apart from the Analysis on purpose, because it is not advice: a Depth and a stopwatch are a
+    /// report of what the phone is doing, so practice, which refuses to show what the engine
+    /// *thinks*, has no reason to hide them. It is what a thumb held on 让引擎走 is told.
+    private(set) var searchProgress: SearchProgress?
+
+    struct SearchProgress: Hashable, Sendable {
+        var depth: Int
+        var selectiveDepth: Int
+        var milliseconds: UInt64
+
+        var seconds: Double { Double(milliseconds) / 1000 }
+    }
     private(set) var url: URL?
     let origin: GameOrigin
     /// The picture the position was read from, and the squares recognition was unsure of —
@@ -70,6 +85,11 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     /// Mirrored Time is the whole reason both are kept.
     private var turnBegan: ContinuousClock.Instant?
     private var lastHumanThink: Duration?
+    /// The best move known to the search the engine was asked for — the arrow it started from, then
+    /// whatever it has found since. What letting go of the button plays.
+    private var askedBest: String?
+    /// Whether the button has already been let go of while its search was still starting up.
+    private var isAskReleased = false
 
     private var engine: (any Engine)?
     private weak var library: GameLibrary?
@@ -84,7 +104,9 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
         picture: RGBImage? = nil,
         shaky: Set<Square> = [],
         url: URL? = nil,
-        tags: [PGN.Tag] = []
+        tags: [PGN.Tag] = [],
+        /// Which ply to open on. The latest by default, which is where a game being played is.
+        viewing: Int? = nil
     ) {
         self.game = game
         self.controllers = controllers
@@ -94,12 +116,18 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
         self.shaky = shaky
         self.url = url
         self.tags = tags
-        self.cursor = game.plies.count
+        self.cursor = min(max(0, viewing ?? game.plies.count), game.plies.count)
     }
 
-    /// Reopens a saved game. The Controllers are not stored in PGN — nothing in the format has
-    /// anywhere to put them — so a reopened game starts with both sides by hand, which is the
-    /// reading that cannot surprise anyone by moving on its own.
+    /// Reopens a saved game, at the position it began in.
+    ///
+    /// The beginning rather than the end, because opening a game that is over is reading it: the
+    /// moves are there to be walked through, and the last position is the one thing about a
+    /// finished game you already know. 下一步 is the first tap either way.
+    ///
+    /// The Controllers are not stored in PGN — nothing in the format has anywhere to put them — so
+    /// a reopened game starts with both sides by hand, which is the reading that cannot surprise
+    /// anyone by moving on its own.
     convenience init(entry: GameLibrary.Entry, library: GameLibrary? = nil) {
         let pgn = entry.pgn
         self.init(
@@ -108,7 +136,8 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
             origin: entry.origin,
             picture: entry.origin == .recognised ? library?.picture(for: entry.url) : nil,
             url: entry.url,
-            tags: pgn?.tags ?? []
+            tags: pgn?.tags ?? [],
+            viewing: 0
         )
     }
 
@@ -140,16 +169,33 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
 
     // ------------------------------------------------------------- the reading
 
+    /// Whether this game has been filed into a collection by hand.
+    ///
+    /// Written as PGN's `Event`, which every reader already expects to find; a game nobody has filed
+    /// carries the app's own name there. Filing is a person saying they are keeping this game —
+    /// which is also them saying the position it starts from is the one they meant.
+    var isFiled: Bool {
+        guard let event = tags.first(where: { $0.name == "Event" })?.value else { return false }
+        return !event.isEmpty && event != Self.unfiledEvent
+    }
+
+    static let unfiledEvent = "Chessfen"
+
     /// Whether this game's starting position can be taken back to the editor. True for anything
     /// read off a picture, for as long as the game exists: the thing most likely to be wrong
     /// about such a game is a piece, and finding that out ten moves later is the normal case.
-    var canEditPosition: Bool { origin == .recognised }
+    ///
+    /// Except once it has been filed. A game somebody has put in a collection has been looked at
+    /// and kept, so either the reading was right or it has already been put right, and a screen
+    /// that goes on asking about the pieces is asking a question that was answered.
+    var canEditPosition: Bool { origin == .recognised && !isFiled }
 
     /// The squares recognition was unsure about, while they are still worth pointing at. Once a
     /// move has been played the position has been accepted in practice, and rings on the board
-    /// would be nothing but noise.
+    /// would be nothing but noise — as they would on a game that has been filed, for the same
+    /// reason `canEditPosition` stops offering the editor.
     var unconfirmedSquares: Set<Square> {
-        origin == .recognised && game.plies.isEmpty ? shaky : []
+        canEditPosition && game.plies.isEmpty ? shaky : []
     }
 
     /// Swaps the position the game starts from. Only for a game nobody has moved in yet — which
@@ -201,6 +247,19 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
         retune()
     }
 
+    /// Back to the position the game began in, in one tap.
+    ///
+    /// Browsing, not undoing: the game is untouched and every move is still there to be walked
+    /// through again. It is the other end of `jumpToLatest`, and between them a game is readable
+    /// without a single move being taken off it.
+    func jumpToStart() {
+        guard cursor != 0 else { return }
+        cursor = 0
+        analysis = nil
+        Feedback.shared.play(.move)
+        retune()
+    }
+
     /// Carries on down one of the lines that was left behind here.
     func enterVariation(_ index: Int) {
         guard game.promoteVariation(index, atPly: cursor) else { return }
@@ -228,6 +287,96 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     func play(_ move: Move) {
         guard isHandTurn else { return }
         if isAtLatest, let turnBegan { lastHumanThink = ContinuousClock.now - turnBegan }
+        let branching = !isAtLatest && game.plies[cursor].uci != move.uci
+        guard game.play(move, atPly: cursor) else {
+            Feedback.shared.play(.refused)
+            return
+        }
+        cursor += 1
+        Feedback.shared.play(move, outcome: viewed.state.outcome)
+        if branching { Feedback.shared.play(.check) }
+        analysis = nil
+        save()
+        retune()
+    }
+
+    // -------------------------------------------------------- one move, asked for
+
+    /// Whether the engine can be asked to take this move, for either colour.
+    ///
+    /// A search already running does not make it false. The button that asks is held down while the
+    /// search it started runs, and a control that disabled itself under the finger would never hear
+    /// it let go.
+    var canPlayBestMove: Bool { engine != nil && !viewed.isOver }
+
+    /// Starts the engine thinking about a move it will play when it is let go.
+    ///
+    /// Held time *is* thinking time, which is the same bargain the engine's own moves are played
+    /// under (Mirrored Time, docs/adr/0009): it is never handicapped, so the only thing that shapes
+    /// how well it plays is how long it is left alone — and here that is a thumb on a button. A tap
+    /// is a snap answer, two seconds is a considered one, and neither is the app deciding.
+    ///
+    /// Not a Controller and not advice left standing: one move, asked for by hand, for whichever
+    /// colour is on the clock.
+    func beginAskedMove() {
+        guard canPlayBestMove, let engine else { return }
+        // What the arrow on the board is pointing at. It is the answer already, for the case where
+        // the press turns out to be a tap and the search has not said anything of its own yet.
+        askedBest = analysis?.bestMove
+        isAskReleased = false
+        let position = viewed
+        searchTask?.cancel()
+        searchProgress = nil
+        isThinking = true
+        searchTask = Task { [weak self] in
+            // Unbounded: how long it runs is how long the button is held.
+            for await snapshot in engine.analyse(position, budget: .untilStopped) {
+                if Task.isCancelled { return }
+                guard let self else { return }
+                record(snapshot)
+                if let best = snapshot.bestMove { askedBest = best }
+                // The thumb came up before the engine had said anything worth playing, so this
+                // first word is the answer.
+                if isAskReleased { break }
+            }
+            guard let self, !Task.isCancelled else { return }
+            finishAskedMove(in: position)
+        }
+    }
+
+    /// Let go: the engine stops where it has got to and plays what it likes best.
+    ///
+    /// The move is played here rather than left to the stream ending, because a press can be shorter
+    /// than the trip to the engine and back: asking a search that has not started yet to stop is a
+    /// no-op, and a game that only moves when the engine happens to notice is not a button. So a
+    /// release plays what is known at that instant and takes the search down with it — and the one
+    /// case where nothing is known yet waits for the first snapshot, which is the soonest an answer
+    /// can exist at all.
+    func endAskedMove() {
+        guard isThinking else { return }
+        isAskReleased = true
+        guard askedBest != nil else {
+            engine?.stop()
+            return
+        }
+        let position = viewed
+        searchTask?.cancel()
+        searchTask = nil
+        finishAskedMove(in: position)
+    }
+
+    private func finishAskedMove(in position: Game) {
+        isThinking = false
+        isAskReleased = false
+        let uci = askedBest
+        askedBest = nil
+        guard let uci, let move = position.state.move(matching: uci) else { return }
+        playAsked(move)
+    }
+
+    /// A move the engine was asked for. Like a hand move in every way except the clock: the time
+    /// the engine mirrors is a record of how long the *player* took, and this was not that.
+    private func playAsked(_ move: Move) {
         let branching = !isAtLatest && game.plies[cursor].uci != move.uci
         guard game.play(move, atPly: cursor) else {
             Feedback.shared.play(.refused)
@@ -382,6 +531,11 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     }
 
     private func record(_ snapshot: Analysis) {
+        searchProgress = SearchProgress(
+            depth: snapshot.depth,
+            selectiveDepth: snapshot.selectiveDepth,
+            milliseconds: snapshot.timeMilliseconds
+        )
         // While practising, the only search still running is the engine thinking about its own
         // move — and what that search thinks of the position is advice, whichever question it was
         // asked. It is dropped rather than merely hidden, so the game's plies stay unmarked and
@@ -407,7 +561,11 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
                 roster.append(PGN.Tag(name, value))
             }
         }
-        set("Event", "Chessfen")
+        // Only where there is nothing there already: a game that has been filed carries its
+        // collection's name here, and writing after every move must not file it back out again.
+        if roster.first(where: { $0.name == "Event" })?.value.isEmpty ?? true {
+            set("Event", Self.unfiledEvent)
+        }
         set("White", controller(for: .white).playerName)
         set("Black", controller(for: .black).playerName)
         set("Result", game.resultToken)
