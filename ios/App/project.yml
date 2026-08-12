@@ -1,0 +1,59 @@
+# Generated with `xcodegen` from this file — the .xcodeproj is not in the repository.
+# A pbxproj is a merge conflict waiting to happen and says nothing a reader wants to
+# read; this says the same thing in twenty lines. Run `xcodegen generate` in ios/App
+# after changing it, or after a fresh clone.
+name: Chessfen
+options:
+  bundleIdPrefix: com.sunfmin
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+packages:
+  ChessfenKit:
+    path: ..
+
+targets:
+  Chessfen:
+    type: application
+    platform: iOS
+    sources:
+      - path: Chessfen
+      # A folder reference, so both nets land in the bundle as files the engine can be
+      # given a path to. They are 112 MiB of the app's size and the reason it can play
+      # chess on a plane.
+      - path: ../Resources/Nets
+        type: folder
+    dependencies:
+      - package: ChessfenKit
+        product: ChessfenKit
+    info:
+      path: Chessfen/Info.plist
+      properties:
+        CFBundleDisplayName: Chessfen
+        UILaunchScreen:
+          UIColorName: ""
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSCameraUsageDescription: 拍下棋盘，识别出局面。照片只在这台设备上处理，不会上传。
+        NSPhotoLibraryUsageDescription: 从相册里挑一张棋盘照片或截图来识别。图片只在这台设备上处理。
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sunfmin.chessfen
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        DEVELOPMENT_TEAM: HL27PWAKDF
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "6.0"
+        # Xcode 26's approachable concurrency: view code is main-actor by default, so the
+        # only things that have to say anything about isolation are the ones that really
+        # do leave the main thread — recognition and the engine.
+        SWIFT_APPROACHABLE_CONCURRENCY: YES
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        ENABLE_USER_SCRIPT_SANDBOXING: YES
+        DEAD_CODE_STRIPPING: YES
