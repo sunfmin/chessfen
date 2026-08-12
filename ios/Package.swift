@@ -35,7 +35,14 @@ let package = Package(
         ),
         .target(name: "ChessfenKit", dependencies: ["CStockfish"]),
         .executableTarget(name: "chessfen-cli", dependencies: ["ChessfenKit"]),
-        .testTarget(name: "ChessfenKitTests", dependencies: ["ChessfenKit"]),
+        .testTarget(
+            name: "ChessfenKitTests",
+            dependencies: ["ChessfenKit"],
+            // A real screenshot of a real board: a different piece set, inline
+            // coordinates, a highlighted square. Nothing rendered here can stand in
+            // for it.
+            resources: [.copy("Resources/reference_board.png")]
+        ),
     ],
     cxxLanguageStandard: .cxx17
 )
