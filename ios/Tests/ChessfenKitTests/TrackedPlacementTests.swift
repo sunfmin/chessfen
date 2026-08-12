@@ -115,6 +115,30 @@ func captureRemovesExactlyOnePiece() throws {
     #expect(arrived.id == capturer.id)
 }
 
+@Test("taking a piece that is tracked before the capturer still moves the capturer")
+func captureOfAnEarlierPieceMovesTheRightOne() throws {
+    // Rook takes rook down the h-file. The captured rook is tracked before the capturer —
+    // pieces are tracked in board order — so removing it shifts the capturer along, and an
+    // index found before the removal points past the end of the list. On a phone that is a
+    // crash rather than a glitch, which is what this position is here to keep out.
+    var game = try #require(Game(startFEN: "4k2r/8/8/8/8/8/8/4K2R b - - 0 1"))
+    var tracked = TrackedPlacement(try #require(BoardRenderer.placement(game.state.fen)))
+    let capturer = try #require(tracked.items.first { $0.square == Square("h8") })
+
+    let playedH8h1 = game.apply(uci: "h8h1")
+    #expect(playedH8h1)
+    tracked.update(
+        to: try #require(BoardRenderer.placement(game.state.fen)),
+        moved: MoveSquares(uci: "h8h1")
+    )
+
+    #expect(tracked.placement == BoardRenderer.placement(game.state.fen))
+    #expect(tracked.items.count == 3)
+    let arrived = try #require(tracked.items.first { $0.square == Square("h1") })
+    #expect(arrived.id == capturer.id, "the rook should slide down the file, not appear")
+    #expect(arrived.piece == Piece(colour: .black, kind: .rook))
+}
+
 @Test("en passant takes the pawn that is not on the destination square")
 func enPassantRemovesTheRightPawn() throws {
     var game = try #require(

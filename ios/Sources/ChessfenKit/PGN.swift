@@ -168,18 +168,29 @@ public struct PGN: Hashable, Sendable {
 
         // One frame per open bracket. Moves always go to the innermost one, which is what
         // makes a Variation inside a Variation work without any special handling: it is the
-        // same rule applied one level further in.
-        var frames: [(game: Game, branchPoint: Int)] = [(game, -1)]
+        // same rule applied one level further in. A frame goes `dead` when something in it
+        // will not read, and a dead frame is dropped whole at its closing bracket: a
+        // Variation is an aside, and files in the wild carry asides that are not moves at
+        // all — refusing to open a game over one would lose the game to save the footnote.
+        var frames: [(game: Game, branchPoint: Int, dead: Bool)] = [(game, -1, false)]
 
         // Evaluations arrive in comments *after* the move they belong to.
         for token in scanner.readMovetext() {
             let last = frames.count - 1
             switch token {
             case .move(let san):
+                guard !frames[last].dead else { continue }
                 guard frames[last].game.apply(san: san) else {
-                    throw ParseError.illegalMove(san, afterPlies: frames[last].game.plies.count)
+                    guard last > 0 else {
+                        throw ParseError.illegalMove(
+                            san, afterPlies: frames[last].game.plies.count
+                        )
+                    }
+                    frames[last].dead = true
+                    continue
                 }
             case .evaluation(let score):
+                guard !frames[last].dead else { continue }
                 frames[last].game.setEvaluation(
                     score, atPly: frames[last].game.plies.count - 1
                 )
@@ -187,19 +198,19 @@ public struct PGN: Hashable, Sendable {
                 // A Variation is an alternative to the move just read, so it starts from the
                 // position that move was played in.
                 let branchPoint = frames[last].game.plies.count - 1
-                guard branchPoint >= 0,
+                guard !frames[last].dead, branchPoint >= 0,
                       let rewound = frames[last].game.rewound(to: branchPoint)
                 else {
                     // Brackets before any move have nothing to be an alternative to. Read
                     // them into a frame that gets thrown away rather than refusing the file.
-                    frames.append((frames[last].game, -1))
+                    frames.append((frames[last].game, -1, true))
                     continue
                 }
-                frames.append((rewound, branchPoint))
+                frames.append((rewound, branchPoint, false))
             case .variationEnd:
                 guard frames.count > 1 else { continue }
                 let frame = frames.removeLast()
-                guard frame.branchPoint >= 0,
+                guard !frame.dead, frame.branchPoint >= 0,
                       frame.game.plies.count > frame.branchPoint
                 else { continue }
                 frames[frames.count - 1].game.addVariation(

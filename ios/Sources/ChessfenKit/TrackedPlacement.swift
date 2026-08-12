@@ -72,28 +72,38 @@ public struct TrackedPlacement: Hashable, Sendable {
     public mutating func update(to placement: [Square: Piece], moved: MoveSquares? = nil) {
         var working = items
 
-        if let moved, let index = working.firstIndex(where: { $0.square == moved.from }) {
+        if let moved, moved.from != moved.to,
+            let moverID = working.first(where: { $0.square == moved.from })?.id
+        {
             // Whatever stood on the destination has been taken, and must go before the
             // mover arrives — otherwise two pieces claim one square and the reconciliation
             // below has to guess which is real.
             working.removeAll { $0.square == moved.to }
 
-            let mover = working[index].piece
-            working[index].square = moved.to
-            // A promotion is the same piece arriving as a different one, so the identity
-            // travels and only the drawing changes.
-            if let arrived = placement[moved.to], arrived.colour == mover.colour {
-                working[index].piece = arrived
-            }
+            // The mover is found again afterwards, and by identity rather than by position:
+            // taking a piece off shifts everything tracked after it along, so an index from
+            // before the removal can be pointing at the wrong piece by now — or past the end,
+            // which is a crash rather than a wrong animation. Pieces are tracked in the order
+            // they were first seen, so this happens whenever the captured piece was seen
+            // first, which is most of the time for one side and none of it for the other.
+            if let index = working.firstIndex(where: { $0.id == moverID }) {
+                let mover = working[index].piece
+                working[index].square = moved.to
+                // A promotion is the same piece arriving as a different one, so the identity
+                // travels and only the drawing changes.
+                if let arrived = placement[moved.to], arrived.colour == mover.colour {
+                    working[index].piece = arrived
+                }
 
-            // Castling moves two pieces, and only the king's half is in the UCI move. The
-            // rook is wherever it has to have come from for the placement to be true.
-            if mover.kind == .king, abs(moved.to.file - moved.from.file) > 1 {
-                let isShort = moved.to.file > moved.from.file
-                let rookFrom = Square(file: isShort ? 7 : 0, rank: moved.from.rank)
-                let rookTo = Square(file: isShort ? 5 : 3, rank: moved.from.rank)
-                if let rook = working.firstIndex(where: { $0.square == rookFrom }) {
-                    working[rook].square = rookTo
+                // Castling moves two pieces, and only the king's half is in the UCI move. The
+                // rook is wherever it has to have come from for the placement to be true.
+                if mover.kind == .king, abs(moved.to.file - moved.from.file) > 1 {
+                    let isShort = moved.to.file > moved.from.file
+                    let rookFrom = Square(file: isShort ? 7 : 0, rank: moved.from.rank)
+                    let rookTo = Square(file: isShort ? 5 : 3, rank: moved.from.rank)
+                    if let rook = working.firstIndex(where: { $0.square == rookFrom }) {
+                        working[rook].square = rookTo
+                    }
                 }
             }
         }

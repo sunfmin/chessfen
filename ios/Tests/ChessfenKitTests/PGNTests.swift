@@ -94,6 +94,11 @@ func pgnSkipsCommentsVariationsAndAnnotations() throws {
     #expect(read.game.plies[0].evaluation == .centipawns(25))
     #expect(read.game.plies[1].evaluation == nil)
     #expect(read.tag("Round") == "3")
+    // The Sicilian aside is a real line and is kept. The bracket nested inside it says
+    // "2... d6" where it is white's move, so it is not a line at all — it is dropped, and
+    // dropping it does not cost the rest of the file.
+    #expect(read.game.variations(atPly: 1).map { $0.map(\.san) } == [["c5", "Nf3"]])
+    #expect(read.game.variations(atPly: 2).isEmpty)
 }
 
 @Test("a PGN with no FEN tag starts from the standard position")
