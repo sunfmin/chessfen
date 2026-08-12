@@ -23,12 +23,6 @@ struct GameScreen: View {
         let moves: [Move]
     }
 
-    /// The practice switch, as something a Toggle can drive. The session owns the answer because
-    /// turning it on has to stop a search, not just stop drawing one.
-    private var isPractising: Binding<Bool> {
-        Binding(get: { session.isPractising }, set: { session.setPractising($0) })
-    }
-
     var body: some View {
         GeometryReader { proxy in
             let side = Self.boardSide(in: proxy.size)
@@ -76,12 +70,6 @@ struct GameScreen: View {
                         path.append(.confirm(PositionProposal(reopening: session)))
                     } label: {
                         Label("改棋子", systemImage: "hand.point.up.left")
-                    }
-                    Toggle(isOn: isPractising) {
-                        Label(
-                            "练习（不看引擎）",
-                            systemImage: session.isPractising ? "eye.slash" : "eye"
-                        )
                     }
                     Toggle(isOn: $isSoundOn) {
                         Label("音效", systemImage: isSoundOn ? "speaker.wave.2" : "speaker.slash")
@@ -413,6 +401,24 @@ struct GameScreen: View {
                     }
                     if colour == .white { Spacer(minLength: 2) }
                 }
+            }
+
+            // Under the two Controllers, because it is the third thing the engine can be asked to
+            // do here and it only means anything next to them: those two say whether it moves,
+            // this one says whether it talks. It was in the menu, which is the wrong place for the
+            // same reason the others are not there — it is a fact about the game in front of you.
+            HStack(spacing: 10) {
+                ChipCluster(
+                    title: "意见",
+                    options: [
+                        .init(value: false, label: "看引擎", isEnabled: engine.isReady),
+                        .init(value: true, label: "自己练"),
+                    ],
+                    selection: session.isPractising
+                ) { practising in
+                    session.setPractising(practising)
+                }
+                Spacer(minLength: 2)
             }
 
             if !session.game.plies.isEmpty {
