@@ -71,6 +71,43 @@ case "analyse":
         }
     }
 
+case "recognize", "recognise":
+    guard arguments.count >= 2 else {
+        fail("usage: chessfen-cli recognise <image> [--straight]")
+    }
+    guard let image = RGBImage(contentsOf: URL(filePath: arguments[1])) else {
+        fail("could not read \(arguments[1])")
+    }
+    // The photograph door by default, because that is the one the app uses. `--straight`
+    // takes the axis-aligned reading alone, which is what the Python implementation did and
+    // therefore what a comparison against it should use.
+    let recognition: Recognition
+    do {
+        if arguments.contains("--straight") {
+            recognition = try Recognizer.recognise(image)
+        } else {
+            recognition = try await Recognizer.recognise(photograph: image)
+        }
+    } catch {
+        fail("\(error)")
+    }
+
+    print(recognition.fen)
+    let orientation =
+        recognition.orientation == .whiteAtBottom ? "white at bottom" : "black at bottom"
+    print("\(orientation), checker score \(String(format: "%.1f", recognition.checkerScore))")
+    if recognition.shaky.isEmpty {
+        print("no shaky squares")
+    } else {
+        let listed = recognition.shaky.map { entry in
+            let piece = entry.verdict.piece.map { String($0.glyph) } ?? "empty"
+            let score = String(format: "%.2f", entry.verdict.score)
+            let margin = String(format: "%.2f", entry.verdict.margin)
+            return "\(entry.square)=\(piece)(\(score)/\(margin))"
+        }
+        print("shaky: \(listed.joined(separator: " "))")
+    }
+
 case "icon":
     guard arguments.count >= 2 else {
         fail("usage: chessfen-cli icon <out.png> [side]  (default 1024)")

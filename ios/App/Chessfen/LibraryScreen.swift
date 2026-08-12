@@ -21,6 +21,7 @@ struct LibraryScreen: View {
     @State private var isFileImporterOpen = false
     @State private var photoItem: PhotosPickerItem?
     @State private var isRecognising = false
+    @State private var isAboutShowing = false
     @State private var failure: String?
 
     var body: some View {
@@ -107,7 +108,7 @@ struct LibraryScreen: View {
             }
             .navigationTitle("Chessfen")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .topBarLeading) {
                     if case .starting = engine.status {
                         HStack(spacing: 6) {
                             ProgressView().controlSize(.small)
@@ -115,7 +116,15 @@ struct LibraryScreen: View {
                         }
                     }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        isAboutShowing = true
+                    } label: {
+                        Image(systemName: "info.circle")
+                    }
+                }
             }
+            .sheet(isPresented: $isAboutShowing) { AboutScreen() }
             .navigationDestination(for: Step.self) { step in
                 switch step {
                 case .confirm(let proposal):

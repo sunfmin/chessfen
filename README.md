@@ -4,6 +4,14 @@ Read a chess position out of a board image and print its FEN — and render a FE
 into a board image. No model, no training data, no OpenCV: the geometry of a rendered
 board is exact, so plain arithmetic on pixels is enough.
 
+> **This Python implementation is frozen.** It works, it is still tested, and it is still
+> the clearest description of the algorithm — but the living version is the Swift one in
+> [`ios/`](ios/), which reads photographs as well as screenshots, plays the position out
+> against Stockfish and runs on a phone. New behaviour goes there; this side gets
+> correctness fixes only.
+> See [ADR 0005](docs/adr/0005-swift-becomes-the-only-living-implementation.md) for why
+> keeping two of everything was the worse trade.
+
 ```console
 $ uv run chessfen recognize board.png
 r3k3/2N5/8/8/8/8/8/8 w q - 0 1

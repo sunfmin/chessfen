@@ -1,0 +1,122 @@
+# Chessfen for iOS
+
+Point the camera at a chessboard, get the position, and play on from it against Stockfish —
+entirely on the phone. No account, no network, no upload: recognition is arithmetic on pixels
+and the engine is linked into the app, so the whole thing works on a plane.
+
+This is the Swift rewrite of the Python recogniser in the repository root, and it is now
+[the only living implementation](../docs/adr/0005-swift-becomes-the-only-living-implementation.md).
+
+## Layout
+
+```
+ios/
+├── Package.swift          # one package, three targets
+├── Sources/
+│   ├── CStockfish/        # Stockfish 18, vendored, plus a C ABI bridge
+│   ├── ChessfenKit/       # recognition, rules, engine, game, PGN — all the thinking
+│   └── chessfen-cli/      # a macOS entry point to the same code
+├── Resources/Nets/        # the two NNUE files (Git LFS)
+├── Tests/                 # 116 tests
+└── App/                   # the SwiftUI shell: screens and nothing else
+    └── project.yml        # the Xcode project is generated from this
+```
+
+The split is the point: everything that decides anything lives in `ChessfenKit`, which has no
+UIKit and no SwiftUI in it and is testable from a terminal. `App/` is screens.
+
+## Prerequisites
+
+```bash
+brew install xcodegen git-lfs && git lfs install
+```
+
+Xcode 26 or newer (the app targets iOS 26 and uses Swift 6 approachable concurrency), and a
+clone that actually fetched LFS — `ls -l Resources/Nets` should show two files of 108 MB and
+4 MB, not two one-line pointers.
+
+## The package, from a terminal
+
+```bash
+cd ios
+swift build
+swift test                                   # ~4 minutes; the engine and photograph
+                                             # tests are the slow ones
+swift test --filter EngineTests               # just the engine
+```
+
+`chessfen-cli` is the same code with a shell around it, which is how a doubt gets settled
+without opening a simulator:
+
+```bash
+swift run chessfen-cli recognise board.png    # FEN, orientation, shaky squares
+swift run chessfen-cli recognise board.png --straight   # no perspective correction
+swift run chessfen-cli validate "<fen>"       # is this a position at all
+swift run chessfen-cli perft "<fen>" 5        # count the moves; compare with anyone
+swift run chessfen-cli analyse "<fen>" 24     # Stockfish, three lines, to depth 24
+swift run chessfen-cli icon out.png 1024      # redraw the app icon
+```
+
+`analyse` and the engine tests need the nets. They are found relative to the source tree;
+`CHESSFEN_NETS=/somewhere` overrides that.
+
+## The app
+
+```bash
+cd ios/App
+xcodegen generate            # writes Chessfen.xcodeproj — do this after a fresh clone
+open Chessfen.xcodeproj
+```
+
+The `.xcodeproj` is not in the repository: a pbxproj is a merge conflict waiting to happen and
+says nothing a reader wants to read. `project.yml` says the same thing in fifty lines, so it is
+the file to edit — signing, the deployment target and the Info.plist strings all live there.
+
+To put a build on a device without Xcode's UI:
+
+```bash
+xcrun devicectl list devices
+xcodebuild -project Chessfen.xcodeproj -scheme Chessfen -configuration Release \
+    -destination 'generic/platform=iOS' -derivedDataPath /tmp/dd build
+xcrun devicectl device install app --device <udid> \
+    /tmp/dd/Build/Products/Release-iphoneos/Chessfen.app
+xcrun devicectl device process launch --device <udid> --terminate-existing com.sunfmin.chessfen
+```
+
+## How the app hangs together
+
+**Recognition never becomes a game on its own.** Every reading goes through the Confirm
+Position gate ([ADR 0008](../docs/adr/0008-a-confirm-position-gate-stands-between-recognition-and-game.md)):
+the squares it was unsure about are ringed in orange, every square can be corrected by hand,
+and the fields no picture could have settled — whose move it is, castling rights, which way up
+the board is — are asked rather than assumed. A wrong piece is not a wrong pixel; it is a
+different game, discovered ten moves later.
+
+**One engine, and it never stops thinking.** There is a single Stockfish instance behind a
+serial queue, and a new search supersedes the one before it. While it is the player's move the
+search is unbounded, so what it recommends keeps changing as it deepens — that is the honest
+display of what an engine is doing, not a bug
+([ADR 0009](../docs/adr/0009-one-engine-unbounded-analysis-mirrored-opponent-time.md)). When
+the engine is playing, it takes about as long as the player just took, and 马上走 cuts that
+short without changing which move it picks.
+
+**Games are PGN files.** One per game, in Documents, with the photograph a recognised game came
+from kept beside it ([ADR 0010](../docs/adr/0010-pgn-files-are-the-storage-format.md)). There is
+no database and no migration story: anything that reads PGN reads everything this app has ever
+saved, and branches, evaluations and where the position came from all ride along in notation
+PGN already had. A game nobody has moved in yet is not written at all.
+
+**Stockfish is driven through its `Engine` class, not through UCI text**
+([ADR 0002](../docs/adr/0002-drive-stockfish-through-its-engine-class-not-uci-text.md)), because
+iOS forbids `fork`/`exec` — there is no subprocess to pipe commands to, so the engine is linked
+in and called. The same C++ answers the rules questions
+([ADR 0003](../docs/adr/0003-borrow-stockfish-for-rules-queries-behind-a-stateless-bridge.md)):
+a second move generator would be a second opinion about the rules of chess, and Stockfish's is
+the one already being trusted with everything else.
+
+## Licence
+
+GPLv3, for the whole repository
+([ADR 0001](../docs/adr/0001-relicense-the-repository-under-gplv3.md)). Stockfish is GPLv3 and
+this links against it, so the licence is not a choice — which also means this app is not going
+to the App Store, whose terms and the GPL do not agree.
