@@ -323,6 +323,11 @@ struct LibraryScreen: View {
                 return
             }
             let shaky = Set(recognition.shaky.map(\.square))
+            // The board, cut out of the picture and nothing else. Kept this way rather than as the
+            // whole frame because it is the form the editor can lay under the board square for
+            // square, and because it needs no rect carried alongside it to be usable — the crop is
+            // the alignment, so it survives being written to disk and read back after a relaunch.
+            let picture = recognition.boardPicture
 
             // A legal reading opens as a game, which is the whole point of 0011. An illegal one
             // is *not* a failed recognition: the board was found and read with a mistake in it,
@@ -337,7 +342,7 @@ struct LibraryScreen: View {
                             draft: draft,
                             shaky: shaky,
                             orientation: recognition.orientation,
-                            picture: recognition.image
+                            picture: picture
                         )
                     )
                 )
@@ -348,7 +353,7 @@ struct LibraryScreen: View {
                 game: game,
                 orientation: recognition.orientation,
                 origin: .recognised,
-                picture: recognition.image,
+                picture: picture,
                 shaky: shaky
             )
             session.attach(engine: engine.service, library: library)

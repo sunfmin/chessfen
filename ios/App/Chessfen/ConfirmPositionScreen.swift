@@ -74,10 +74,28 @@ struct ConfirmPositionScreen: View {
     @State private var brush: Brush? = .eraser
     @State private var isPictureShowing = false
     @State private var isAdvancedShowing = false
+    /// How much of the photograph is showing. Off to begin with: the board is what is being edited,
+    /// and the picture is what you reach for when you doubt it.
+    @State private var photo: PhotoMode = .off
+    /// True while 按住看照片 is held. Separate from the mode so releasing goes back to whatever was
+    /// set rather than to a fourth state nobody chose.
+    @State private var isPeeking = false
 
     enum Brush: Hashable {
         case piece(Piece)
         case eraser
+    }
+
+    /// The three useful amounts of photograph. A slider was the other option and it is worse: it
+    /// looks continuous while only these three values do anything — compare, look, and get out of
+    /// the way — and each one is a tap here instead of a drag.
+    enum PhotoMode: Hashable {
+        /// The board as the editor believes it.
+        case off
+        /// Under the pieces, muted, and still editable — this is the one you work in.
+        case under
+        /// The photograph by itself. What is really on that square, with nothing drawn over it.
+        case alone
     }
 
     private static let kinds: [PieceKind] = [.king, .queen, .rook, .bishop, .knight, .pawn]
@@ -92,6 +110,7 @@ struct ConfirmPositionScreen: View {
         VStack(spacing: 0) {
             instruction
             board
+            photoControl
             palette
             Spacer(minLength: 0)
             if isAdvancedShowing { advanced }
@@ -106,7 +125,10 @@ struct ConfirmPositionScreen: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    if proposal.picture != nil {
+                    // Only for a picture that cannot be laid over the board — one stored before the
+                    // board was cut out of it. Anything that can be is better seen in place, and
+                    // two ways to look at the same photograph is one too many.
+                    if proposal.picture != nil, boardPhoto == nil {
                         Button {
                             isPictureShowing = true
                         } label: {
@@ -161,7 +183,8 @@ struct ConfirmPositionScreen: View {
     /// screen opens on, and telling someone they are about to put a piece down when they are about
     /// to take one off is worse than saying nothing.
     private var hint: String {
-        switch brush {
+        if isShowingPhotoAlone { return "这是照片本身，点格子不改子" }
+        return switch brush {
         case .none: "先选一个棋子，再点格子"
         case .eraser: "点格子把子拿走"
         case .piece: "点格子放下，点同一格拿走"
@@ -194,9 +217,89 @@ struct ConfirmPositionScreen: View {
             orientation: proposal.orientation,
             suspects: proposal.shaky,
             coordinates: true,
-            onTap: paint
+            // Nothing to edit against a photograph: while it is the only thing showing, a tap
+            // would be aimed at a piece the board is not currently claiming to have.
+            isInteractive: !isShowingPhotoAlone,
+            onTap: paint,
+            backdrop: backdrop
         )
         .padding(.horizontal, 16)
+    }
+
+    /// The photograph, cut to the board, ready to lie under the pieces.
+    ///
+    /// Only for a picture that is square: one cut to the board is square by construction, and a
+    /// picture that is not was stored before the board was cut out of it, so it would sit under the
+    /// pieces misaligned — which is worse than not offering the comparison at all. Those still open
+    /// in the sheet, which asks nothing of the coordinates.
+    private var boardPhoto: Image? {
+        guard let picture = proposal.picture, picture.width == picture.height, picture.width > 0
+        else { return nil }
+        return Image(rgb: picture)
+    }
+
+    private var isShowingPhotoAlone: Bool { isPeeking || photo == .alone }
+
+    private var backdrop: BoardView.Backdrop? {
+        guard let boardPhoto, photo != .off || isPeeking else { return nil }
+        if isShowingPhotoAlone {
+            return .init(image: boardPhoto, opacity: 1, saturation: 1, showsPieces: false)
+        }
+        // Under the pieces: enough of the photograph to compare against, muted enough that the
+        // drawn pieces stay the darkest and lightest things in any square.
+        return .init(image: boardPhoto, opacity: 0.5, saturation: 0.45, showsPieces: true)
+    }
+
+    /// How much of the photograph is showing. Directly under the board, because that is the thing
+    /// it changes and the comparison happens up there.
+    @ViewBuilder private var photoControl: some View {
+        if boardPhoto != nil {
+            HStack(spacing: 10) {
+                ChipCluster(
+                    title: "照片",
+                    options: [
+                        .init(value: PhotoMode.off, label: "关"),
+                        .init(value: PhotoMode.under, label: "叠着看"),
+                        .init(value: PhotoMode.alone, label: "只看照片"),
+                    ],
+                    selection: photo
+                ) { mode in
+                    withAnimation(.easeOut(duration: 0.15)) { photo = mode }
+                }
+                Spacer(minLength: 2)
+                peek
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+        }
+    }
+
+    /// Hold it to see the photograph, let go to come back. Two taps of the chips do the same thing,
+    /// but settling one doubtful square is a glance, and a glance should not cost a mode change.
+    ///
+    /// A held button rather than a long press on the board itself: taps on the board edit it, this
+    /// screen opens with the eraser in hand, and a hold that ended in a stray tap would rub out the
+    /// piece you were checking.
+    private var peek: some View {
+        HStack(spacing: 5) {
+            Image(systemName: isPeeking ? "eye.fill" : "eye").font(.footnote)
+            Text("按住看").font(.footnote.weight(.medium))
+        }
+        .foregroundStyle(isPeeking ? Palette.parchment : Palette.ink)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(
+            isPeeking ? Palette.analysis : Palette.chipRest,
+            in: RoundedRectangle(cornerRadius: 9)
+        )
+        .contentShape(Rectangle())
+        // A drag of no distance is the reliable way to be told about the release as well as the
+        // press; a long-press gesture reports the press and keeps the rest to itself.
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in isPeeking = true }
+                .onEnded { _ in isPeeking = false }
+        )
     }
 
     /// The box of pieces: white above, black below, all twelve visible at once. A scroller put

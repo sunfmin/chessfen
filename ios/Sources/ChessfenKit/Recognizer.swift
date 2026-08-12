@@ -34,6 +34,17 @@ public struct Recognition: Sendable {
     }
 
     public func piece(at square: Square) -> Piece? { verdicts[square]?.piece }
+
+    /// Just the board, cut out of the picture the reading was taken from.
+    ///
+    /// Square, and in the same coordinates the Cells were read in — row 0 is the top of the board
+    /// as the camera saw it — so laying it under an eight-by-eight board puts each square of the
+    /// photograph on the square it was read from. That is what lets the editor show the photograph
+    /// *under* the pieces instead of beside them, and it is the only form of the picture worth
+    /// keeping: the table around the board answers no question anybody has here.
+    public var boardPicture: RGBImage {
+        image.cropped(x: rect.left, y: rect.top, width: rect.size, height: rect.size)
+    }
 }
 
 public enum Recognizer {

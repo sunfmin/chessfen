@@ -46,6 +46,22 @@ from it:
   Square, plus castling rights and the en passant Square behind an advanced toggle. It
   gained nothing and lost 先走, 视角 and the Controllers — anything operable on the Game
   screen is not duplicated there.
+- The photograph is compared **in place, under the pieces**, not beside them. Recognition
+  already straightens the board and knows its rect in the picture it read, so the picture
+  cut to that rect is square and in board coordinates: laid under an eight-by-eight board,
+  every square of the photograph lands on the square it was read from, and a piece read
+  wrong is two different things in one square with no eye travel between two grids. Three
+  amounts of photograph are useful and no more — off, under the pieces at half strength and
+  desaturated so the drawn pieces stay the darkest and lightest things in a square, and the
+  photograph alone with the pieces hidden and taps refused — plus a held button for a glance
+  that should not cost a mode change. Side by side was rejected: on a phone it either halves
+  the board or halves the photograph, and comparing then means finding the same square twice.
+- **What is kept of a recognised game's picture is the board, cut out.** The crop *is* the
+  alignment, so nothing has to carry a rect alongside the image, nothing has to be written
+  into the PGN, and a game reopened after a relaunch lines up exactly as it did when it was
+  read. The surroundings of the board answer no question anybody asks at this screen. A
+  picture stored before this — a whole frame, and so almost never square — is detectable by
+  that and still opens in the sheet, where coordinates do not matter.
 - Editing is allowed only while the Game has no moves. Replacing the starting Position
   under moves already played would invalidate them, so `replaceStart` refuses, the
   editor's entry point disappears after the first move, and the way to fix a position

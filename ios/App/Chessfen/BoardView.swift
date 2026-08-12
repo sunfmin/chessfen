@@ -95,6 +95,25 @@ struct BoardView: View {
     var coordinates = true
     var isInteractive = true
     var onTap: ((Square) -> Void)?
+    /// The photograph this position was read from, laid under the pieces.
+    var backdrop: Backdrop?
+
+    /// A picture behind the pieces, and how much of itself it is allowed to be.
+    ///
+    /// It goes over the squares and under the pieces, which is the whole idea: the board it shows
+    /// is the same eight by eight, so a piece read wrong shows up as two different things in one
+    /// square and the eye never has to travel to find the disagreement.
+    struct Backdrop {
+        let image: Image
+        /// How far the picture comes through the board.
+        var opacity: Double
+        /// Held down while comparing, so the photograph does not shout over the drawn pieces. At
+        /// full strength the picture is the answer rather than a reference, and nothing is muted.
+        var saturation: Double
+        /// Whether the drawn pieces stay on top. Two boards at full strength on top of each other
+        /// is neither of them, so the mode that shows the photograph outright hides them.
+        var showsPieces: Bool
+    }
 
     private let style = BoardStyle.default
 
@@ -117,7 +136,16 @@ struct BoardView: View {
             ZStack {
                 // The squares and everything under the pieces.
                 Canvas { context, size in drawGround(into: &context, size: size) }
+                if let backdrop {
+                    backdrop.image
+                        .resizable()
+                        .frame(width: side, height: side)
+                        .saturation(backdrop.saturation)
+                        .opacity(backdrop.opacity)
+                        .allowsHitTesting(false)
+                }
                 pieceLayer(side: side)
+                    .opacity(backdrop?.showsPieces == false ? 0 : 1)
                 // Selection, destinations and the recommendation arrow go over the pieces,
                 // because a ring around a piece about to be taken has to be visible.
                 Canvas { context, size in drawMarkers(into: &context, size: size) }
