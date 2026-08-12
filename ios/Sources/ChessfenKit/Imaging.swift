@@ -139,6 +139,20 @@ extension RGBImage {
 
     /// The same picture with its longer side at most `longestSide`, or itself if it
     /// already is. Never enlarges.
+    /// PNG bytes, for storing or sharing the picture a Position was read from.
+    public var pngData: Data? {
+        guard let image = cgImage else { return nil }
+        let data = NSMutableData()
+        guard
+            let destination = CGImageDestinationCreateWithData(
+                data as CFMutableData, "public.png" as CFString, 1, nil
+            )
+        else { return nil }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return data as Data
+    }
+
     public func scaled(toLongestSide longestSide: Int) -> RGBImage {
         let longer = max(width, height)
         guard longer > longestSide, longestSide > 0 else { return self }

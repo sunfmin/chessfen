@@ -63,26 +63,45 @@ public struct PGN: Hashable, Sendable {
     private var movetextTokens: [String] {
         // A Game recognised from a picture usually starts mid-game, and may start with
         // black to move — in which case PGN wants "12... Nf6" before the first white move.
-        var tokens: [String] = []
-        var moveNumber = Int(game.startFEN.split(separator: " ").last.flatMap { Int($0) } ?? 1)
-        var sideToMove: PieceColour =
+        let moveNumber = Int(game.startFEN.split(separator: " ").last.flatMap { Int($0) } ?? 1)
+        let sideToMove: PieceColour =
             game.startFEN.split(separator: " ").dropFirst().first == "b" ? .black : .white
+        return Self.tokens(for: game.plies, from: moveNumber, sideToMove: sideToMove)
+            + [game.resultToken]
+    }
 
-        for ply in game.plies {
+    /// One line of moves, with its Variations in brackets after the moves they replace —
+    /// which is where PGN has always put them, and why a game written here opens in anything
+    /// else with its branches intact.
+    private static func tokens(
+        for plies: [Game.Ply], from moveNumber: Int, sideToMove: PieceColour
+    ) -> [String] {
+        var written: [String] = []
+        var moveNumber = moveNumber
+        var sideToMove = sideToMove
+
+        for (index, ply) in plies.enumerated() {
             if sideToMove == .white {
-                tokens.append("\(moveNumber).")
-            } else if tokens.isEmpty {
-                tokens.append("\(moveNumber)...")
+                written.append("\(moveNumber).")
+            } else if index == 0 {
+                written.append("\(moveNumber)...")
             }
-            tokens.append(ply.san)
+            written.append(ply.san)
             if let evaluation = ply.evaluation {
-                tokens.append("{[%eval \(evaluation.pgnText)]}")
+                written.append("{[%eval \(evaluation.pgnText)]}")
+            }
+            for variation in ply.variations {
+                // A Variation stands in for this move, so it is numbered as this move.
+                var inner = tokens(for: variation, from: moveNumber, sideToMove: sideToMove)
+                guard !inner.isEmpty else { continue }
+                inner[0] = "(" + inner[0]
+                inner[inner.count - 1] += ")"
+                written.append(contentsOf: inner)
             }
             if sideToMove == .black { moveNumber += 1 }
             sideToMove = sideToMove.opposite
         }
-        tokens.append(game.resultToken)
-        return tokens
+        return written
     }
 
     private static func rosterDefault(_ name: String, _ game: Game) -> String {
@@ -143,24 +162,54 @@ public struct PGN: Hashable, Sendable {
         let tags = scanner.readTags()
 
         let startFEN = tags.first { $0.name == "FEN" }?.value ?? Self.standardStartFEN
-        guard var game = Game(startFEN: startFEN) else {
+        guard let game = Game(startFEN: startFEN) else {
             throw ParseError.unusableStartingPosition(Rules.validate(fen: startFEN).issue)
         }
 
+        // One frame per open bracket. Moves always go to the innermost one, which is what
+        // makes a Variation inside a Variation work without any special handling: it is the
+        // same rule applied one level further in.
+        var frames: [(game: Game, branchPoint: Int)] = [(game, -1)]
+
         // Evaluations arrive in comments *after* the move they belong to.
         for token in scanner.readMovetext() {
+            let last = frames.count - 1
             switch token {
             case .move(let san):
-                guard game.apply(san: san) else {
-                    throw ParseError.illegalMove(san, afterPlies: game.plies.count)
+                guard frames[last].game.apply(san: san) else {
+                    throw ParseError.illegalMove(san, afterPlies: frames[last].game.plies.count)
                 }
             case .evaluation(let score):
-                game.setEvaluation(score, atPly: game.plies.count - 1)
+                frames[last].game.setEvaluation(
+                    score, atPly: frames[last].game.plies.count - 1
+                )
+            case .variationStart:
+                // A Variation is an alternative to the move just read, so it starts from the
+                // position that move was played in.
+                let branchPoint = frames[last].game.plies.count - 1
+                guard branchPoint >= 0,
+                      let rewound = frames[last].game.rewound(to: branchPoint)
+                else {
+                    // Brackets before any move have nothing to be an alternative to. Read
+                    // them into a frame that gets thrown away rather than refusing the file.
+                    frames.append((frames[last].game, -1))
+                    continue
+                }
+                frames.append((rewound, branchPoint))
+            case .variationEnd:
+                guard frames.count > 1 else { continue }
+                let frame = frames.removeLast()
+                guard frame.branchPoint >= 0,
+                      frame.game.plies.count > frame.branchPoint
+                else { continue }
+                frames[frames.count - 1].game.addVariation(
+                    Array(frame.game.plies[frame.branchPoint...]), atPly: frame.branchPoint
+                )
             }
         }
 
         self.tags = tags
-        self.game = game
+        self.game = frames[0].game
     }
 }
 
@@ -175,6 +224,8 @@ private struct Scanner {
     enum MovetextToken {
         case move(String)
         case evaluation(Score)
+        case variationStart
+        case variationEnd
     }
 
     mutating func readTags() -> [PGN.Tag] {
@@ -218,7 +269,11 @@ private struct Scanner {
             case ";":
                 _ = read(while: { !$0.isNewline })
             case "(":
-                skipVariation()
+                advance()
+                tokens.append(.variationStart)
+            case ")":
+                advance()
+                tokens.append(.variationEnd)
             case "$":
                 advance()
                 _ = read(while: { $0.isNumber })
@@ -229,26 +284,13 @@ private struct Scanner {
             case "*":
                 return tokens
             default:
-                let word = read(while: { !$0.isWhitespace && $0 != "{" && $0 != "(" })
+                let word = read(while: {
+                    !$0.isWhitespace && $0 != "{" && $0 != "(" && $0 != ")"
+                })
                 if !word.isEmpty { tokens.append(.move(word)) }
             }
         }
         return tokens
-    }
-
-    /// Skips a variation and any variations nested inside it.
-    private mutating func skipVariation() {
-        var depth = 0
-        while let character = peek() {
-            if character == "(" { depth += 1 }
-            if character == ")" {
-                depth -= 1
-                advance()
-                if depth == 0 { return }
-                continue
-            }
-            advance()
-        }
     }
 
     private static func evaluation(in comment: String) -> Score? {

@@ -213,23 +213,40 @@ public final class EngineService: @unchecked Sendable {
         return game.state.move(matching: uci)
     }
 
+    /// The Score of a Game's current Position at one Depth, and nothing else — the
+    /// baseline a Review needs for its first move, which has no ply before it to compare
+    /// against.
+    public func evaluate(_ game: Game, budget: Budget) async -> Score? {
+        var last: Analysis?
+        for await analysis in analyse(game, budget: budget) { last = analysis }
+        return last?.best?.score
+    }
+
     /// Re-scores every Position of a finished Game at one uniform Depth.
     ///
     /// Uniform is the whole point (see Review in CONTEXT.md): the Scores an Analysis
     /// happened to reach depend on how long each position was looked at, so they cannot be
     /// compared with each other. These can. The returned array has one entry per ply,
     /// each being the Score *after* that ply.
-    public func review(_ game: Game, depth: Int) async -> [Score?] {
+    ///
+    /// `onPly` reports each Score as it lands, because a Review of a long game is a wait
+    /// worth showing progress through rather than a spinner. It is called from the engine's
+    /// queue, so anything it touches must be ready for that.
+    public func review(
+        _ game: Game, depth: Int, onPly: (@Sendable (Int, Score?) -> Void)? = nil
+    ) async -> [Score?] {
         guard !game.plies.isEmpty else { return [] }
         var scores: [Score?] = []
         for ply in 1...game.plies.count {
             guard let position = game.rewound(to: ply) else {
                 scores.append(nil)
+                onPly?(ply - 1, nil)
                 continue
             }
             var best: Analysis?
             for await analysis in analyse(position, budget: .depth(depth)) { best = analysis }
             scores.append(best?.best?.score)
+            onPly?(ply - 1, best?.best?.score)
             if Task.isCancelled { break }
         }
         return scores
