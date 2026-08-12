@@ -133,7 +133,7 @@ import Foundation
     /// Renames a game, or takes its name away again with nil.
     @discardableResult
     func rename(_ entry: Entry, to name: String?) -> Bool {
-        write(tag: Self.nameTag, value: name, on: entry)
+        setTags([(Self.nameTag, name)], on: entry)
     }
 
     /// Files a game under a collection, or takes it out of one with nil.
@@ -141,7 +141,27 @@ import Foundation
     func file(_ entry: Entry, under collection: String?) -> Bool {
         // Unfiled is written as the app's own name rather than removed, because `Event` is a tag
         // every PGN reader expects to find and this is the value everything else here already has.
-        write(tag: "Event", value: collection ?? "Chessfen", on: entry)
+        setTags([("Event", collection ?? "Chessfen")], on: entry)
+    }
+
+    /// Rewrites any number of a game's tags, in one read and one write.
+    ///
+    /// Through the PGN rather than around it: the file is the game (docs/adr/0010), so naming one is
+    /// re-writing it with a tag changed, and there is no second place a name could disagree with. A
+    /// game whose PGN will not parse cannot be named, which is the honest answer — there is nothing
+    /// there to put a name in.
+    ///
+    /// However many tags, one pass — because an `Entry` carries the PGN as it was parsed, so two
+    /// calls in a row would both start from that same snapshot and the second would write the first
+    /// one's change back out. That is not hypothetical: filing a game and naming it were two calls,
+    /// and the name landed while the collection quietly reverted.
+    @discardableResult
+    func setTags(_ changes: [(name: String, value: String?)], on entry: Entry) -> Bool {
+        guard var pgn = entry.pgn else { return false }
+        for change in changes {
+            pgn.setTag(change.name, to: change.value)
+        }
+        return write(pgn, to: entry.url)
     }
 
     /// Renames a whole collection, which is renaming the tag on every game in it. There is no
@@ -151,18 +171,6 @@ import Foundation
         for entry in entries where entry.collection == name {
             file(entry, under: fresh)
         }
-    }
-
-    /// Rewrites one tag of a game on disk.
-    ///
-    /// Through the PGN rather than around it: the file is the game (docs/adr/0010), so renaming is
-    /// re-writing the file with one tag changed, and there is no second place a name could disagree
-    /// with. A game with no readable PGN cannot be renamed, which is the honest answer — there is
-    /// nothing there to put a name in.
-    private func write(tag: String, value: String?, on entry: Entry) -> Bool {
-        guard var pgn = entry.pgn else { return false }
-        pgn.setTag(tag, to: value)
-        return write(pgn, to: entry.url)
     }
 
     /// The folder the games are in, which is iCloud's when there is an iCloud (docs/adr/0012).

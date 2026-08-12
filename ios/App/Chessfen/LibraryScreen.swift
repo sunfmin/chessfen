@@ -491,12 +491,16 @@ struct GameList: View {
         guard let filing else { return }
         let collection = filing.collection ?? Self.trimmed(collectionDraft)
         guard let collection else { return }
-        library.file(filing.entry, under: collection)
-        // The name is only written when something was typed, so cancelling out of naming does not
-        // wipe a name the game already had.
+        // Both tags in one write. Two calls each read the entry's own copy of the PGN, so the second
+        // would carry the first one's change away with it — the name would land and the collection
+        // would silently revert.
+        var changes: [(name: String, value: String?)] = [("Event", collection)]
+        // The name is only touched when something was typed, so backing out of naming does not wipe
+        // a name the game already had.
         if let name = Self.trimmed(nameDraft) {
-            library.rename(filing.entry, to: name)
+            changes.append((GameLibrary.nameTag, name))
         }
+        library.setTags(changes, on: filing.entry)
     }
 
     private func beginFiling(_ entry: GameLibrary.Entry, into collection: String?) {
