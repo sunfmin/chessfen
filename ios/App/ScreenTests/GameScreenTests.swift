@@ -151,6 +151,99 @@ struct GameScreenScreenshots {
         #expect(rendered.says("1. e4 e5"), "the moves are all there to be walked through")
     }
 
+    /// A board just read off a photograph and then filed into a collection: the same reading, with
+    /// its doubts settled by somebody keeping it.
+    @Test("a filed game stops ringing the squares it once was unsure of")
+    func filedBoard() async throws {
+        let fen = "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2P2N2/PP1P1PPP/RNBQK2R w KQkq - 0 5"
+        let game = try #require(Game(startFEN: fen))
+        let session = GameSession(
+            game: game,
+            origin: .recognised,
+            shaky: [Square("c6")!, Square("f6")!, Square("c5")!],
+            tags: [PGN.Tag("Event", "西西里防御")]
+        )
+
+        let rendered = await ScreenImage.write("game-filed") {
+            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
+        }
+
+        #expect(session.isFiled)
+        #expect(session.unconfirmedSquares.isEmpty, "no rings on a board somebody has kept")
+        #expect(!rendered.says("拿不太准"), "and no question about the squares under them")
+        #expect(!rendered.says("改棋子"))
+        // Everything else about the screen is unchanged: the engine still advises.
+        #expect(rendered.says("+0.38"))
+    }
+
+    /// The engine on the clock. It is thinking about its own move rather than advising, and the one
+    /// thing to do about that is stop waiting.
+    @Test("while the engine is on the clock the screen offers to stop waiting for it")
+    func engineThinking() async throws {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
+        let session = GameSession(
+            game: game,
+            controllers: [.white: .engine, .black: .hand],
+            origin: .fresh
+        )
+
+        let rendered = await ScreenImage.write("game-engine-thinking") {
+            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
+        }
+
+        #expect(session.isThinking, "the engine's own turn starts the moment the screen appears")
+        #expect(rendered.says("马上走"))
+        #expect(rendered.says("+0.38"))
+        #expect(rendered.says("白方 引擎 · 黑方 手动 · 白在下 · 看引擎"))
+        #expect(
+            !session.canPlayBestMove,
+            "and 让引擎走 stands down while the engine is already walking this one"
+        )
+    }
+
+    /// The same game at night. Every colour on this screen has a dark half that nothing else looks
+    /// at, and a palette is not checked by reading its hex values.
+    @Test("the game screen holds up in the dark")
+    func gameAtNight() async throws {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
+        let session = GameSession(
+            game: game,
+            controllers: [.white: .hand, .black: .engine],
+            origin: .fresh
+        )
+
+        let rendered = await ScreenImage.write("game-in-play-dark", style: .dark) {
+            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
+        }
+
+        #expect(rendered.says("白方走棋"))
+        #expect(rendered.says("+0.38"))
+        #expect(rendered.says("让引擎走"))
+    }
+
+    /// A move played over an earlier one. The line it replaced is kept as a Variation, offered where
+    /// it branches rather than lost — which is the whole reason 悔棋 is not how you go back.
+    @Test("a move played over an earlier one offers the line it replaced")
+    func variationKept() async throws {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
+        let session = GameSession(game: game, origin: .fresh)
+        // Back to before 4. c3, and play something else there.
+        session.step(by: -2)
+        let other = try #require(session.viewed.state.legalMoves.first { $0.uci == "d2d3" })
+        session.play(other)
+        // And stand where the branch is, which is where the line that was replaced is offered.
+        session.step(by: -1)
+
+        let rendered = await ScreenImage.write("game-variation") {
+            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
+        }
+
+        #expect(session.variationsHere.count == 1, "the abandoned line is kept, not dropped")
+        #expect(rendered.says("c3 Nf6"), "and offered in the notation the game is written in")
+        #expect(rendered.says("在看第 6/7 步"))
+        #expect(rendered.says("d3"), "with the move that replaced it in the record")
+    }
+
     /// A finished game. The engine has nothing to search and so says nothing, and the screen has to
     /// say who won anyway.
     @Test("a game that ended in mate reads as won, not as level")

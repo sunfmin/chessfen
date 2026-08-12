@@ -321,7 +321,11 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     /// A search already running does not make it false. The button that asks is held down while the
     /// search it started runs, and a control that disabled itself under the finger would never hear
     /// it let go.
-    var canPlayBestMove: Bool { engine != nil && !viewed.isOver }
+    ///
+    /// The engine's own turn does, though: it is already walking this move under its own Controller,
+    /// and 马上走 is how you stop waiting for it. Asking a second time for a move that is already
+    /// being played is two controls doing one job.
+    var canPlayBestMove: Bool { engine != nil && !viewed.isOver && !isEngineTurn }
 
     /// Starts the engine thinking about a move it will play when it is let go.
     ///

@@ -31,13 +31,26 @@ nonisolated enum Palette {
     static let analysis = dynamic(light: 0x2E7D6E, dark: 0x4FB8A4)
     static let alarm = dynamic(light: 0xB3402A, dark: 0xE87A62)
 
-    static var hairline: Color { walnut.opacity(0.18) }
-    static var chipRest: Color { walnut.opacity(0.10) }
+    /// The two ends of the advantage bar. The pieces' own colours by day; by night the black end is
+    /// lifted off the page, because a bar drawn in the page's own colour is not a bar, it is a hole
+    /// — and the end of a lost game would read as an empty gauge.
+    static let barBlack = dynamic(light: 0x241A12, dark: 0x4A3A2C)
+    static let barWhite = dynamic(light: 0xFFFCF7, dark: 0xF2E4D5)
+
+    /// A line and a resting chip, borrowed from whatever the page is made of: wood over paper,
+    /// light over night. Tinted wood on a dark page is very nearly the dark page, which is how a
+    /// deck of chips turns into an empty strip after sunset.
+    static var hairline: Color { dynamic(light: walnut.opacity(0.18), dark: .white.opacity(0.16)) }
+    static var chipRest: Color { dynamic(light: walnut.opacity(0.10), dark: .white.opacity(0.10)) }
 
     private static func dynamic(light: UInt32, dark: UInt32) -> Color {
+        dynamic(light: Color(hex: light), dark: Color(hex: dark))
+    }
+
+    private static func dynamic(light: Color, dark: Color) -> Color {
         Color(
             uiColor: UIColor { traits in
-                UIColor(Color(hex: traits.userInterfaceStyle == .dark ? dark : light))
+                UIColor(traits.userInterfaceStyle == .dark ? dark : light)
             }
         )
     }
@@ -336,9 +349,9 @@ struct EvalBar: View {
         let fraction = orientation == .whiteAtBottom ? white : 1 - white
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
-                Rectangle().fill(Color(hex: 0x241A12))
+                Rectangle().fill(Palette.barBlack)
                 Rectangle()
-                    .fill(Color(hex: 0xFFFCF7))
+                    .fill(Palette.barWhite)
                     .frame(width: proxy.size.width * fraction)
                 // A draw is the one result that is genuinely half and half, so it cannot be said
                 // with a length: it is said by taking both colours off the bar. Nobody won it.
