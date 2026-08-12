@@ -1,17 +1,21 @@
 #include "include/chessfen_bridge.h"
 
 #include <cctype>
+#include <cstdio>
 #include <cstring>
 #include <mutex>
 #include <sstream>
 #include <string>
 #include <vector>
 
+#include <deque>
+
 #include "stockfish/bitboard.h"
 #include "stockfish/movegen.h"
 #include "stockfish/perft.h"
 #include "stockfish/position.h"
 #include "stockfish/types.h"
+#include "stockfish/uci.h"
 
 using namespace Stockfish;
 
@@ -242,6 +246,177 @@ CfFenVerdict cf_validate_fen(const char *fen) {
     if (fen == nullptr)
         return Verdict(CF_FEN_MALFORMED).value;
     return validate(std::string(fen)).value;
+}
+
+// -------------------------------------------------------------------- rules
+
+namespace {
+
+// A Game replayed from its start, which is the only way repetition and the
+// fifty-move rule can be answered: they are properties of the history, not of a
+// FEN. StateInfo objects have to outlive the replay and be stable in memory, so
+// a deque holds them — Position keeps a pointer into it.
+struct Replay {
+    Position              position;
+    std::deque<StateInfo> states;
+    // Raw Zobrist keys of every position reached, the current one included.
+    // Position::key() is *not* usable here: it is perturbed by rule50 for the
+    // benefit of the transposition table, so equal positions can hash apart.
+    std::vector<Key> keys;
+
+    bool build(const char* startFen, const char* const* moves, int32_t moveCount) {
+        if (startFen == nullptr || cf_validate_fen(startFen).issue != CF_FEN_OK)
+            return false;
+
+        cf_global_init();
+        states.emplace_back();
+        position.set(std::string(startFen), false, &states.back());
+        keys.push_back(position.state()->key);
+
+        for (int32_t i = 0; i < moveCount; ++i)
+        {
+            if (moves == nullptr || moves[i] == nullptr)
+                return false;
+            const Move move = UCIEngine::to_move(position, std::string(moves[i]));
+            if (move == Move::none())
+                return false;
+            states.emplace_back();
+            position.do_move(move, states.back());
+            keys.push_back(position.state()->key);
+        }
+        return true;
+    }
+
+    int repetitionCount() const {
+        const Key current = position.state()->key;
+        int       count   = 0;
+        for (Key key : keys)
+            if (key == current)
+                ++count;
+        return count;
+    }
+};
+
+int squareColour(Square s) { return ((int(s) & 7) + (int(s) >> 3)) & 1; }
+
+// The practical "cannot possibly mate" set, not FIDE's full dead-position rule.
+bool insufficientMatingMaterial(const Position& pos) {
+    if (pos.pieces(PAWN) || pos.pieces(ROOK) || pos.pieces(QUEEN))
+        return false;
+
+    const int white = popcount(pos.pieces(WHITE, KNIGHT, BISHOP));
+    const int black = popcount(pos.pieces(BLACK, KNIGHT, BISHOP));
+
+    if (white == 0 && black <= 1)
+        return true;
+    if (black == 0 && white <= 1)
+        return true;
+    if (white == 1 && black == 1 && popcount(pos.pieces(BISHOP)) == 2)
+        return squareColour(lsb(pos.pieces(WHITE, BISHOP)))
+            == squareColour(lsb(pos.pieces(BLACK, BISHOP)));
+    return false;
+}
+
+CfOutcome outcomeOf(Position& pos, const Replay& replay) {
+    if (MoveList<LEGAL>(pos).size() == 0)
+        return pos.checkers() ? CF_CHECKMATE : CF_STALEMATE;
+    if (pos.rule50_count() >= 100)
+        return CF_DRAW_FIFTY_MOVE;
+    if (replay.repetitionCount() >= 3)
+        return CF_DRAW_REPETITION;
+    if (insufficientMatingMaterial(pos))
+        return CF_DRAW_INSUFFICIENT_MATERIAL;
+    return CF_ONGOING;
+}
+
+// Stockfish encodes castling as king-to-rook (e1h1). Players see king-to-g1.
+Square visibleDestination(Move move) {
+    const Square from = move.from_sq();
+    const Square to   = move.to_sq();
+    if (move.type_of() == CASTLING)
+        return make_square(to > from ? FILE_G : FILE_C, rank_of(from));
+    return to;
+}
+
+CfMove describe(Position& pos, Move move) {
+    CfMove out{};
+    out.from        = int32_t(move.from_sq());
+    out.to          = int32_t(visibleDestination(move));
+    out.piece       = int32_t(type_of(pos.moved_piece(move)));
+    out.promotion   = move.type_of() == PROMOTION ? int32_t(move.promotion_type())
+                                                  : int32_t(CF_PIECE_NONE);
+    out.isEnPassant = move.type_of() == EN_PASSANT;
+    out.isCastling  = move.type_of() == CASTLING;
+    // Not `piece_on(to) != NO_PIECE`: on a castling move that square holds the
+    // player's own rook, which would read as a capture of it.
+    out.isCapture  = out.isEnPassant
+                  || (!out.isCastling && pos.piece_on(move.to_sq()) != NO_PIECE);
+    out.givesCheck = pos.gives_check(move);
+
+    if (out.givesCheck)
+    {
+        StateInfo state;
+        pos.do_move(move, state);
+        out.isCheckmate = MoveList<LEGAL>(pos).size() == 0;
+        pos.undo_move(move);
+    }
+
+    const std::string uci = UCIEngine::move(move, false);
+    std::snprintf(out.uci, sizeof(out.uci), "%s", uci.c_str());
+    return out;
+}
+
+}  // namespace
+
+bool cf_game_state(const char       *startFen,
+                   const char *const *moves,
+                   int32_t            moveCount,
+                   CfGameState       *out) {
+    if (out == nullptr)
+        return false;
+
+    Replay replay;
+    if (!replay.build(startFen, moves, moveCount))
+        return false;
+
+    Position& pos = replay.position;
+    *out          = CfGameState{};
+
+    const std::string fen = pos.fen();
+    std::snprintf(out->fen, sizeof(out->fen), "%s", fen.c_str());
+    out->sideToMove     = pos.side_to_move() == WHITE ? 0 : 1;
+    out->inCheck        = bool(pos.checkers());
+    out->outcome        = int32_t(outcomeOf(pos, replay));
+    out->halfmoveClock  = pos.rule50_count();
+    out->fullmoveNumber = pos.game_ply() / 2 + 1;
+    out->legalMoveCount = int32_t(MoveList<LEGAL>(pos).size());
+
+    for (int i = 0; i < CF_MAX_CHECKERS; ++i)
+        out->checkers[i] = CF_NO_SQUARE;
+    Bitboard checkers = pos.checkers();
+    for (int i = 0; checkers && i < CF_MAX_CHECKERS; ++i)
+        out->checkers[i] = int32_t(pop_lsb(checkers));
+
+    return true;
+}
+
+int32_t cf_legal_moves(const char       *startFen,
+                       const char *const *moves,
+                       int32_t            moveCount,
+                       CfMove            *out,
+                       int32_t            capacity) {
+    Replay replay;
+    if (!replay.build(startFen, moves, moveCount))
+        return -1;
+
+    int32_t written = 0;
+    for (const auto& move : MoveList<LEGAL>(replay.position))
+    {
+        if (out != nullptr && written < capacity)
+            out[written] = describe(replay.position, move);
+        ++written;
+    }
+    return written;
 }
 
 // ------------------------------------------------------------------- perft
