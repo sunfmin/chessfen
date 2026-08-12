@@ -114,7 +114,7 @@ struct AskedMove {
 
         let unfiled = GameSession(
             game: game, origin: .recognised, shaky: shaky,
-            tags: [PGN.Tag("Event", GameSession.unfiledEvent)]
+            tags: [PGN.Tag("Event", "Chessfen")]
         )
         #expect(unfiled.canEditPosition)
         #expect(unfiled.unconfirmedSquares == shaky)
