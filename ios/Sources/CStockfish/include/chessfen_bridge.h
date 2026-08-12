@@ -148,6 +148,105 @@ int32_t cf_legal_moves(const char       *startFen,
 */
 uint64_t cf_perft(const char *fen, int depth);
 
+/* ------------------------------------------------------------------ engine  */
+
+/*
+  One Stockfish Engine, driven through its C++ class rather than UCI text
+  (docs/adr/0002). iOS forbids fork/exec, so there is no subprocess to talk to;
+  the engine is linked in and called directly.
+
+  Threading, in one place because getting it wrong here is a crash and not a bug:
+  cf_engine_go returns immediately and Stockfish's own threads do the searching.
+  The callbacks below are therefore invoked *on those threads*, not on the caller's.
+  Everything they touch must be safe for that; the Swift side hands them straight
+  to an actor. Do not call any cf_engine_* function from inside a callback.
+*/
+
+typedef struct CfEngine CfEngine;
+
+typedef enum {
+    CF_ENGINE_OK = 0,
+    CF_ENGINE_NET_MISSING,   /* a weights file is absent or unreadable */
+    CF_ENGINE_NET_TOO_SMALL, /* present but far too small to be a net  */
+    CF_ENGINE_ALLOC_FAILED
+} CfEngineStatus;
+
+/*
+  Absolute paths to the two weights files. Both are required, and both are
+  checked before Stockfish sees them: Network::verify calls exit(EXIT_FAILURE)
+  when a net did not load, which in an app means the process simply vanishes.
+  Returns NULL and sets *status on failure.
+*/
+CfEngine *cf_engine_create(const char     *bigNetPath,
+                           const char     *smallNetPath,
+                           CfEngineStatus *status);
+
+void cf_engine_destroy(CfEngine *engine);
+
+/* Any UCI option name: "Threads", "Hash", "MultiPV". Returns false if unknown. */
+bool cf_engine_set_option(CfEngine *engine, const char *name, const char *value);
+
+/* One line of a search's answer, as it stood at the depth just completed. */
+typedef struct {
+    int32_t  depth;
+    int32_t  selectiveDepth;
+    int32_t  multiPvIndex; /* 1-based, matching UCI */
+    /* Exactly one of these is meaningful; `isMate` says which. Both are from the
+       *searching side's* point of view, which is how Stockfish reports them —
+       the Swift side is what makes them White-relative. */
+    int32_t  centipawns;
+    int32_t  matePlies;
+    bool     isMate;
+    /* True when the search was cut off before the score was proven, so the score
+       is only a bound. A line reported this way is not worth showing yet. */
+    bool     isBound;
+    uint64_t nodes;
+    uint64_t nodesPerSecond;
+    uint64_t timeMs;
+    int32_t  hashFull; /* per mille */
+    char     pv[1024]; /* space-separated UCI moves */
+} CfSearchInfo;
+
+/* `context` is passed straight back, untouched. */
+typedef void (*CfInfoCallback)(void *context, const CfSearchInfo *info);
+/* `bestMove` is "e2e4" or "(none)"; `ponder` may be empty. */
+typedef void (*CfBestMoveCallback)(void *context, const char *bestMove, const char *ponder);
+
+/*
+  What bounds a search. All zero means "search until stopped", which is the mode
+  the Analysis screen uses (docs/adr/0009) — it deepens for as long as it is left
+  alone. Set exactly the one you mean; movetime and depth together is a race.
+*/
+typedef struct {
+    int32_t  movetimeMs; /* think for this long, then move   */
+    int32_t  depth;      /* stop after completing this depth  */
+    uint64_t nodes;      /* stop after about this many nodes  */
+} CfSearchLimits;
+
+/*
+  Starts a search from (startFen, moves) and returns at once. False means the
+  position did not validate, in which case nothing was started and no callback
+  will fire. Only one search may be in flight per engine; the caller serialises.
+*/
+bool cf_engine_go(CfEngine             *engine,
+                  const char           *startFen,
+                  const char *const    *moves,
+                  int32_t               moveCount,
+                  const CfSearchLimits *limits,
+                  void                 *context,
+                  CfInfoCallback        onInfo,
+                  CfBestMoveCallback    onBestMove);
+
+/* Asks the search to stop. It still reports a best move; this is how an unbounded
+   Analysis ends. Safe to call when nothing is running. */
+void cf_engine_stop(CfEngine *engine);
+
+/* Blocks until the running search has finished reporting. */
+void cf_engine_wait(CfEngine *engine);
+
+/* Forgets everything learned: transposition table, history, the lot. */
+void cf_engine_clear(CfEngine *engine);
+
 #ifdef __cplusplus
 }
 #endif

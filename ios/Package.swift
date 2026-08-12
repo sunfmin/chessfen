@@ -1,9 +1,17 @@
 // swift-tools-version: 6.2
 import PackageDescription
 
-// The define set the Stockfish Makefile uses for ARCH=apple-silicon, minus dotprod:
-// -DUSE_NEON_DOTPROD needs -march=armv8.2-a+dotprod, which SwiftPM only accepts as an
-// unsafe flag. The baseline is proven first; see ios/README.md.
+// The define set the Stockfish Makefile uses for ARCH=apple-silicon. It is 64-bit ARM
+// only, which is every device this app can be installed on and the machine it is built
+// on; an Intel Mac would need its own set, and does not get one.
+//
+// The dotprod flag is worth its awkwardness: measured on this Mac it takes the start
+// position from 11.0M to 12.5M nodes per second, about 14%, and it is the NNUE evaluation
+// — the app's whole reason for a move — that gets faster. SwiftPM classes -march as an
+// unsafe flag, so this package can never be a versioned dependency of another; it is the
+// root package and a local one, which is the case where that restriction costs nothing.
+// Should some future Xcode refuse it anyway, dropping these two lines gives back a
+// working build at the older speed.
 let stockfishDefines: [CXXSetting] = [
     .define("NDEBUG"),
     .define("IS_64BIT"),
@@ -11,6 +19,8 @@ let stockfishDefines: [CXXSetting] = [
     .define("USE_POPCNT"),
     .define("USE_PTHREADS"),
     .define("USE_NEON", to: "8"),
+    .define("USE_NEON_DOTPROD"),
+    .unsafeFlags(["-march=armv8.2-a+dotprod"]),
     // The NNUE networks ship as bundle resources and are loaded by path, so incbin's
     // assembly embedding never has to work under Xcode.
     .define("NNUE_EMBEDDING_OFF"),
