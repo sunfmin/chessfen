@@ -67,9 +67,11 @@ struct ConfirmPositionScreen: View {
     @Environment(GameLibrary.self) private var library
 
     @State private var draft: PositionDraft
-    /// The piece taps place. Nil means taps do nothing, which is where this starts: a board that
-    /// changed under a stray finger would undo the point of the screen.
-    @State private var brush: Brush?
+    /// The piece taps place. Nil means taps do nothing; the eraser is what this starts on, because
+    /// the misreadings that bring anyone here are a piece seen where there is none, and clearing a
+    /// square is the one edit that needs no choice made in the box first. Wrong taps are cheap —
+    /// an emptied square is visibly empty and re-placing it is one more tap.
+    @State private var brush: Brush? = .eraser
     @State private var isPictureShowing = false
     @State private var isAdvancedShowing = false
 
@@ -155,6 +157,17 @@ struct ConfirmPositionScreen: View {
 
     // ------------------------------------------------------------------ parts
 
+    /// What a tap on a square will do right now. The eraser needs its own line: it is what the
+    /// screen opens on, and telling someone they are about to put a piece down when they are about
+    /// to take one off is worse than saying nothing.
+    private var hint: String {
+        switch brush {
+        case .none: "先选一个棋子，再点格子"
+        case .eraser: "点格子把子拿走"
+        case .piece: "点格子放下，点同一格拿走"
+        }
+    }
+
     private var instruction: some View {
         HStack(spacing: 8) {
             if !proposal.shaky.isEmpty {
@@ -163,7 +176,7 @@ struct ConfirmPositionScreen: View {
                     .font(.footnote)
                     .foregroundStyle(Palette.alarm)
             } else {
-                Text(brush == nil ? "先选一个棋子，再点格子" : "点格子放下，点同一格拿走")
+                Text(hint)
                     .font(.footnote)
                     .foregroundStyle(Palette.inkSoft)
             }
