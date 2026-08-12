@@ -34,7 +34,14 @@ from it:
   `Position::set` validates nothing, so an arbitrary arrangement must be refused before
   the engine sees it. It now runs on the way *out of* the editor instead of on the way
   *into* the Game, which is the same code guarding the same door. Recognition's own FEN
-  goes through it too, before a session is built.
+  goes through it too, before a session is built — and **failing it sends the picture to the
+  editor, not back to the camera**. An illegal reading is not a failed recognition: the board
+  was found and one square came out wrong, most often a king read as another piece, and that
+  is the exact case the editor and the ringed Shaky Squares exist for. Refusing it as "no
+  board in this picture" was a real regression against 0008's promise — the recogniser may be
+  wrong, but never *quietly* wrong, and never wrong in a way that throws away sixty-three
+  correct squares. A draft parses where a Game will not, which is what makes this routing
+  possible; `PositionDraftTests` pins the two apart.
 - The editor keeps only what the Game screen cannot express: which piece stands on which
   Square, plus castling rights and the en passant Square behind an advanced toggle. It
   gained nothing and lost 先走, 视角 and the Controllers — anything operable on the Game

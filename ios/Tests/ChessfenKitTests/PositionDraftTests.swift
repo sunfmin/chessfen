@@ -31,6 +31,26 @@ func anIllegalDraftIsStillADraft() throws {
     #expect(draft.isPlayable)
 }
 
+@Test("a misread board reads as a draft even though it is refused as a game")
+func anIllegalFENReadsAsADraftButNotAGame() throws {
+    // What a misread king looks like coming back from Recognition: a bishop standing where
+    // White's king is. Sixty-three squares are right and the position is still illegal — which
+    // is the case Recognition has to hand to the editor, not throw away as "no board in this
+    // picture" (docs/adr/0011). The routing rests on these two lines disagreeing, so they are
+    // pinned here: the draft opens, the Game does not.
+    let misread = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQBBNR w KQkq - 0 1"
+    let draft = try #require(
+        PositionDraft(fen: misread), "the editor has to be able to open a misread board"
+    )
+    #expect(draft.verdict.issue == .missingKing)
+    #expect(Game(startFEN: misread) == nil, "an illegal position must never reach the engine")
+
+    // And it is one tap from playable, which is why the editor is the right place to land.
+    var fixed = draft
+    fixed.setPiece(Piece(colour: .white, kind: .king), at: try #require(Square("e1")))
+    #expect(fixed.game != nil)
+}
+
 @Test("lifting a king takes its castling rights with it")
 func castlingFollowsTheKing() throws {
     var draft = try #require(PositionDraft(fen: PGN.standardStartFEN))

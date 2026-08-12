@@ -317,17 +317,39 @@ struct LibraryScreen: View {
             }.value
             isRecognising = false
 
-            guard let recognition, Game(startFEN: recognition.fen) != nil else {
+            // No board in the picture at all — the only thing this message is true about.
+            guard let recognition, let draft = PositionDraft(fen: recognition.fen) else {
                 failure = "这张图里没找到棋盘。把棋盘拍满一点，或者换个正面的角度。"
                 return
             }
-            guard let game = Game(startFEN: recognition.fen) else { return }
+            let shaky = Set(recognition.shaky.map(\.square))
+
+            // A legal reading opens as a game, which is the whole point of 0011. An illegal one
+            // is *not* a failed recognition: the board was found and read with a mistake in it,
+            // most often a king read as something else, and one square is all that stands between
+            // it and a playable position. That is what the editor and the ringed Shaky Squares
+            // are for, so it opens there — rather than being thrown away behind a message
+            // blaming the photograph, which is what it used to do.
+            guard let game = Game(startFEN: recognition.fen) else {
+                path.append(
+                    .confirm(
+                        PositionProposal(
+                            draft: draft,
+                            shaky: shaky,
+                            orientation: recognition.orientation,
+                            picture: recognition.image
+                        )
+                    )
+                )
+                return
+            }
+
             let session = GameSession(
                 game: game,
                 orientation: recognition.orientation,
                 origin: .recognised,
                 picture: recognition.image,
-                shaky: Set(recognition.shaky.map(\.square))
+                shaky: shaky
             )
             session.attach(engine: engine.service, library: library)
             path.append(.game(session))
