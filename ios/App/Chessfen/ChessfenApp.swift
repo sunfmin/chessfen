@@ -13,6 +13,9 @@ struct ChessfenApp: App {
                 .environment(engine)
                 .environment(library)
                 .task { await engine.start() }
+                // Finding the iCloud folder and moving the old games into it, once, after the
+                // local folder has already been listed and drawn (docs/adr/0012).
+                .task { await library.connect() }
                 // The only reader of the scene phase in the app: it is turned into
                 // `engine.isActive` here, and everything that cares watches that instead.
                 // `initial` matters for a launch that never reaches `.active` — into the

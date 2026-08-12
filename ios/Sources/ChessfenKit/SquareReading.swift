@@ -18,6 +18,12 @@ public struct SquareReading: Sendable {
     /// Median brightness of the piece body with its outline eroded away, else nil.
     public let bodyLuma: Double?
 
+    /// The square's own colour as one brightness — what a piece body standing on it, and
+    /// the squares around it, are measured against.
+    public var backgroundLuma: Double {
+        0.299 * background.red + 0.587 * background.green + 0.114 * background.blue
+    }
+
     public var coverage: Double { ink.coverage }
     public var occupied: Bool { coverage >= SquareReader.minimumInkFraction }
 }

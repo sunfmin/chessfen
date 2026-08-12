@@ -8,10 +8,12 @@ from pathlib import Path
 from typing import assert_never
 
 import chess
+import numpy as np
 
 from .classify import SquareVerdict, classify_square
 from .geometry import BoardRect, find_board
 from .imaging import RgbImage, load_rgb
+from .lighting import local_light
 from .squares import read_square
 
 
@@ -64,8 +66,20 @@ def recognize(
     """Recognise the position in a board image."""
     rgb = load_rgb(source) if isinstance(source, Path) else source
     rect = find_board(rgb)
+    # Every cell is read before any of them is judged, because what tells a white piece from
+    # a black one is how its body compares to the light of the board around it, and that is
+    # a fact about the other sixty-three squares.
+    readings = [
+        [read_square(rect.crop(rgb, row, col)) for col in range(8)] for row in range(8)
+    ]
+    light = local_light(
+        np.array([[reading.background_luma for reading in line] for line in readings])
+    )
     grid = [
-        [classify_square(read_square(rect.crop(rgb, row, col))) for col in range(8)]
+        [
+            classify_square(readings[row][col], light=float(light[row, col]))
+            for col in range(8)
+        ]
         for row in range(8)
     ]
     resolved = _resolve_orientation(grid, orientation)

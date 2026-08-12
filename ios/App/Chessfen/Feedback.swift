@@ -28,13 +28,34 @@ import UIKit
         case refused
     }
 
-    /// Off is a setting people genuinely want, and it belongs somewhere that survives a
-    /// launch.
+    /// Off is a setting people genuinely want, and it belongs somewhere that survives a launch
+    /// — and, since the games follow a person to their other devices (docs/adr/0012), somewhere
+    /// that follows them too. A setting that has to be turned off on every device is a setting
+    /// that is only half kept.
     var isSoundOn: Bool {
-        didSet { UserDefaults.standard.set(isSoundOn, forKey: Self.soundKey) }
+        didSet { Self.remember(isSoundOn) }
     }
 
     private static let soundKey = "chessfen.sound"
+
+    /// Both stores, always. iCloud's is the one that travels; `UserDefaults` is the one that
+    /// answers on a device with no account, and the one that answers instantly at launch
+    /// before iCloud's has been read back off the network.
+    private static func remember(_ isOn: Bool) {
+        UserDefaults.standard.set(isOn, forKey: soundKey)
+        NSUbiquitousKeyValueStore.default.set(isOn, forKey: soundKey)
+    }
+
+    /// What the setting was last left at anywhere, or nil for a person who has never touched
+    /// it. iCloud wins when both have an answer: it is the more recently-informed of the two,
+    /// and disagreement means another device has since had a say.
+    private static func remembered() -> Bool? {
+        if let travelled = NSUbiquitousKeyValueStore.default.object(forKey: soundKey) as? Bool {
+            return travelled
+        }
+        guard UserDefaults.standard.object(forKey: soundKey) != nil else { return nil }
+        return UserDefaults.standard.bool(forKey: soundKey)
+    }
 
     private let engine = AVAudioEngine()
     /// Four players so that sounds in quick succession overlap instead of cutting each other
@@ -50,11 +71,21 @@ import UIKit
     private let heavyImpact = UIImpactFeedbackGenerator(style: .medium)
 
     private init() {
-        if UserDefaults.standard.object(forKey: Self.soundKey) == nil {
-            isSoundOn = true
-        } else {
-            isSoundOn = UserDefaults.standard.bool(forKey: Self.soundKey)
+        isSoundOn = Self.remembered() ?? true
+        // iCloud's copy arrives whenever it arrives, including while the app is open and its
+        // menu on screen. Set through the property rather than around it, so that the local
+        // copy is brought into line with the travelled one at the same time.
+        NotificationCenter.default.addObserver(
+            forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
+            object: NSUbiquitousKeyValueStore.default,
+            queue: .main
+        ) { _ in
+            MainActor.assumeIsolated {
+                guard let travelled = Self.remembered(), travelled != Feedback.shared.isSoundOn else { return }
+                Feedback.shared.isSoundOn = travelled
+            }
         }
+        NSUbiquitousKeyValueStore.default.synchronize()
     }
 
     // ------------------------------------------------------------------ using

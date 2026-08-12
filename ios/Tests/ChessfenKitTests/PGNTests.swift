@@ -141,3 +141,30 @@ func evaluationTextRoundTrips() {
         #expect(Score(pgnText: score.pgnText) == score, "\(score.pgnText)")
     }
 }
+
+@Test("setting a tag keeps its place, and nil takes it away")
+func setTagKeepsOrder() throws {
+    let game = try #require(Game(startFEN: start))
+    var pgn = PGN(
+        game: game,
+        tags: [.init("Event", "Chessfen"), .init("Name", "第 002 题"), .init("Source", "识别")]
+    )
+
+    // A collection is written into the tag it already occupies. Re-adding it at the end would put
+    // it after the movetext-adjacent tags and out of PGN's roster order, which is part of the file.
+    pgn.setTag("Event", to: "啄木鸟全集")
+    #expect(pgn.tags.map(\.name) == ["Event", "Name", "Source"])
+    #expect(pgn.tag("Event") == "啄木鸟全集")
+
+    pgn.setTag("Round", to: "7")
+    #expect(pgn.tags.last?.name == "Round", "a tag that was not there goes on the end")
+
+    pgn.setTag("Name", to: nil)
+    #expect(pgn.tag("Name") == nil, "a name can be taken back off")
+    #expect(pgn.tags.map(\.name) == ["Event", "Source", "Round"])
+
+    // And all of it survives being written out and read back, which is the only claim that matters.
+    let read = try PGN(parsing: pgn.text)
+    #expect(read.tag("Event") == "啄木鸟全集")
+    #expect(read.tag("Name") == nil)
+}

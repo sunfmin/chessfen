@@ -141,6 +141,16 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
         )
     }
 
+    /// A saved game, opened ready to play: the engine attached and the library it saves back to.
+    /// Defined once because more than one screen opens games now — the library and a collection.
+    static func opened(
+        _ entry: GameLibrary.Entry, engine: EngineHost, library: GameLibrary
+    ) -> GameSession {
+        let session = GameSession(entry: entry, library: library)
+        session.attach(engine: engine.service, library: library)
+        return session
+    }
+
     func attach(engine: (any Engine)?, library: GameLibrary?) {
         self.engine = engine
         self.library = library
@@ -167,19 +177,23 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
         retune()
     }
 
-    // ------------------------------------------------------------- the reading
-
-    /// Whether this game has been filed into a collection by hand.
+    /// The collection this game is filed under, according to its own file.
     ///
-    /// Written as PGN's `Event`, which every reader already expects to find; a game nobody has filed
-    /// carries the app's own name there. Filing is a person saying they are keeping this game —
-    /// which is also them saying the position it starts from is the one they meant.
-    var isFiled: Bool {
-        guard let event = tags.first(where: { $0.name == "Event" })?.value else { return false }
-        return !event.isEmpty && event != Self.unfiledEvent
+    /// Read from the tags rather than carried alongside them, so that it cannot disagree with what
+    /// the library shows — and so a game that has never been saved has no collection, which is the
+    /// truth about it.
+    var collection: String? {
+        guard let event = tags.first(where: { $0.name == "Event" })?.value,
+            !GameLibrary.unfiledEvents.contains(event)
+        else { return nil }
+        return event
     }
 
-    static let unfiledEvent = "Chessfen"
+    // ------------------------------------------------------------- the reading
+
+    /// Whether somebody has filed this game into a collection, which is them saying they are keeping
+    /// it — and so also saying the position it starts from is the one they meant.
+    var isFiled: Bool { collection != nil }
 
     /// Whether this game's starting position can be taken back to the editor. True for anything
     /// read off a picture, for as long as the game exists: the thing most likely to be wrong
@@ -553,27 +567,22 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     // --------------------------------------------------------------- storage
 
     var pgn: PGN {
-        var roster = tags
-        func set(_ name: String, _ value: String) {
-            if let index = roster.firstIndex(where: { $0.name == name }) {
-                roster[index].value = value
-            } else {
-                roster.append(PGN.Tag(name, value))
-            }
+        var written = PGN(game: game, tags: tags)
+        // Event is only filled in when the game is not in a collection. It used to be set to the
+        // app's name unconditionally, which would have rubbed out the collection of every filed game
+        // on its next move — the tag naming the collection and the tag naming the app are the same
+        // tag, and the file is the only place either of them lives (docs/adr/0010).
+        if written.tag("Event").map(GameLibrary.unfiledEvents.contains) ?? true {
+            written.setTag("Event", to: "Chessfen")
         }
-        // Only where there is nothing there already: a game that has been filed carries its
-        // collection's name here, and writing after every move must not file it back out again.
-        if roster.first(where: { $0.name == "Event" })?.value.isEmpty ?? true {
-            set("Event", Self.unfiledEvent)
+        written.setTag("White", to: controller(for: .white).playerName)
+        written.setTag("Black", to: controller(for: .black).playerName)
+        written.setTag("Result", to: game.resultToken)
+        written.setTag(GameOrigin.tagName, to: origin.tagValue)
+        if written.tag("Date") == nil {
+            written.tags.append(PGN.dateTag())
         }
-        set("White", controller(for: .white).playerName)
-        set("Black", controller(for: .black).playerName)
-        set("Result", game.resultToken)
-        set(GameOrigin.tagName, origin.tagValue)
-        if roster.first(where: { $0.name == "Date" }) == nil {
-            roster.append(PGN.dateTag())
-        }
-        return PGN(game: game, tags: roster)
+        return written
     }
 
     /// Writes after every move. A game is a few kilobytes of text, so there is no reason for

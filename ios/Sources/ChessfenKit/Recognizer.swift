@@ -68,14 +68,28 @@ public enum Recognizer {
         let image = source.scaled(toLongestSide: workingResolution)
         let rect = try BoardGeometry.findBoard(in: image)
 
-        var grid: [[SquareVerdict]] = []
+        // Every Cell is read before any of them is judged, because what tells a white piece
+        // from a black one is how its body compares to the light of the board around it,
+        // and that is a fact about the other sixty-three squares.
+        var readings: [[SquareReading]] = []
+        var backgrounds = Grid<Double>(width: 8, height: 8, repeating: 0)
         for row in 0..<8 {
-            var line: [SquareVerdict] = []
+            var line: [SquareReading] = []
             for column in 0..<8 {
-                let cell = rect.crop(image, row: row, column: column)
-                line.append(SquareClassifier.classify(SquareReader.read(cell)))
+                let reading = SquareReader.read(rect.crop(image, row: row, column: column))
+                backgrounds[column, row] = reading.backgroundLuma
+                line.append(reading)
             }
-            grid.append(line)
+            readings.append(line)
+        }
+
+        let lighting = BoardLighting(backgrounds: backgrounds)
+        let grid = (0..<8).map { row in
+            (0..<8).map { column in
+                SquareClassifier.classify(
+                    readings[row][column], light: lighting.light(row: row, column: column)
+                )
+            }
         }
 
         let orientation = requested ?? inferOrientation(grid)

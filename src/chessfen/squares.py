@@ -51,6 +51,12 @@ class SquareReading:
     """Median brightness of the piece body with its outline eroded away, else NaN."""
 
     @property
+    def background_luma(self) -> float:
+        """The square's own colour as one brightness - what a piece body standing on it,
+        and the squares around it, are measured against."""
+        return float(luma(self.background.reshape(1, 1, 3))[0, 0])
+
+    @property
     def coverage(self) -> float:
         return float(self.ink.mean())
 
@@ -76,17 +82,36 @@ def read_square(cell: RgbImage) -> SquareReading:
 
 
 def modal_color(cell: RgbImage) -> npt.NDArray[np.float64]:
-    """The most common colour in the cell, refined to the median of its histogram bin."""
+    """The most common colour in the cell, refined to the median of the pixels around it.
+
+    The histogram is scored two bins at a time on each axis rather than one. A bin edge
+    must not be allowed to decide the answer: ``#c0805e``, a perfectly ordinary square
+    colour, has its red channel sitting exactly on a boundary, so the faintest JPEG noise
+    splits that one flat colour into two half-sized bins and hands the square to the piece
+    standing on it - whereupon the piece becomes the background, the background becomes the
+    ink, and a knight is read as a rook. A light falling across the board does the same
+    thing more slowly, spreading one square over three bins while the black piece on it
+    stays in one. Scoring a 2x2x2 block puts the split back together.
+    """
     flat = cell.reshape(-1, 3)
-    binned = flat >> _QUANTISE_BITS
+    binned = (flat >> _QUANTISE_BITS).astype(np.int64)
     levels = 1 << (8 - _QUANTISE_BITS)
-    keys = (
-        binned[:, 0].astype(np.int64) * levels * levels
-        + binned[:, 1].astype(np.int64) * levels
-        + binned[:, 2].astype(np.int64)
-    )
-    top = int(np.bincount(keys).argmax())
-    return np.median(flat[keys == top].astype(np.float64), axis=0)
+    counts = np.bincount(
+        binned[:, 0] * levels * levels + binned[:, 1] * levels + binned[:, 2],
+        minlength=levels**3,
+    ).reshape(levels, levels, levels)
+
+    blocks = counts
+    for axis in range(3):
+        neighbour = np.zeros_like(blocks)
+        head, tail = [slice(None)] * 3, [slice(None)] * 3
+        head[axis], tail[axis] = slice(0, levels - 1), slice(1, levels)
+        neighbour[tuple(head)] = blocks[tuple(tail)]
+        blocks = blocks + neighbour
+
+    corner = np.array(np.unravel_index(int(blocks.argmax()), blocks.shape))
+    inside = ((binned - corner >= 0) & (binned - corner <= 1)).all(axis=1)
+    return np.median(flat[inside].astype(np.float64), axis=0)
 
 
 def _select_piece(ink: Mask) -> Mask:
