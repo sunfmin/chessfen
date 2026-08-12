@@ -47,6 +47,21 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     var picture: RGBImage?
     var shaky: Set<Square>
 
+    /// Whether the engine keeps its opinion to itself. This is the practice switch: no advisory
+    /// search runs, no Score is drawn, and nothing the engine thinks is written into the plies —
+    /// so a game played this way carries no marks, and 复盘 is where it finally meets the engine
+    /// at one uniform Depth (docs/adr/0009). Playing a whole game with the engine looking over
+    /// your shoulder and playing one out yourself are different exercises, and only the second
+    /// one tells you what you would have done.
+    ///
+    /// It does not silence the engine as an *opponent*: a bounded search for the engine's own
+    /// move is not advice, and playing a side without being told what it thinks of your last
+    /// move is exactly the exercise.
+    ///
+    /// Not stored. PGN has nowhere to put it, and like the Controllers it is a way of playing
+    /// rather than something about the game, so a reopened game starts with the engine talking.
+    private(set) var isPractising = false
+
     private var controllers: [PieceColour: Controller]
     private var tags: [PGN.Tag]
     private var searchTask: Task<Void, Never>?
@@ -111,6 +126,15 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
         controllers[colour] = controller
         // Changing who moves for the side already on the clock has to take effect now, not
         // next move — that is what the switch is for.
+        retune()
+    }
+
+    /// Turns the engine's advice off, or back on. Also takes effect now: a number left standing
+    /// from the search that has just been called off is the one thing practice must not show.
+    func setPractising(_ practising: Bool) {
+        guard isPractising != practising else { return }
+        isPractising = practising
+        analysis = nil
         retune()
     }
 
@@ -310,7 +334,14 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
                 }
             }
         } else {
+            // Before the practice gate: the clock the engine mirrors is a record of how long the
+            // player took, and that is true whether or not anyone was being advised.
             turnBegan = ContinuousClock.now
+            // Practice turns off exactly this search — the one whose only product is advice. It
+            // is refused here rather than in the screen for the reason the pause is: "what should
+            // the engine be doing right now" has one answer, and a screen that forgot would leave
+            // a phone deepening a search nobody is allowed to see the result of.
+            guard !isPractising else { return }
             searchTask = Task { [weak self] in
                 // Unbounded: it deepens for as long as the player is thinking, and what it
                 // recommends keeps changing (docs/adr/0009).
@@ -351,6 +382,11 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     }
 
     private func record(_ snapshot: Analysis) {
+        // While practising, the only search still running is the engine thinking about its own
+        // move — and what that search thinks of the position is advice, whichever question it was
+        // asked. It is dropped rather than merely hidden, so the game's plies stay unmarked and
+        // the Review has nothing to disagree with.
+        guard !isPractising else { return }
         analysis = snapshot
         // Real-time recording: the ply just played gets the Score of the position it led to,
         // refined as the search deepens. A Review recomputes all of them at one Depth later

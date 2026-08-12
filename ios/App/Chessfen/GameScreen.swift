@@ -23,15 +23,26 @@ struct GameScreen: View {
         let moves: [Move]
     }
 
+    /// The practice switch, as something a Toggle can drive. The session owns the answer because
+    /// turning it on has to stop a search, not just stop drawing one.
+    private var isPractising: Binding<Bool> {
+        Binding(get: { session.isPractising }, set: { session.setPractising($0) })
+    }
+
     var body: some View {
         GeometryReader { proxy in
             let side = Self.boardSide(in: proxy.size)
             VStack(spacing: 0) {
                 header
                 board.frame(width: side, height: side)
-                EvalBar(score: session.analysis?.best?.score, orientation: session.orientation)
-                    .frame(width: side)
-                    .padding(.top, 7)
+                // No bar while practising. Empty, it sits exactly half white and reads as a
+                // considered 0.00 — the most misleading thing this screen could show someone who
+                // has asked not to be told.
+                if !session.isPractising {
+                    EvalBar(score: session.analysis?.best?.score, orientation: session.orientation)
+                        .frame(width: side)
+                        .padding(.top, 7)
+                }
                 // Everything below the board scrolls if it has to. The board itself is outside
                 // this, which is what keeps it from sliding under the navigation bar and from
                 // changing size when what is underneath it grows.
@@ -65,6 +76,12 @@ struct GameScreen: View {
                         path.append(.confirm(PositionProposal(reopening: session)))
                     } label: {
                         Label("改棋子", systemImage: "hand.point.up.left")
+                    }
+                    Toggle(isOn: isPractising) {
+                        Label(
+                            "练习（不看引擎）",
+                            systemImage: session.isPractising ? "eye.slash" : "eye"
+                        )
                     }
                     Toggle(isOn: $isSoundOn) {
                         Label("音效", systemImage: isSoundOn ? "speaker.wave.2" : "speaker.slash")
@@ -133,10 +150,20 @@ struct GameScreen: View {
                         .foregroundStyle(Palette.alarm)
                 }
                 Spacer(minLength: 8)
-                Text(headlineScore?.displayText ?? "—")
-                    .font(.clock(32))
-                    .foregroundStyle(headlineScore == nil ? Palette.inkSoft : Palette.analysis)
-                    .contentTransition(.numericText())
+                if session.isPractising {
+                    // Where the number lives, so its absence is accounted for rather than just an
+                    // empty corner someone reads as a broken engine.
+                    HStack(spacing: 5) {
+                        Image(systemName: "eye.slash").font(.caption)
+                        Text("练习").font(.footnote.weight(.semibold))
+                    }
+                    .foregroundStyle(Palette.inkSoft)
+                } else {
+                    Text(headlineScore?.displayText ?? "—")
+                        .font(.clock(32))
+                        .foregroundStyle(headlineScore == nil ? Palette.inkSoft : Palette.analysis)
+                        .contentTransition(.numericText())
+                }
             }
 
             HStack(spacing: 8) {
@@ -254,7 +281,17 @@ struct GameScreen: View {
     /// several times a second as the search deepens and a moving layout would be unreadable.
     private var engineLines: some View {
         VStack(alignment: .leading, spacing: 5) {
-            if let analysis = session.analysis, !analysis.lines.isEmpty {
+            // First, and ahead of the game being over: someone practising has asked for this space
+            // to be quiet, and what belongs in it instead is where the comparison happens.
+            if session.isPractising {
+                Text(
+                    viewed.isOver
+                        ? "这局走完了。去「复盘」，引擎会把每一步重新打一遍分。"
+                        : "练习中，引擎不给意见。走完用「复盘」跟它对一遍。"
+                )
+                .font(.footnote)
+                .foregroundStyle(Palette.inkSoft)
+            } else if let analysis = session.analysis, !analysis.lines.isEmpty {
                 ForEach(Array(analysis.lines.prefix(3).enumerated()), id: \.offset) { index, line in
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         ScoreCell(score: line.score, prominent: index == 0)
