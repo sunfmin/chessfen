@@ -15,6 +15,9 @@ import Foundation
         /// because a file the app cannot read is exactly what a person needs to be told.
         var pgn: PGN?
         var modified: Date
+        /// A game iCloud has told this device about but not yet handed over. Listed with the
+        /// rest, because it is a game that exists; it just cannot be opened for a moment.
+        var isDownloading = false
 
         /// Whether this game came off a picture. Written into the PGN when it was saved, so
         /// it survives a relaunch and reads correctly in the list.
@@ -51,6 +54,7 @@ import Foundation
         }
 
         var detail: String {
+            if isDownloading { return "正在从 iCloud 下载…" }
             guard let pgn else { return "无法读取" }
             let date = pgn.tag("Date") ?? ""
             let result = pgn.game.resultToken
@@ -161,21 +165,34 @@ import Foundation
         return write(pgn, to: entry.url)
     }
 
-    static let directory: URL = {
-        let documents = URL.documentsDirectory.appending(path: "Games", directoryHint: .isDirectory)
-        try? FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
-        return documents
-    }()
+    /// The folder the games are in, which is iCloud's when there is an iCloud (docs/adr/0012).
+    /// Everything that touches the disk goes through it, because a file in iCloud has to be
+    /// asked for before it can be read and coordinated before it can be written.
+    let folder = GameFolder()
+
+    var directory: URL { folder.url }
 
     init() {
         reload()
+    }
+
+    /// Moves the library into iCloud and keeps it listening for the other devices.
+    ///
+    /// Separate from `init` and asynchronous because finding the iCloud folder can take as long
+    /// as an account server takes: the library lists the local folder first so that the app
+    /// opens at once, and swaps to the iCloud one — with everything local moved up into it —
+    /// when the answer arrives. Nothing else in the app knows this happened.
+    func connect() async {
+        guard await folder.connect() else { return }
+        reload()
+        folder.onChange { [weak self] in self?.reload() }
     }
 
     func reload() {
         let manager = FileManager.default
         let urls =
             (try? manager.contentsOfDirectory(
-                at: Self.directory,
+                at: directory,
                 includingPropertiesForKeys: [.contentModificationDateKey],
                 options: [.skipsHiddenFiles]
             )) ?? []
@@ -183,14 +200,19 @@ import Foundation
         entries = urls
             .filter { $0.pathExtension.lowercased() == "pgn" }
             .map { url in
-                let text = try? String(contentsOf: url, encoding: .utf8)
+                // A game another device saved is a name here before it is bytes. Asking for it
+                // is enough — the folder says when it has landed, and the list is built again.
+                let isHere = folder.isHere(url)
+                if !isHere { folder.fetch(url) }
+                let text = folder.read(at: url) { try? String(contentsOf: $0, encoding: .utf8) }
                 let modified =
                     (try? url.resourceValues(forKeys: [.contentModificationDateKey])
                         .contentModificationDate) ?? .distantPast
                 return Entry(
                     url: url,
                     pgn: text.flatMap { try? PGN(parsing: $0) },
-                    modified: modified
+                    modified: modified,
+                    isDownloading: !isHere
                 )
             }
             .sorted { $0.modified > $1.modified }
@@ -200,10 +222,10 @@ import Foundation
     /// played.
     func newURL(now: Date = Date()) -> URL {
         let stamp = Self.stampFormatter.string(from: now)
-        var url = Self.directory.appending(path: "chessfen-\(stamp).pgn")
+        var url = directory.appending(path: "chessfen-\(stamp).pgn")
         var suffix = 2
         while FileManager.default.fileExists(atPath: url.path) {
-            url = Self.directory.appending(path: "chessfen-\(stamp)-\(suffix).pgn")
+            url = directory.appending(path: "chessfen-\(stamp)-\(suffix).pgn")
             suffix += 1
         }
         return url
@@ -212,18 +234,14 @@ import Foundation
     @discardableResult
     func write(_ pgn: PGN, to url: URL) -> Bool {
         guard let data = pgn.text.data(using: .utf8) else { return false }
-        do {
-            try data.write(to: url, options: .atomic)
-            refreshEntry(at: url, with: pgn)
-            return true
-        } catch {
-            return false
-        }
+        guard folder.write(data, to: url) else { return false }
+        refreshEntry(at: url, with: pgn)
+        return true
     }
 
     func delete(_ entry: Entry) {
-        try? FileManager.default.removeItem(at: entry.url)
-        try? FileManager.default.removeItem(at: Self.pictureURL(for: entry.url))
+        folder.remove(entry.url)
+        folder.remove(Self.pictureURL(for: entry.url))
         entries.removeAll { $0.url == entry.url }
     }
 
@@ -238,11 +256,13 @@ import Foundation
 
     func writePicture(_ image: RGBImage, for game: URL) {
         guard let data = image.pngData else { return }
-        try? data.write(to: Self.pictureURL(for: game), options: .atomic)
+        folder.write(data, to: Self.pictureURL(for: game))
     }
 
+    /// Nil for a game with no picture, and also for one whose picture is still coming down from
+    /// iCloud — the screens that show it already have to cope with a game that never had one.
     func picture(for game: URL) -> RGBImage? {
-        RGBImage(contentsOf: Self.pictureURL(for: game))
+        folder.read(at: Self.pictureURL(for: game)) { RGBImage(contentsOf: $0) }
     }
 
     /// Updates one row in place rather than re-reading the folder, so that autosaving after

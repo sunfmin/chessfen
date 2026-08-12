@@ -346,6 +346,10 @@ struct LibraryScreen: View {
             .background(Palette.raised, in: RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
+        // A game still coming down from iCloud is shown but cannot be opened — it says so in
+        // place of its detail line. Renaming and filing are out for the same reason: both are
+        // rewrites of a file this device has not read yet.
+        .disabled(entry.isDownloading)
         .contextMenu {
             Button {
                 nameDraft = entry.name ?? ""
@@ -484,6 +488,9 @@ struct LibraryScreen: View {
     }
 
     private func open(_ entry: GameLibrary.Entry) {
+        // Never a game whose file has not arrived. It would open as an empty board wearing the
+        // real game's file name, and the first move would autosave over it (docs/adr/0012).
+        guard !entry.isDownloading else { return }
         let session = GameSession(entry: entry, library: library)
         session.attach(engine: engine.service, library: library)
         path.append(.game(session))

@@ -43,9 +43,34 @@ targets:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        NSCameraUsageDescription: 拍下棋盘，识别出局面。照片只在这台设备上处理，不会上传。
-        NSPhotoLibraryUsageDescription: 从相册里挑一张棋盘照片或截图来识别。图片只在这台设备上处理。
+        # Recognition itself never leaves the device. What does leave it is the saved game and
+        # the photograph filed beside it, into the person's own iCloud — which the strings say,
+        # because "不会上传" would no longer be true (docs/adr/0012).
+        NSCameraUsageDescription: 拍下棋盘，识别出局面。识别在这台设备上完成；存下来的对局和照片会同步到你自己的 iCloud，不会发给任何别人。
+        NSPhotoLibraryUsageDescription: 从相册里挑一张棋盘照片或截图来识别。识别在这台设备上完成；存下来的对局和照片会同步到你自己的 iCloud。
         ITSAppUsesNonExemptEncryption: false
+        # What makes the container a folder in the Files app rather than a hidden one. iOS reads
+        # this once, when it first sets the container up, so changing the name here only takes
+        # on a device that has never run the app — or after CFBundleVersion goes up.
+        NSUbiquitousContainers:
+          iCloud.com.sunfmin.chessfen:
+            NSUbiquitousContainerIsDocumentScopePublic: true
+            NSUbiquitousContainerName: 棋镜
+            NSUbiquitousContainerSupportedFolderLevels: Any
+    # Generated from here like the Info.plist is, so that project.yml stays the one place the
+    # app's shape is described. The container is named once, and `GameFolder` asks for "the
+    # first container this app is entitled to" rather than naming it a second time.
+    entitlements:
+      path: Chessfen/Chessfen.entitlements
+      properties:
+        com.apple.developer.icloud-services:
+          - CloudDocuments
+        com.apple.developer.icloud-container-identifiers:
+          - iCloud.com.sunfmin.chessfen
+        com.apple.developer.ubiquity-container-identifiers:
+          - iCloud.com.sunfmin.chessfen
+        # The settings that travel — one small key-value store, keyed to this app.
+        com.apple.developer.ubiquity-kvstore-identifier: $(TeamIdentifierPrefix)$(CFBundleIdentifier)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sunfmin.chessfen

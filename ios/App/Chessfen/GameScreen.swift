@@ -1,4 +1,7 @@
 import ChessfenKit
+// For `onReceive` only: the sound setting travels through iCloud, and a notification is how a
+// device hears that another one has changed it.
+import Combine
 import SwiftUI
 
 /// The board, what the engine makes of it, and the few things you do to it.
@@ -94,6 +97,12 @@ struct GameScreen: View {
         }
         .onDisappear { session.suspend() }
         .onChange(of: isSoundOn) { _, isOn in Feedback.shared.isSoundOn = isOn }
+        // The setting travels between devices (docs/adr/0012), so it can change while this
+        // screen is the one on show — and a toggle that disagrees with the sound is worse than
+        // no toggle.
+        .onReceive(NotificationCenter.default.publisher(for: NSUbiquitousKeyValueStore.didChangeExternallyNotification)) { _ in
+            isSoundOn = Feedback.shared.isSoundOn
+        }
         .onChange(of: engine.isReady) { _, ready in
             guard ready else { return }
             session.attach(engine: engine.service, library: library)

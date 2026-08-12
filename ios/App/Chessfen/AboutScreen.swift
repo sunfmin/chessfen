@@ -8,6 +8,7 @@ import SwiftUI
 /// way to the source too. That is easiest to honour if the app carries both itself.
 struct AboutScreen: View {
     @Environment(EngineHost.self) private var engine
+    @Environment(GameLibrary.self) private var library
     @Environment(\.dismiss) private var dismiss
 
     private static let source = URL(string: "https://github.com/sunfmin/chessfen")!
@@ -21,7 +22,7 @@ struct AboutScreen: View {
                             Text("棋镜").font(.title2.bold())
                             Text("Chessfen").eyebrow()
                         }
-                        Text("拍下棋盘，认出局面，接着下。全部在这台设备上跑，不联网。")
+                        Text("拍下棋盘，认出局面，接着下。识别和引擎都在这台设备上跑；对局存在你自己的 iCloud 里，除此之外不联网。")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -36,6 +37,21 @@ struct AboutScreen: View {
                     case .starting: row("引擎状态", "启动中")
                     case .unavailable(let reason): row("引擎状态", reason)
                     }
+                }
+
+                // Where the games are is worth saying out loud: it is the difference between a
+                // game that is on every device and one that is on this one, and the only way to
+                // tell from inside the app that iCloud is switched on.
+                Section {
+                    row("对局存放在", library.folder.isCloud ? "iCloud 云盘" : "本机")
+                } header: {
+                    Text("存储")
+                } footer: {
+                    Text(
+                        library.folder.isCloud
+                            ? "每一局都是一个 PGN 文件，存在 iCloud 云盘的「棋镜」文件夹里，在「文件」App 里可以直接打开、拷走或删掉。改动会同步到你登录同一个 Apple 账户的其他设备。"
+                            : "每一局都是一个 PGN 文件，目前只存在这台设备上。打开「设置 → Apple 账户 → iCloud 云盘」之后，已有的对局会自动搬进 iCloud，并同步到你的其他设备。"
+                    )
                 }
 
                 Section {
