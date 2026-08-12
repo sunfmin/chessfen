@@ -74,6 +74,20 @@ struct AskedMove {
         #expect(!session.isThinking)
     }
 
+    /// A press is a drag that keeps reporting, and the button hears it before it hears itself.
+    @Test("a press that reports twice still only starts one search")
+    func pressingTwiceAsksOnce() async throws {
+        let engine = ScriptedEngine(Self.searching, isEndless: true)
+        let session = try session(engine)
+
+        session.beginAskedMove()
+        session.beginAskedMove()
+        await hop()
+
+        #expect(engine.searchCount == 1, "one thumb, one search")
+        #expect(session.isThinking)
+    }
+
     /// A tap is a press let go of before the engine has said a word, and it still moves.
     @Test("a tap plays the move the board was already recommending")
     func tapPlaysTheArrow() async throws {

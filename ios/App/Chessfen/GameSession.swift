@@ -337,7 +337,11 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     /// Not a Controller and not advice left standing: one move, asked for by hand, for whichever
     /// colour is on the clock.
     func beginAskedMove() {
-        guard canPlayBestMove, let engine else { return }
+        // Once per press. A press arrives as a drag of no distance, which reports as it is held, and
+        // the button cannot know it is already down until the state saying so has come back around
+        // to it — so two of them can reach here before it does. Nothing else is thinking on a hand
+        // turn, which is what makes this the honest guard.
+        guard canPlayBestMove, !isThinking, let engine else { return }
         // What the arrow on the board is pointing at. It is the answer already, for the case where
         // the press turns out to be a tap and the search has not said anything of its own yet.
         askedBest = analysis?.bestMove
