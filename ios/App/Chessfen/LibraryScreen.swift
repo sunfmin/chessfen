@@ -165,6 +165,9 @@ struct LibraryScreen: View {
                     .foregroundStyle(Palette.parchment)
                     .padding(.leading, 18)
                     .padding(.vertical, 16)
+                    // The dark fill belongs to the row, not to this label, so the label has to
+                    // claim its half of the row as a tap target or only the glyph would answer.
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
 
@@ -190,6 +193,7 @@ struct LibraryScreen: View {
                         .foregroundStyle(Palette.parchment)
                         .padding(.horizontal, 18)
                         .padding(.vertical, 18)
+                        .contentShape(Rectangle())
                 }
                 .overlay(alignment: .leading) {
                     Rectangle().fill(Palette.parchment.opacity(0.25)).frame(width: 0.5)
