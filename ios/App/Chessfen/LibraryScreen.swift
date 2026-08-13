@@ -85,11 +85,14 @@ struct LibraryScreen: View {
         }
         .fullScreenCover(isPresented: $isCameraOpen) {
             CameraPicker { picked in
-                if let image = BoardImageLoader.image(from: picked) {
-                    recognise(image)
-                } else {
+                guard let image = BoardImageLoader.image(from: picked) else {
                     failure = "这张照片打不开。"
+                    return
                 }
+                // Kept before recognition rather than after: a picture the app dies reading
+                // must still exist, or the crash takes the evidence with it.
+                library.keepPhotograph(image)
+                recognise(image)
             }
             .ignoresSafeArea()
         }
