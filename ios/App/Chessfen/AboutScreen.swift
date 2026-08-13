@@ -22,7 +22,7 @@ struct AboutScreen: View {
                             Text("棋镜").font(.title2.bold())
                             Text("Chessfen").eyebrow()
                         }
-                        Text("拍下棋盘，认出局面，接着下。识别和引擎都在这台设备上跑；对局存在你自己的 iCloud 里，除此之外不联网。")
+                        Text("拍下棋盘，认出局面，接着下。识别和引擎都在这台设备上跑；对局存在你自己的 iCloud 里。只有你从链接导入棋谱的时候，才会去下载那个链接。")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }

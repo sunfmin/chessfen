@@ -15,12 +15,20 @@ import Foundation
 /// whatever was kept locally up into iCloud once, and switches the folder over.
 @MainActor public final class GameFolder {
     /// The folder to read and write right now.
-    public private(set) var url = GameFolder.local
+    public private(set) var url: URL
 
     /// Whether that folder is iCloud's. What it decides is not where files go — `url` has
     /// already said that — but whether reading and writing them has to be coordinated with the
     /// sync daemon, and whether a file that is listed is necessarily a file that is here.
-    public private(set) var isCloud = false
+    public private(set) var isCloud: Bool
+
+    /// Open on a folder, iCloud's by default. The arguments are a seam rather than a
+    /// feature: the real folder is found by `connect()`, but a test hands over a
+    /// temporary directory and never touches the real Documents.
+    public init(url: URL = GameFolder.local, isCloud: Bool = false) {
+        self.url = url
+        self.isCloud = isCloud
+    }
 
     /// The folder the app has always used, and the one it falls back to. Kept even after the
     /// move to iCloud: signing out of an account must leave somewhere to play.

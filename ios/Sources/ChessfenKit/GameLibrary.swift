@@ -182,11 +182,12 @@ import Foundation
     /// The folder the games are in, which is iCloud's when there is an iCloud (docs/adr/0012).
     /// Everything that touches the disk goes through it, because a file in iCloud has to be
     /// asked for before it can be read and coordinated before it can be written.
-    public let folder = GameFolder()
+    public let folder: GameFolder
 
     public var directory: URL { folder.url }
 
-    public init() {
+    public init(folder: GameFolder = GameFolder()) {
+        self.folder = folder
         reload()
     }
 
