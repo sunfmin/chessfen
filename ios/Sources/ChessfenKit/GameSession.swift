@@ -7,6 +7,9 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// Read off a picture. Such a game can always be taken back to the Confirm Position
     /// gate, because the thing most likely to be wrong about it is a piece.
     case recognised
+    /// Downloaded from a PGN link, whole chapters at a time (docs/adr/0014). The game
+    /// text is the study's own, so there is nothing to take back to an editor for.
+    case imported
 
     /// Written into the PGN so the distinction survives a relaunch. Not a standard tag;
     /// PGN has no opinion about where a position came from, and readers ignore what they do
@@ -14,8 +17,20 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     public static let tagName = "Source"
 
     public var tagValue: String { rawValue }
-    public var chinese: String { self == .recognised ? "识别" : "手摆" }
-    public var symbol: String { self == .recognised ? "camera" : "square.grid.3x3" }
+    public var chinese: String {
+        switch self {
+        case .fresh: "手摆"
+        case .recognised: "识别"
+        case .imported: "导入"
+        }
+    }
+    public var symbol: String {
+        switch self {
+        case .fresh: "square.grid.3x3"
+        case .recognised: "camera"
+        case .imported: "link"
+        }
+    }
 }
 
 /// One game being played, and everything the screen showing it needs.
