@@ -59,16 +59,6 @@ public final class EngineService: @unchecked Sendable {
         case unknown
     }
 
-    /// How long the engine is allowed to think, and what ends the search.
-    public enum Budget: Hashable, Sendable {
-        /// Deepen until told to stop. What the Analysis screen uses.
-        case untilStopped
-        /// Mirrored Time: think for about as long as the player took.
-        case time(Duration)
-        case depth(Int)
-        case nodes(UInt64)
-    }
-
     private let handle: EngineHandle
     private let queue = DispatchQueue(label: "com.sunfmin.chessfen.engine")
     private let sink = Mutex(Sink())
@@ -205,7 +195,7 @@ public final class EngineService: @unchecked Sendable {
     /// the running search is stopped, waited for, and its stream finished before this one
     /// installs itself, all in that order on the serial queue. Callers therefore cannot
     /// interleave two searches however hard they try, and no stream is ever left hanging.
-    public func analyse(_ game: Game, budget: Budget = .untilStopped) -> AsyncStream<Analysis> {
+    public func analyse(_ game: Game, budget: SearchBudget = .untilStopped) -> AsyncStream<Analysis> {
         let startFEN = game.startFEN
         let moves = game.uciMoves
         let state = game.state
@@ -299,7 +289,7 @@ public final class EngineService: @unchecked Sendable {
     /// This is what the engine plays with when it holds a Controller. `budget` carries
     /// Mirrored Time; the engine is never handicapped, so how well it plays is entirely a
     /// question of how long it was given.
-    public func bestMove(for game: Game, budget: Budget) async -> Move? {
+    public func bestMove(for game: Game, budget: SearchBudget) async -> Move? {
         // The engine thinks about its move when there is someone there to see it played, not
         // in a pocket. Held rather than skipped, because a turn that is the engine's stays the
         // engine's however long the app was away.
@@ -314,7 +304,7 @@ public final class EngineService: @unchecked Sendable {
     /// The Score of a Game's current Position at one Depth, and nothing else — the
     /// baseline a Review needs for its first move, which has no ply before it to compare
     /// against.
-    public func evaluate(_ game: Game, budget: Budget) async -> Score? {
+    public func evaluate(_ game: Game, budget: SearchBudget) async -> Score? {
         await waitWhilePaused()
         guard !Task.isCancelled else { return nil }
         var last: Analysis?
@@ -491,7 +481,7 @@ extension Line {
     }
 }
 
-extension EngineService.Budget {
+extension SearchBudget {
     var cLimits: CfSearchLimits {
         var limits = CfSearchLimits(movetimeMs: 0, depth: 0, nodes: 0)
         switch self {

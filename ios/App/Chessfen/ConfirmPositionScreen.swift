@@ -480,14 +480,16 @@ struct ConfirmPositionScreen: View {
             return
         }
 
-        let session = GameSession(
-            game: game,
+        let session = GameSession.corrected(
+            game,
             controllers: proposal.controllers,
             orientation: proposal.orientation,
             origin: proposal.origin,
-            picture: proposal.picture
+            picture: proposal.picture,
+            shaky: proposal.shaky,
+            engine: engine.service,
+            library: library
         )
-        session.attach(engine: engine.service, library: library)
         // Replaces the stack rather than adding to it: going back from a game in progress belongs
         // in the library, not in the editor of a position already being played.
         path = [.game(session)]

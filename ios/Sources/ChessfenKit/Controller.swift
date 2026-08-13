@@ -35,7 +35,7 @@ public enum MirroredTime {
     /// What to spend when there is nothing to mirror yet — the engine's first move.
     public static let opening = Duration.seconds(1)
 
-    public static func budget(mirroring played: Duration?) -> EngineService.Budget {
+    public static func budget(mirroring played: Duration?) -> SearchBudget {
         guard let played else { return .time(opening) }
         return .time(min(max(played, shortest), longest))
     }
@@ -73,7 +73,7 @@ public enum ThinkingTime: Hashable, Sendable {
     ]
 
     /// What to give the engine, given how long the player took over their own last move.
-    public func budget(mirroring played: Duration?) -> EngineService.Budget {
+    public func budget(mirroring played: Duration?) -> SearchBudget {
         switch self {
         case .mirrored: MirroredTime.budget(mirroring: played)
         case .fixed(let seconds): .time(.seconds(seconds))

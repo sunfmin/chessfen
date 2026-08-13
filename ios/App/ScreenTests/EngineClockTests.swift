@@ -32,7 +32,7 @@ struct EngineClock {
         _ engine: ScriptedEngine, controllers: [PieceColour: Controller]
     ) throws -> GameSession {
         let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
-        let session = GameSession(game: game, controllers: controllers, origin: .fresh)
+        let session = GameSession.fresh(game, controllers: controllers)
         session.attach(engine: engine, library: nil)
         // What the screen does in `onAppear`, and what makes the engine start.
         session.retune()

@@ -1,8 +1,7 @@
-import ChessfenKit
 import Foundation
 
 /// Where a game came from, which decides what can be done to it later.
-enum GameOrigin: String, Hashable, Sendable, Codable {
+public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// Set up by hand, from the standard position or an edited one.
     case fresh
     /// Read off a picture. Such a game can always be taken back to the Confirm Position
@@ -12,11 +11,11 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     /// Written into the PGN so the distinction survives a relaunch. Not a standard tag;
     /// PGN has no opinion about where a position came from, and readers ignore what they do
     /// not know.
-    static let tagName = "Source"
+    public static let tagName = "Source"
 
-    var tagValue: String { rawValue }
-    var chinese: String { self == .recognised ? "识别" : "手摆" }
-    var symbol: String { self == .recognised ? "camera" : "square.grid.3x3" }
+    public var tagValue: String { rawValue }
+    public var chinese: String { self == .recognised ? "识别" : "手摆" }
+    public var symbol: String { self == .recognised ? "camera" : "square.grid.3x3" }
 }
 
 /// One game being played, and everything the screen showing it needs.
@@ -25,42 +24,50 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
 /// where the player is looking, and the Analysis as it currently stands. It also owns the
 /// engine loop, because "what should the engine be doing right now" has exactly one answer
 /// and it follows from the Game, the cursor and the two Controllers.
-@Observable final class GameSession: Identifiable, Hashable {
-    let id = UUID()
+@Observable @MainActor public final class GameSession: Identifiable, Hashable {
+    public nonisolated let id = UUID()
 
-    private(set) var game: Game
-    var orientation: Orientation
+    public private(set) var game: Game {
+        didSet { storedViewed = nil }
+    }
+    public var orientation: Orientation
     /// Which ply the player is looking at: 0 is the starting position, `plies.count` the
     /// latest. Browsing back does not change the Game — but playing from there does, and what
     /// used to follow becomes a Variation.
-    private(set) var cursor: Int
+    public private(set) var cursor: Int {
+        didSet { storedViewed = nil }
+    }
+    /// The Game rebuilt where the cursor stands, kept until either the Game or the cursor
+    /// moves — the whole point of `viewed` being a stored value instead of a derivation
+    /// (see `viewed` itself).
+    @ObservationIgnored private var storedViewed: Game?
     /// The Analysis of the position being looked at, replaced each time the engine reports a
     /// deeper one, and cleared the moment anything makes it stale.
-    private(set) var analysis: Analysis?
+    public private(set) var analysis: Analysis?
     /// True while the engine is thinking about a move it is going to play itself, as opposed
     /// to advising.
-    private(set) var isThinking = false
+    public private(set) var isThinking = false
 
     /// How the running search is getting on — how long it has been at it and how deep it has got.
     ///
     /// Apart from the Analysis on purpose, because it is not advice: a Depth and a stopwatch are a
     /// report of what the phone is doing, so practice, which refuses to show what the engine
     /// *thinks*, has no reason to hide them. It is what a thumb held on 让引擎走 is told.
-    private(set) var searchProgress: SearchProgress?
+    public private(set) var searchProgress: SearchProgress?
 
-    struct SearchProgress: Hashable, Sendable {
-        var depth: Int
-        var selectiveDepth: Int
-        var milliseconds: UInt64
+    public struct SearchProgress: Hashable, Sendable {
+        public var depth: Int
+        public var selectiveDepth: Int
+        public var milliseconds: UInt64
 
-        var seconds: Double { Double(milliseconds) / 1000 }
+        public var seconds: Double { Double(milliseconds) / 1000 }
     }
-    private(set) var url: URL?
-    let origin: GameOrigin
+    public private(set) var url: URL?
+    public let origin: GameOrigin
     /// The picture the position was read from, and the squares recognition was unsure of —
     /// kept so the gate can be returned to.
-    var picture: RGBImage?
-    var shaky: Set<Square>
+    public var picture: RGBImage?
+    public var shaky: Set<Square>
 
     /// Whether the engine keeps its opinion to itself. This is the practice switch: no advisory
     /// search runs, no Score is drawn, and nothing the engine thinks is written into the plies —
@@ -75,7 +82,7 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     ///
     /// Not stored. PGN has nowhere to put it, and like the Controllers it is a way of playing
     /// rather than something about the game, so a reopened game starts with the engine talking.
-    private(set) var isPractising = false
+    public private(set) var isPractising = false
 
     private var controllers: [PieceColour: Controller]
     /// The clock somebody has put the engine on, if anybody has. Nil means the game decides —
@@ -100,7 +107,10 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     private var engine: (any Engine)?
     private weak var library: GameLibrary?
 
-    init(
+    /// The one low-level construction, private because a session is made through one of the named
+    /// ways in below — which is where the invariants live: what a session is attached to, and
+    /// whether a saved game may be opened at all.
+    private init(
         game: Game,
         // Both by hand unless asked otherwise. A board that starts moving on its own is a
         // surprise, and the engine is one switch away for anyone who wants an opponent.
@@ -125,7 +135,44 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
         self.cursor = min(max(0, viewing ?? game.plies.count), game.plies.count)
     }
 
-    /// Reopens a saved game, at the position it began in.
+    // ------------------------------------------------------------------ ways in
+    //
+    // One call per way a session comes to be. Each owns what the callers used to hand-roll:
+    // attaching the engine and the library it saves back to, and — for a saved game — the
+    // refusal while its file is still on the way from iCloud.
+
+    /// A board just read off a photograph (docs/adr/0011): the legal readings come here straight
+    /// from the camera, and an illegal reading arrives through `corrected` once the editor has
+    /// had its say. The picture and the squares recognition was unsure of come along so the
+    /// gate can be returned to.
+    public static func recognised(
+        _ game: Game,
+        orientation: Orientation = .whiteAtBottom,
+        picture: RGBImage? = nil,
+        shaky: Set<Square> = [],
+        engine: (any Engine)? = nil,
+        library: GameLibrary? = nil
+    ) -> GameSession {
+        let session = GameSession(
+            game: game, orientation: orientation, origin: .recognised, picture: picture, shaky: shaky
+        )
+        session.attach(engine: engine, library: library)
+        return session
+    }
+
+    /// A new game, both sides by hand unless asked otherwise.
+    public static func fresh(
+        _ game: Game,
+        controllers: [PieceColour: Controller] = [.white: .hand, .black: .hand],
+        engine: (any Engine)? = nil,
+        library: GameLibrary? = nil
+    ) -> GameSession {
+        let session = GameSession(game: game, controllers: controllers, origin: .fresh)
+        session.attach(engine: engine, library: library)
+        return session
+    }
+
+    /// A saved game, opened at the position it began in.
     ///
     /// The beginning rather than the end, because opening a game that is over is reading it: the
     /// moves are there to be walked through, and the last position is the one thing about a
@@ -134,7 +181,65 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     /// The Controllers are not stored in PGN — nothing in the format has anywhere to put them — so
     /// a reopened game starts with both sides by hand, which is the reading that cannot surprise
     /// anyone by moving on its own.
-    convenience init(entry: GameLibrary.Entry, library: GameLibrary? = nil) {
+    ///
+    /// Nil — refused, not failed — while the file is still on the way from iCloud. Opening it
+    /// would give an empty board wearing the real game's file name, and the autosave after the
+    /// first move would write it over the game that was on its way (docs/adr/0012). Every door
+    /// into a saved game goes through this one, so the refusal cannot be forgotten.
+    public static func opened(
+        _ entry: GameLibrary.Entry,
+        engine: (any Engine)? = nil,
+        library: GameLibrary? = nil
+    ) -> GameSession? {
+        guard !entry.isDownloading else { return nil }
+        let session = GameSession(entry: entry, library: library)
+        session.attach(engine: engine, library: library)
+        return session
+    }
+
+    /// A position the Piece Editor hands back (docs/adr/0011). Carries the shaky squares it came
+    /// in with: the editor fixed a reading, it did not remove the doubt about the rest of the
+    /// board, and the gate is still the way back to it.
+    public static func corrected(
+        _ game: Game,
+        controllers: [PieceColour: Controller],
+        orientation: Orientation,
+        origin: GameOrigin,
+        picture: RGBImage?,
+        shaky: Set<Square>,
+        engine: (any Engine)?,
+        library: GameLibrary?
+    ) -> GameSession {
+        let session = GameSession(
+            game: game,
+            controllers: controllers,
+            orientation: orientation,
+            origin: origin,
+            picture: picture,
+            shaky: shaky
+        )
+        session.attach(engine: engine, library: library)
+        return session
+    }
+
+    /// The next saved game in a collection, opened the way this one is being worked: which way up
+    /// the board is, whether the engine is advising, who plays each side, and the clock somebody
+    /// put the engine on. Those are ways of working rather than facts about a game, and having to
+    /// set them again for every position is exactly the friction that makes a set of fifty not get
+    /// done. Nil while the next file is still on the way (see `opened`).
+    public func next(_ entry: GameLibrary.Entry) -> GameSession? {
+        guard let next = Self.opened(entry, engine: engine, library: library) else { return nil }
+        next.orientation = orientation
+        next.setPractising(isPractising)
+        for colour in [PieceColour.white, .black] {
+            next.setController(controller(for: colour), for: colour)
+        }
+        if let chosenThinkingTime { next.setThinkingTime(chosenThinkingTime) }
+        return next
+    }
+
+    /// Reopens a saved game, at the position it began in.
+    private convenience init(entry: GameLibrary.Entry, library: GameLibrary? = nil) {
         let pgn = entry.pgn
         self.init(
             game: pgn?.game ?? Game(startFEN: PGN.standardStartFEN)!,
@@ -147,26 +252,16 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
         )
     }
 
-    /// A saved game, opened ready to play: the engine attached and the library it saves back to.
-    /// Defined once because more than one screen opens games now — the library and a collection.
-    static func opened(
-        _ entry: GameLibrary.Entry, engine: EngineHost, library: GameLibrary
-    ) -> GameSession {
-        let session = GameSession(entry: entry, library: library)
-        session.attach(engine: engine.service, library: library)
-        return session
-    }
-
-    func attach(engine: (any Engine)?, library: GameLibrary?) {
+    public func attach(engine: (any Engine)?, library: GameLibrary?) {
         self.engine = engine
         self.library = library
     }
 
-    func controller(for colour: PieceColour) -> Controller {
+    public func controller(for colour: PieceColour) -> Controller {
         controllers[colour] ?? .hand
     }
 
-    func setController(_ controller: Controller, for colour: PieceColour) {
+    public func setController(_ controller: Controller, for colour: PieceColour) {
         guard controllers[colour] != controller else { return }
         controllers[colour] = controller
         // Changing who moves for the side already on the clock has to take effect now, not
@@ -175,12 +270,12 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     }
 
     /// Whether the engine is holding either Controller, which is when its clock is worth showing.
-    var isEnginePlaying: Bool {
+    public var isEnginePlaying: Bool {
         controller(for: .white) == .engine || controller(for: .black) == .engine
     }
 
     /// Both Controllers on the engine: the app playing itself, with nobody on the clock.
-    var isSelfPlaying: Bool {
+    public var isSelfPlaying: Bool {
         controller(for: .white) == .engine && controller(for: .black) == .engine
     }
 
@@ -193,7 +288,7 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     /// game is allowed to refuse. It is not a preference there so much as a question with no
     /// answer — there is no player's last move to mirror — and a clock that quietly meant one
     /// second for ever is worse than the app saying which clock it is actually using.
-    var thinkingTime: ThinkingTime {
+    public var thinkingTime: ThinkingTime {
         guard let chosenThinkingTime else { return isSelfPlaying ? .selfPlay : .mirrored }
         if chosenThinkingTime == .mirrored, isSelfPlaying { return .selfPlay }
         return chosenThinkingTime
@@ -206,7 +301,7 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     /// one, and the move being waited for is the one anybody reaches for this because of. The
     /// running search starts again on the new clock rather than being trimmed to it — the time
     /// asked for is the time it gets.
-    func setThinkingTime(_ time: ThinkingTime) {
+    public func setThinkingTime(_ time: ThinkingTime) {
         guard thinkingTime != time else { return }
         chosenThinkingTime = time
         retune()
@@ -214,7 +309,7 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
 
     /// Turns the engine's advice off, or back on. Also takes effect now: a number left standing
     /// from the search that has just been called off is the one thing practice must not show.
-    func setPractising(_ practising: Bool) {
+    public func setPractising(_ practising: Bool) {
         guard isPractising != practising else { return }
         isPractising = practising
         analysis = nil
@@ -226,7 +321,7 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     /// Read from the tags rather than carried alongside them, so that it cannot disagree with what
     /// the library shows — and so a game that has never been saved has no collection, which is the
     /// truth about it.
-    var collection: String? {
+    public var collection: String? {
         guard let event = tags.first(where: { $0.name == "Event" })?.value,
             !GameLibrary.unfiledEvents.contains(event)
         else { return nil }
@@ -237,7 +332,7 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
 
     /// Whether somebody has filed this game into a collection, which is them saying they are keeping
     /// it — and so also saying the position it starts from is the one they meant.
-    var isFiled: Bool { collection != nil }
+    public var isFiled: Bool { collection != nil }
 
     /// Whether this game's starting position can be taken back to the editor. True for anything
     /// read off a picture, for as long as the game exists: the thing most likely to be wrong
@@ -246,20 +341,20 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     /// Except once it has been filed. A game somebody has put in a collection has been looked at
     /// and kept, so either the reading was right or it has already been put right, and a screen
     /// that goes on asking about the pieces is asking a question that was answered.
-    var canEditPosition: Bool { origin == .recognised && !isFiled }
+    public var canEditPosition: Bool { origin == .recognised && !isFiled }
 
     /// The squares recognition was unsure about, while they are still worth pointing at. Once a
     /// move has been played the position has been accepted in practice, and rings on the board
     /// would be nothing but noise — as they would on a game that has been filed, for the same
     /// reason `canEditPosition` stops offering the editor.
-    var unconfirmedSquares: Set<Square> {
+    public var unconfirmedSquares: Set<Square> {
         canEditPosition && game.plies.isEmpty ? shaky : []
     }
 
     /// Swaps the position the game starts from. Only for a game nobody has moved in yet — which
     /// is the case this exists for: correcting a piece straight after the photograph should fix
     /// the game in front of you, not leave a second record behind.
-    func replaceStart(with fresh: Game) -> Bool {
+    public func replaceStart(with fresh: Game) -> Bool {
         guard game.plies.isEmpty else { return false }
         searchTask?.cancel()
         game = fresh
@@ -275,30 +370,40 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     // ---------------------------------------------------------------- browsing
 
     /// The Game as it stands where the player is looking.
-    var viewed: Game { game.rewound(to: cursor) ?? game }
+    ///
+    /// Stored rather than recomputed per read: one screen reads this ten times to render
+    /// itself once, and every read used to replay the whole game from its first move — O(n²)
+    /// move applications for one frame. Now a read after a change rebuilds it once, which is
+    /// the one Rules probe per change that ADR-0003 is about; the reads after it are free.
+    public var viewed: Game {
+        if let storedViewed { return storedViewed }
+        let rebuilt = game.rewound(to: cursor) ?? game
+        storedViewed = rebuilt
+        return rebuilt
+    }
 
-    var isAtLatest: Bool { cursor >= game.plies.count }
+    public var isAtLatest: Bool { cursor >= game.plies.count }
 
     /// The move that led to the position on screen.
-    var lastMove: MoveSquares? {
+    public var lastMove: MoveSquares? {
         guard cursor > 0, game.plies.indices.contains(cursor - 1) else { return nil }
         return MoveSquares(uci: game.plies[cursor - 1].uci)
     }
 
     /// The lines that were played from the position on screen instead of the move that
     /// follows it.
-    var variationsHere: [[Game.Ply]] { game.variations(atPly: cursor) }
+    public var variationsHere: [[Game.Ply]] { game.variations(atPly: cursor) }
 
-    func step(by delta: Int) {
+    public func step(by delta: Int) {
         let wanted = min(max(0, cursor + delta), game.plies.count)
         guard wanted != cursor else { return }
         cursor = wanted
         analysis = nil
-        Feedback.shared.play(.move)
+        Sounds.current.play(.move)
         retune()
     }
 
-    func jumpToLatest() {
+    public func jumpToLatest() {
         guard cursor != game.plies.count else { return }
         cursor = game.plies.count
         analysis = nil
@@ -310,16 +415,16 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     /// Browsing, not undoing: the game is untouched and every move is still there to be walked
     /// through again. It is the other end of `jumpToLatest`, and between them a game is readable
     /// without a single move being taken off it.
-    func jumpToStart() {
+    public func jumpToStart() {
         guard cursor != 0 else { return }
         cursor = 0
         analysis = nil
-        Feedback.shared.play(.move)
+        Sounds.current.play(.move)
         retune()
     }
 
     /// Carries on down one of the lines that was left behind here.
-    func enterVariation(_ index: Int) {
+    public func enterVariation(_ index: Int) {
         guard game.promoteVariation(index, atPly: cursor) else { return }
         cursor += 1
         analysis = nil
@@ -329,30 +434,68 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
 
     // ------------------------------------------------------------------ moves
 
-    var isEngineTurn: Bool {
+    public var isEngineTurn: Bool {
         isAtLatest && !game.isOver && controller(for: viewed.state.sideToMove) == .engine
     }
 
     /// Whether a person may move on the board as it is being looked at. True in the past as
     /// well as the present: playing from an earlier position is how a branch is made.
-    var isHandTurn: Bool {
+    public var isHandTurn: Bool {
         guard !viewed.isOver else { return false }
         if !isAtLatest { return true }
         return controller(for: viewed.state.sideToMove) == .hand
     }
 
+    /// Who is putting a move down. The one thing the three ways in differ by is the clock, and
+    /// this is what names that difference.
+    private enum Mover {
+        /// A person, on their own turn. Stops the clock the engine will mirror.
+        case hand
+        /// The engine, asked for one move by a held button. Not the player's thinking, so the
+        /// mirror — a record of how long the *player* took — must not hold them to it.
+        case asked
+        /// The engine's own Controller. Its thinking time is not a thinking time to mirror either.
+        case engine
+    }
+
     /// A move made by a person. The clock this stops is what the engine will mirror.
-    func play(_ move: Move) {
+    public func play(_ move: Move) {
         guard isHandTurn else { return }
-        if isAtLatest, let turnBegan { lastHumanThink = ContinuousClock.now - turnBegan }
-        let branching = !isAtLatest && game.plies[cursor].uci != move.uci
-        guard game.play(move, atPly: cursor) else {
-            Feedback.shared.play(.refused)
-            return
+        commit(move, by: .hand)
+    }
+
+    /// The one way a move lands: the write, the cursor, the noise, the save, the retune. The
+    /// three public paths differ only in the clock and who may be moving, and having them each
+    /// hand-roll this is how one of them eventually forgets a line of it.
+    private func commit(_ move: Move, by mover: Mover) {
+        // The clock. Only a hand move at the latest position stops it: Mirrored Time is the
+        // length of a *player's* last turn, and neither an engine move nor a move asked of it
+        // was the player thinking (docs/adr/0009).
+        if mover == .hand, isAtLatest, let turnBegan {
+            lastHumanThink = ContinuousClock.now - turnBegan
         }
-        cursor += 1
-        Feedback.shared.play(move, outcome: viewed.state.outcome)
-        if branching { Feedback.shared.play(.check) }
+        // A move played over an earlier one: what used to follow becomes a Variation, and the
+        // capture of a whole line being replaced is worth its own noise. Computed before the
+        // play, which is what the comparison is against. The engine's own moves always land at
+        // the latest position, so this is only ever a hand or asked concern.
+        let branching = mover != .engine && !isAtLatest && game.plies[cursor].uci != move.uci
+        if mover == .engine {
+            // Played only at the latest position: it was found for the position its search
+            // started from, and applying it anywhere else would be a different move.
+            guard isAtLatest, game.apply(move) else { return }
+            cursor = game.plies.count
+        } else {
+            guard game.play(move, atPly: cursor) else {
+                Sounds.current.play(.refused)
+                return
+            }
+            cursor += 1
+        }
+        Sounds.current.play(move, outcome: viewed.state.outcome)
+        if branching { Sounds.current.play(.check) }
+        // The invariant: the Analysis that described the position before this move is stale,
+        // the game is written to its file, and the engine is asked what it makes of the new
+        // position — whoever moved.
         analysis = nil
         save()
         retune()
@@ -369,7 +512,7 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     /// The engine's own turn does, though: it is already walking this move under its own Controller,
     /// and 马上走 is how you stop waiting for it. Asking a second time for a move that is already
     /// being played is two controls doing one job.
-    var canPlayBestMove: Bool { engine != nil && !viewed.isOver && !isEngineTurn }
+    public var canPlayBestMove: Bool { engine != nil && !viewed.isOver && !isEngineTurn }
 
     /// Starts the engine thinking about a move it will play when it is let go.
     ///
@@ -380,7 +523,7 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     ///
     /// Not a Controller and not advice left standing: one move, asked for by hand, for whichever
     /// colour is on the clock.
-    func beginAskedMove() {
+    public func beginAskedMove() {
         // Once per press. A press arrives as a drag of no distance, which reports as it is held, and
         // the button cannot know it is already down until the state saying so has come back around
         // to it — so two of them can reach here before it does. Nothing else is thinking on a hand
@@ -418,7 +561,7 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     /// release plays what is known at that instant and takes the search down with it — and the one
     /// case where nothing is known yet waits for the first snapshot, which is the soonest an answer
     /// can exist at all.
-    func endAskedMove() {
+    public func endAskedMove() {
         guard isThinking else { return }
         isAskReleased = true
         guard askedBest != nil else {
@@ -443,26 +586,16 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     /// A move the engine was asked for. Like a hand move in every way except the clock: the time
     /// the engine mirrors is a record of how long the *player* took, and this was not that.
     private func playAsked(_ move: Move) {
-        let branching = !isAtLatest && game.plies[cursor].uci != move.uci
-        guard game.play(move, atPly: cursor) else {
-            Feedback.shared.play(.refused)
-            return
-        }
-        cursor += 1
-        Feedback.shared.play(move, outcome: viewed.state.outcome)
-        if branching { Feedback.shared.play(.check) }
-        analysis = nil
-        save()
-        retune()
+        commit(move, by: .asked)
     }
 
     /// Takes the last move of the game off. Only from the latest position: in the middle of a
     /// game, going backwards is browsing, and deleting is not what a back button means.
-    func undo() {
+    public func undo() {
         guard isAtLatest, !game.plies.isEmpty else { return }
         searchTask?.cancel()
         game.undo()
-        Feedback.shared.play(.move)
+        Sounds.current.play(.move)
         // If undoing leaves the engine on the clock while the player is not, undo its move
         // too — otherwise it replies instantly and the player is exactly where they were.
         if controller(for: game.state.sideToMove) == .engine,
@@ -481,19 +614,19 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     // ------------------------------------------------------------- who starts
 
     /// Which colour moves first from the position this game began in.
-    var startingSideToMove: PieceColour {
+    public var startingSideToMove: PieceColour {
         game.startFEN.split(separator: " ").dropFirst().first == "b" ? .black : .white
     }
 
     /// Whether the game could begin with `colour` to move at all. Handing the move to the
     /// other side can make a position illegal, because their opponent may be standing in
     /// check — and a position nobody could have reached is not one to play from.
-    func canStart(withSideToMove colour: PieceColour) -> Bool {
+    public func canStart(withSideToMove colour: PieceColour) -> Bool {
         restarted(withSideToMove: colour) != nil
     }
 
     /// Starts the game again from the position it began in, with `colour` to move.
-    func restart(withSideToMove colour: PieceColour) {
+    public func restart(withSideToMove colour: PieceColour) {
         guard let fresh = restarted(withSideToMove: colour) else { return }
         searchTask?.cancel()
         // A game with moves in it has already been written to its own file. Leaving that file
@@ -518,7 +651,7 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     // ----------------------------------------------------------------- engine
 
     /// Starts whatever the position calls for. Safe to call repeatedly.
-    func retune() {
+    public func retune() {
         searchTask?.cancel()
         searchTask = nil
         isThinking = false
@@ -575,7 +708,7 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     ///
     /// Stopping a search is not abandoning it: Stockfish still reports its best move, so this
     /// plays the move the engine would have played, just sooner.
-    func moveNow() {
+    public func moveNow() {
         guard isThinking else { return }
         engine?.stop()
     }
@@ -583,16 +716,11 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     /// A move the engine played for itself. It does not touch the mirror — the engine's own
     /// thinking time is not a thinking time for the engine to mirror.
     private func playByEngine(_ move: Move) {
-        guard isAtLatest, game.apply(move) else { return }
-        cursor = game.plies.count
-        Feedback.shared.play(move, outcome: game.state.outcome)
-        analysis = nil
-        save()
-        retune()
+        commit(move, by: .engine)
     }
 
     /// Stops thinking — the screen has gone away, or the app has.
-    func suspend() {
+    public func suspend() {
         searchTask?.cancel()
         searchTask = nil
         isThinking = false
@@ -621,7 +749,7 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
 
     // --------------------------------------------------------------- storage
 
-    var pgn: PGN {
+    public var pgn: PGN {
         var written = PGN(game: game, tags: tags)
         // Event is only filled in when the game is not in a collection. It used to be set to the
         // app's name unconditionally, which would have rubbed out the collection of every filed game
@@ -648,28 +776,29 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     /// should not leave a trail of empty games behind it. The first move is what makes a game
     /// worth keeping — and once a file exists it keeps being written to, even if the moves are
     /// taken back off it again.
-    func save() {
+    public func save() {
         guard let library else { return }
         guard url != nil || !game.plies.isEmpty else { return }
-        let isNew = url == nil
         if url == nil { url = library.newURL() }
         guard let url else { return }
         library.write(pgn, to: url)
-        // The picture goes beside the game the first time it is written, so that a recognised
-        // game can still be checked against its photograph after a relaunch.
-        if isNew, origin == .recognised, let picture {
+        // The picture goes beside the game, written every save rather than only the first:
+        // the photograph can arrive after the game has — it is the whole reason a game can be
+        // recognised and then filed — and a picture assigned later is as much the game's as one
+        // it was born with. Writing to the same place, so nothing accumulates.
+        if origin == .recognised, let picture {
             library.writePicture(picture, for: url)
         }
     }
 
     /// Replaces the recorded Scores with a Review's, which are comparable with each other.
-    func applyReview(_ scores: [Score?]) {
+    public func applyReview(_ scores: [Score?]) {
         for (ply, score) in scores.enumerated() where score != nil {
             game.setEvaluation(score, atPly: ply)
         }
         save()
     }
 
-    static func == (left: GameSession, right: GameSession) -> Bool { left === right }
-    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+    public nonisolated static func == (left: GameSession, right: GameSession) -> Bool { left === right }
+    public nonisolated func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }

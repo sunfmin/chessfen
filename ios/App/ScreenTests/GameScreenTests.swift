@@ -67,10 +67,8 @@ struct GameScreenScreenshots {
     @Test("the game screen shows the position, what the engine makes of it, and the moves")
     func gameInPlay() async throws {
         let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
-        let session = GameSession(
-            game: game,
-            controllers: [.white: .hand, .black: .engine],
-            origin: .fresh
+        let session = GameSession.fresh(
+            game, controllers: [.white: .hand, .black: .engine]
         )
 
         let rendered = await ScreenImage.write("game-in-play") {
@@ -107,10 +105,8 @@ struct GameScreenScreenshots {
     func recognisedBoard() async throws {
         let fen = "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2P2N2/PP1P1PPP/RNBQK2R w KQkq - 0 5"
         let game = try #require(Game(startFEN: fen))
-        let session = GameSession(
-            game: game,
-            origin: .recognised,
-            shaky: [Square("c6")!, Square("f6")!, Square("c5")!]
+        let session = GameSession.recognised(
+            game, shaky: [Square("c6")!, Square("f6")!, Square("c5")!]
         )
 
         let rendered = await ScreenImage.write("game-recognised") {
@@ -139,7 +135,7 @@ struct GameScreenScreenshots {
             pgn: PGN(game: game, tags: [PGN.Tag("White", "手动"), PGN.Tag("Black", "引擎")]),
             modified: Date(timeIntervalSince1970: 1_786_000_000)
         )
-        let session = GameSession(entry: entry)
+        let session = try #require(GameSession.opened(entry))
 
         let rendered = await ScreenImage.write("game-reopened") {
             screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
@@ -157,12 +153,17 @@ struct GameScreenScreenshots {
     func filedBoard() async throws {
         let fen = "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2P2N2/PP1P1PPP/RNBQK2R w KQkq - 0 5"
         let game = try #require(Game(startFEN: fen))
-        let session = GameSession(
-            game: game,
-            origin: .recognised,
-            shaky: [Square("c6")!, Square("f6")!, Square("c5")!],
-            tags: [PGN.Tag("Event", "西西里防御")]
+        // The filed state exists only as a saved game: a reading somebody kept, with the
+        // collection it was kept in written into the file.
+        let entry = GameLibrary.Entry(
+            url: URL(filePath: "/games/chessfen-2026-08-12-190100.pgn"),
+            pgn: PGN(game: game, tags: [
+                PGN.Tag(GameOrigin.tagName, GameOrigin.recognised.rawValue),
+                PGN.Tag("Event", "西西里防御"),
+            ]),
+            modified: Date(timeIntervalSince1970: 1_786_000_100)
         )
+        let session = try #require(GameSession.opened(entry))
 
         let rendered = await ScreenImage.write("game-filed") {
             screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
@@ -181,10 +182,8 @@ struct GameScreenScreenshots {
     @Test("while the engine is on the clock the screen offers to stop waiting for it")
     func engineThinking() async throws {
         let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
-        let session = GameSession(
-            game: game,
-            controllers: [.white: .engine, .black: .hand],
-            origin: .fresh
+        let session = GameSession.fresh(
+            game, controllers: [.white: .engine, .black: .hand]
         )
 
         let rendered = await ScreenImage.write("game-engine-thinking") {
@@ -206,10 +205,8 @@ struct GameScreenScreenshots {
     @Test("with both sides on the engine the screen names the clock and says how to stop")
     func selfPlay() async throws {
         let game = try #require(Game(startFEN: PGN.standardStartFEN))
-        let session = GameSession(
-            game: game,
-            controllers: [.white: .engine, .black: .engine],
-            origin: .fresh
+        let session = GameSession.fresh(
+            game, controllers: [.white: .engine, .black: .engine]
         )
 
         let rendered = await ScreenImage.write("game-self-play") {
@@ -232,10 +229,8 @@ struct GameScreenScreenshots {
     @Test("the game screen holds up in the dark")
     func gameAtNight() async throws {
         let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
-        let session = GameSession(
-            game: game,
-            controllers: [.white: .hand, .black: .engine],
-            origin: .fresh
+        let session = GameSession.fresh(
+            game, controllers: [.white: .hand, .black: .engine]
         )
 
         let rendered = await ScreenImage.write("game-in-play-dark", style: .dark) {
@@ -252,7 +247,7 @@ struct GameScreenScreenshots {
     @Test("a move played over an earlier one offers the line it replaced")
     func variationKept() async throws {
         let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
-        let session = GameSession(game: game, origin: .fresh)
+        let session = GameSession.fresh(game)
         // Back to before 4. c3, and play something else there.
         session.step(by: -2)
         let other = try #require(session.viewed.state.legalMoves.first { $0.uci == "d2d3" })
@@ -277,7 +272,7 @@ struct GameScreenScreenshots {
         // 1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 4. Qxf7#
         let mate = ["e2e4", "e7e5", "f1c4", "b8c6", "d1h5", "g8f6", "h5f7"]
         let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: mate))
-        let session = GameSession(game: game, origin: .fresh)
+        let session = GameSession.fresh(game)
         #expect(game.state.outcome == .checkmate)
 
         // An engine with nothing to say, which is what a real one does with a finished position.
@@ -301,7 +296,7 @@ struct GameScreenScreenshots {
     @Test("practice leaves the engine's opinion off the screen and says why")
     func practising() async throws {
         let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
-        let session = GameSession(game: game, origin: .fresh)
+        let session = GameSession.fresh(game)
         session.setPractising(true)
 
         let rendered = await ScreenImage.write("game-practising") {

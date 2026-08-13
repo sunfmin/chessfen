@@ -13,18 +13,18 @@ import Foundation
 /// take as long as it likes, and a library that cannot list itself until an account server has
 /// answered is a library that cannot be opened on a plane. `connect()` does the asking, moves
 /// whatever was kept locally up into iCloud once, and switches the folder over.
-@MainActor final class GameFolder {
+@MainActor public final class GameFolder {
     /// The folder to read and write right now.
-    private(set) var url = GameFolder.local
+    public private(set) var url = GameFolder.local
 
     /// Whether that folder is iCloud's. What it decides is not where files go — `url` has
     /// already said that — but whether reading and writing them has to be coordinated with the
     /// sync daemon, and whether a file that is listed is necessarily a file that is here.
-    private(set) var isCloud = false
+    public private(set) var isCloud = false
 
     /// The folder the app has always used, and the one it falls back to. Kept even after the
     /// move to iCloud: signing out of an account must leave somewhere to play.
-    nonisolated static let local: URL = {
+    public nonisolated static let local: URL = {
         let games = URL.documentsDirectory.appending(path: "Games", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: games, withIntermediateDirectories: true)
         return games
@@ -42,7 +42,7 @@ import Foundation
     /// Safe to call more than once: signing into an account after launch is a thing people do,
     /// and the second call is what notices.
     @discardableResult
-    func connect() async -> Bool {
+    public func connect() async -> Bool {
         let opened = await Task.detached(priority: .utility) { Self.openCloudFolder() }.value
         watchAccount()
         guard let opened, opened != url else { return false }
@@ -106,7 +106,7 @@ import Foundation
 
     /// Calls back whenever a game arrives, changes or disappears in iCloud — which is to say,
     /// whenever another device has been played on.
-    func onChange(_ handler: @escaping () -> Void) {
+    public func onChange(_ handler: @escaping () -> Void) {
         changed = handler
         startQuery()
     }
@@ -157,7 +157,7 @@ import Foundation
     /// In iCloud a file is a name long before it is bytes: it appears in the listing the moment
     /// another device saves it, and arrives when it arrives. Everything that reads has to be
     /// able to say "not yet" rather than "broken".
-    func isHere(_ url: URL) -> Bool {
+    public func isHere(_ url: URL) -> Bool {
         guard isCloud else { return true }
         let status = try? url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
             .ubiquitousItemDownloadingStatus
@@ -168,7 +168,7 @@ import Foundation
 
     /// Asks iCloud for a file this device only knows the name of. Returns immediately; the
     /// query says when it has landed.
-    func fetch(_ url: URL) {
+    public func fetch(_ url: URL) {
         guard isCloud else { return }
         try? FileManager.default.startDownloadingUbiquitousItem(at: url)
     }
@@ -179,7 +179,7 @@ import Foundation
     /// sync daemon is never read halfway through. `.withoutChanges` and the `isHere` guard keep
     /// this from ever being the thing that waits on the network: a coordinated read of a file
     /// that has not arrived blocks until it does, which on the main thread is a hang.
-    func read<T>(at url: URL, _ body: (URL) -> T?) -> T? {
+    public func read<T>(at url: URL, _ body: (URL) -> T?) -> T? {
         guard isCloud else { return body(url) }
         guard isHere(url) else {
             fetch(url)
@@ -201,7 +201,7 @@ import Foundation
     /// to lose a move here, and the alternative — conflict versions, a UI to resolve them — is
     /// a lot of machinery for a person drilling puzzles alone.
     @discardableResult
-    func write(_ data: Data, to url: URL) -> Bool {
+    public func write(_ data: Data, to url: URL) -> Bool {
         guard isCloud else { return write(data, directlyTo: url) }
         var written = false
         var failure: NSError?
@@ -220,7 +220,7 @@ import Foundation
         }
     }
 
-    func remove(_ url: URL) {
+    public func remove(_ url: URL) {
         guard isCloud else {
             try? FileManager.default.removeItem(at: url)
             return

@@ -1,4 +1,3 @@
-import ChessfenKit
 import Foundation
 
 /// The app's one engine, and how it came to be there or not.
@@ -7,8 +6,8 @@ import Foundation
 /// share rather than something they each build. Starting it means reading 112 MiB of
 /// weights and building a thread pool, which is why the library is on screen first and the
 /// engine arrives a moment later.
-@Observable final class EngineHost {
-    enum Status: Equatable {
+@Observable @MainActor public final class EngineHost {
+    public enum Status: Equatable {
         case starting
         case ready
         /// Something is wrong with the weights, which is the only way this fails. The app
@@ -16,29 +15,49 @@ import Foundation
         case unavailable(String)
     }
 
-    private(set) var status: Status = .starting
-    private(set) var service: (any Engine)?
+    public private(set) var status: Status = .starting
+    public private(set) var service: (any Engine)?
 
     /// Whether the app is in front of the user. The engine searches only while it is, and this
     /// is the one place that decides so — screens observe it rather than reading the scene
     /// phase for themselves, because two definitions of "in front of the user" would sooner or
     /// later disagree about whether to be thinking.
-    private(set) var isActive = true
+    public private(set) var isActive = true
 
-    var isReady: Bool { service != nil }
+    public var isReady: Bool { service != nil }
 
-    init() {}
+    /// Where the two NNUE files are. Injected rather than read off `Bundle.main`, because the
+    /// bundle is the *app's* answer and this now lives beside the engine it starts: the package's
+    /// own tests and `chessfen-cli` find the same weights in the source tree.
+    private let nets: @Sendable () -> Nets?
+
+    /// The two NNUE files sf_18 wants (docs/adr/0002).
+    public struct Nets: Sendable {
+        public let big: URL
+        public let small: URL
+
+        public init(big: URL, small: URL) {
+            self.big = big
+            self.small = small
+        }
+    }
+
+    public init(nets: @escaping @Sendable () -> Nets?) {
+        self.nets = nets
+    }
 
     /// A host that is handed its engine rather than reading 112 MiB of weights to build one: how a
     /// screenshot test puts the screens into the state the app reaches a moment after it opens.
-    init(_ engine: any Engine) {
+    public init(_ engine: any Engine) {
+        nets = { nil }
         service = engine
         status = .ready
     }
 
-    func start() async {
+    public func start() async {
         guard service == nil, status == .starting else { return }
-        let outcome = await Task.detached(priority: .userInitiated) { Self.build() }.value
+        let nets = nets
+        let outcome = await Task.detached(priority: .userInitiated) { Self.build(nets()) }.value
         switch outcome {
         case .success(let service):
             // The app can perfectly well have left while 112 MiB of weights were being read,
@@ -57,7 +76,7 @@ import Foundation
     /// pocket over a position nobody is reading. Pausing stops the running search and holds a
     /// Review where it stands; resuming lets the Review carry on at the same Depth, and lets
     /// the screens start the Analysis they want again.
-    func setActive(_ active: Bool) {
+    public func setActive(_ active: Bool) {
         guard active != isActive else { return }
         isActive = active
         if active {
@@ -69,12 +88,12 @@ import Foundation
 
     // The build happens off the main thread, so everything it touches is nonisolated.
 
-    private nonisolated static func build()
+    private nonisolated static func build(_ nets: Nets?)
         -> Result<EngineService, EngineService.StartupFailure>
     {
-        guard let big = net("nn-c288c895ea92"), let small = net("nn-37f18f62d772") else {
-            return .failure(.networkMissing)
-        }
+        guard let nets else { return .failure(.networkMissing) }
+        let big = nets.big
+        let small = nets.small
         do {
             // Two cores are left to the UI by default. The hash is smaller than the
             // desktop default because iOS will kill an app that treats a phone like a
@@ -91,10 +110,6 @@ import Foundation
         } catch {
             return .failure(.unknown)
         }
-    }
-
-    private nonisolated static func net(_ name: String) -> URL? {
-        Bundle.main.url(forResource: name, withExtension: "nnue", subdirectory: "Nets")
     }
 
     private nonisolated static func explain(

@@ -19,7 +19,7 @@ struct GameScreen: View {
 
     @State private var selected: Square?
     @State private var promotion: PromotionRequest?
-    @State private var isSoundOn = Feedback.shared.isSoundOn
+    @State private var isSoundOn = Sounds.current.isSoundOn
     /// Nil until somebody opens or closes the setup chips themselves, and then it is their answer
     /// that stands for as long as the screen does. Until then the game decides: see `setup`.
     @State private var isSetupOpenByHand: Bool?
@@ -153,12 +153,12 @@ struct GameScreen: View {
             session.retune()
         }
         .onDisappear { session.suspend() }
-        .onChange(of: isSoundOn) { _, isOn in Feedback.shared.isSoundOn = isOn }
+        .onChange(of: isSoundOn) { _, isOn in Sounds.current.isSoundOn = isOn }
         // The setting travels between devices (docs/adr/0012), so it can change while this
         // screen is the one on show — and a toggle that disagrees with the sound is worse than
         // no toggle.
         .onReceive(NotificationCenter.default.publisher(for: NSUbiquitousKeyValueStore.didChangeExternallyNotification)) { _ in
-            isSoundOn = Feedback.shared.isSoundOn
+            isSoundOn = Sounds.current.isSoundOn
         }
         .onChange(of: engine.isReady) { _, ready in
             guard ready else { return }
@@ -811,21 +811,10 @@ struct GameScreen: View {
     ///
     /// It replaces the top of the path rather than pushing, so working through fifty positions does
     /// not build a stack of fifty screens to come back through — and the way back is still the
-    /// library, which is where it was.
-    ///
-    /// How you are working carries over: which way up the board is, whether the engine is advising,
-    /// and who is playing each side. Those are settings for the session you are having, not facts
-    /// about the game, and having to set them again for every position is exactly the friction that
-    /// makes a set of fifty not get done.
+    /// library, which is where it was. How you are working carries over — that is `session.next`.
     private func drill(to entry: GameLibrary.Entry) {
         session.suspend()
-        let next = GameSession(entry: entry, library: library)
-        next.attach(engine: engine.service, library: library)
-        next.orientation = session.orientation
-        next.setPractising(session.isPractising)
-        for colour in [PieceColour.white, .black] {
-            next.setController(session.controller(for: colour), for: colour)
-        }
+        guard let next = session.next(entry) else { return }
         selected = nil
         path[path.count - 1] = .game(next)
     }
@@ -852,7 +841,7 @@ struct GameScreen: View {
         if let piece = pieces[square], piece.colour == viewed.state.sideToMove {
             selected = square
         } else {
-            if selected != nil { Feedback.shared.play(.refused) }
+            if selected != nil { Sounds.current.play(.refused) }
             selected = nil
         }
     }

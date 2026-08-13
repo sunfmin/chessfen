@@ -3,7 +3,13 @@ import SwiftUI
 
 @main
 struct ChessfenApp: App {
-    @State private var engine = EngineHost()
+    @State private var engine = EngineHost(nets: {
+        // The app's answer to "where are the weights" (docs/adr/0002): they ride in the bundle.
+        guard let big = Bundle.main.url(forResource: "nn-c288c895ea92", withExtension: "nnue", subdirectory: "Nets"),
+              let small = Bundle.main.url(forResource: "nn-37f18f62d772", withExtension: "nnue", subdirectory: "Nets")
+        else { return nil }
+        return EngineHost.Nets(big: big, small: small)
+    })
     @State private var library = GameLibrary()
     @Environment(\.scenePhase) private var scenePhase
 

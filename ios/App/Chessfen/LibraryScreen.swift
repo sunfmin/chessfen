@@ -399,31 +399,28 @@ struct LibraryScreen: View {
                 return
             }
 
-            let session = GameSession(
-                game: game,
+            let session = GameSession.recognised(
+                game,
                 orientation: recognition.orientation,
-                origin: .recognised,
                 picture: picture,
-                shaky: shaky
+                shaky: shaky,
+                engine: engine.service,
+                library: library
             )
-            session.attach(engine: engine.service, library: library)
             path.append(.game(session))
         }
     }
 
     private func start(_ game: Game?) {
         guard let game else { return }
-        let session = GameSession(game: game, origin: .fresh)
-        session.attach(engine: engine.service, library: library)
+        let session = GameSession.fresh(game, engine: engine.service, library: library)
         path.append(.game(session))
     }
 
     private func open(_ entry: GameLibrary.Entry) {
-        // Never a game whose file has not arrived. It would open as an empty board wearing the
-        // real game's file name, and the first move would autosave over it (docs/adr/0012).
-        guard !entry.isDownloading else { return }
-        let session = GameSession(entry: entry, library: library)
-        session.attach(engine: engine.service, library: library)
+        guard let session = GameSession.opened(entry, engine: engine.service, library: library) else {
+            return
+        }
         path.append(.game(session))
     }
 }
@@ -623,7 +620,10 @@ struct CollectionScreen: View {
                 }
 
                 GameList(entries: entries) { entry in
-                    path.append(.game(GameSession.opened(entry, engine: engine, library: library)))
+                    guard let session = GameSession.opened(entry, engine: engine.service, library: library) else {
+                        return
+                    }
+                    path.append(.game(session))
                 }
             }
             .padding(.horizontal, 16)

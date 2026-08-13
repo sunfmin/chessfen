@@ -26,10 +26,10 @@ final class ScriptedEngine: Engine {
     /// throwing the first one away, which looks the same from a screen and not at all the same
     /// from a phone. What each was given matters because time is the only dial the app has: a
     /// budget is the whole of how hard the engine was asked to play (docs/adr/0009).
-    private let asked = Mutex<[EngineService.Budget]>([])
+    private let asked = Mutex<[SearchBudget]>([])
 
     /// Every search asked for so far, in order, each with the clock it was given.
-    var budgets: [EngineService.Budget] { asked.withLock { $0 } }
+    var budgets: [SearchBudget] { asked.withLock { $0 } }
 
     var searchCount: Int { budgets.count }
 
@@ -54,7 +54,7 @@ final class ScriptedEngine: Engine {
         for continuation in winding { continuation.finish() }
     }
 
-    func analyse(_ game: Game, budget: EngineService.Budget) -> AsyncStream<Analysis> {
+    func analyse(_ game: Game, budget: SearchBudget) -> AsyncStream<Analysis> {
         asked.withLock { $0.append(budget) }
         return AsyncStream { continuation in
             for snapshot in snapshots { continuation.yield(snapshot) }
@@ -66,7 +66,7 @@ final class ScriptedEngine: Engine {
         }
     }
 
-    func evaluate(_ game: Game, budget: EngineService.Budget) async -> Score? {
+    func evaluate(_ game: Game, budget: SearchBudget) async -> Score? {
         snapshots.last?.best?.score
     }
 

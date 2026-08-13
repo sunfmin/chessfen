@@ -3,7 +3,7 @@ import ChessfenKit
 import Foundation
 import UIKit
 
-/// What a move sounds and feels like.
+/// The app's adapter for `Feedback`: what a move sounds and feels like on a phone.
 ///
 /// The sounds are synthesised here rather than shipped as files. Partly because the app has
 /// no business downloading anything — that is the whole premise — and partly because what a
@@ -13,20 +13,8 @@ import UIKit
 ///
 /// Everything here fails quietly. An app that cannot make a noise is an app that cannot make
 /// a noise; it is not an app that should refuse to play chess.
-@MainActor final class Feedback {
-    static let shared = Feedback()
-
-    enum Sound: Hashable, CaseIterable {
-        /// A piece landing on wood.
-        case move
-        /// A piece taking another: the same landing with a crack in front of it.
-        case capture
-        /// A check — a rising two-tone, because it is a warning rather than an event.
-        case check
-        case gameOver
-        /// A tap that could not be played.
-        case refused
-    }
+@MainActor final class SystemFeedback: Feedback {
+    static let shared = SystemFeedback()
 
     /// Off is a setting people genuinely want, and it belongs somewhere that survives a launch
     /// — and, since the games follow a person to their other devices (docs/adr/0012), somewhere
@@ -62,16 +50,20 @@ import UIKit
     /// off — which is what happens when the engine replies the instant you move.
     private var players: [AVAudioPlayerNode] = []
     private var next = 0
-    private var buffers: [Sound: AVAudioPCMBuffer] = [:]
+    private var buffers: [FeedbackSound: AVAudioPCMBuffer] = [:]
     private var isRunning = false
     /// When each sound was last played, so that a finger drumming on the board does not stack
     /// ten copies of the same buffer into a single loud smear.
-    private var lastPlayed: [Sound: ContinuousClock.Instant] = [:]
+    private var lastPlayed: [FeedbackSound: ContinuousClock.Instant] = [:]
     private let impact = UIImpactFeedbackGenerator(style: .light)
     private let heavyImpact = UIImpactFeedbackGenerator(style: .medium)
 
     private init() {
         isSoundOn = Self.remembered() ?? true
+        // This is the seam working: the kit's `Sounds` is handed the app's adapter on the way
+        // up, and everything that plays a sound goes through it from then on. A test that wants
+        // silence or a recording replaces `Sounds.current` before it builds its screens.
+        Sounds.current = self
         // iCloud's copy arrives whenever it arrives, including while the app is open and its
         // menu on screen. Set through the property rather than around it, so that the local
         // copy is brought into line with the travelled one at the same time.
@@ -81,8 +73,8 @@ import UIKit
             queue: .main
         ) { _ in
             MainActor.assumeIsolated {
-                guard let travelled = Self.remembered(), travelled != Feedback.shared.isSoundOn else { return }
-                Feedback.shared.isSoundOn = travelled
+                guard let travelled = Self.remembered(), travelled != SystemFeedback.shared.isSoundOn else { return }
+                SystemFeedback.shared.isSoundOn = travelled
             }
         }
         NSUbiquitousKeyValueStore.default.synchronize()
@@ -90,21 +82,7 @@ import UIKit
 
     // ------------------------------------------------------------------ using
 
-    /// The sound a move makes, from what the move did. Checkmate is the end of the game
-    /// rather than a check, so it says so.
-    func play(_ move: Move, outcome: Outcome) {
-        if outcome.isOver {
-            play(move.isCapture ? .capture : .move)
-            play(.gameOver)
-        } else if move.givesCheck {
-            play(move.isCapture ? .capture : .move)
-            play(.check)
-        } else {
-            play(move.isCapture ? .capture : .move)
-        }
-    }
-
-    func play(_ sound: Sound) {
+    func play(_ sound: FeedbackSound) {
         touch(sound)
         guard isSoundOn else { return }
         // Two taps closer together than this are one gesture as far as the ear is concerned, and
@@ -124,7 +102,7 @@ import UIKit
     }
 
     /// The haptics, which are the half of this that works with the ringer off.
-    private func touch(_ sound: Sound) {
+    private func touch(_ sound: FeedbackSound) {
         switch sound {
         case .move: impact.impactOccurred(intensity: 0.7)
         case .capture, .gameOver: heavyImpact.impactOccurred()
@@ -146,7 +124,7 @@ import UIKit
         let format = AVAudioFormat(standardFormatWithSampleRate: Self.sampleRate, channels: 1)
         guard let format else { return }
 
-        for sound in Sound.allCases {
+        for sound in FeedbackSound.allCases {
             buffers[sound] = Self.render(sound, format: format)
         }
         for _ in 0..<4 {
@@ -176,7 +154,7 @@ import UIKit
 
     private static let sampleRate = 44100.0
 
-    private static func render(_ sound: Sound, format: AVAudioFormat) -> AVAudioPCMBuffer? {
+    private static func render(_ sound: FeedbackSound, format: AVAudioFormat) -> AVAudioPCMBuffer? {
         let seconds: Double =
             switch sound {
             case .move: 0.10

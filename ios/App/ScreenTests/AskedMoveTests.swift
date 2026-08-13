@@ -31,7 +31,7 @@ struct AskedMove {
 
     private func session(_ engine: ScriptedEngine) throws -> GameSession {
         let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
-        let session = GameSession(game: game, origin: .fresh)
+        let session = GameSession.fresh(game)
         session.attach(engine: engine, library: nil)
         return session
     }
@@ -126,17 +126,19 @@ struct AskedMove {
         let game = try #require(Game(startFEN: fen))
         let shaky: Set<Square> = [Square("c6")!, Square("f6")!]
 
-        let unfiled = GameSession(
-            game: game, origin: .recognised, shaky: shaky,
-            tags: [PGN.Tag("Event", "Chessfen")]
-        )
+        let unfiled = GameSession.recognised(game, shaky: shaky)
         #expect(unfiled.canEditPosition)
         #expect(unfiled.unconfirmedSquares == shaky)
 
-        let filed = GameSession(
-            game: game, origin: .recognised, shaky: shaky,
-            tags: [PGN.Tag("Event", "西西里防御")]
-        )
+        // Filed is a property of a saved game: the collection is written into the file.
+        let filed = try #require(GameSession.opened(GameLibrary.Entry(
+            url: URL(filePath: "/games/chessfen-filed.pgn"),
+            pgn: PGN(game: game, tags: [
+                PGN.Tag(GameOrigin.tagName, GameOrigin.recognised.rawValue),
+                PGN.Tag("Event", "西西里防御"),
+            ]),
+            modified: Date(timeIntervalSince1970: 1_786_000_000)
+        )))
         #expect(!filed.canEditPosition)
         #expect(filed.unconfirmedSquares.isEmpty)
         // And filing survives the next move being written: `pgn` must not file it back out.
