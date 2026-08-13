@@ -112,6 +112,10 @@ public final class EngineService: @unchecked Sendable {
 
     private let gate = Mutex(Gate())
 
+    /// The MultiPV the engine is set to right now, so a search can tell when the option
+    /// needs changing. Touched only on the serial queue (and once, by `init`).
+    private var multiPV: Int
+
     public init(
         bigNetURL: URL, smallNetURL: URL, configuration: Configuration = Configuration()
     ) throws {
@@ -126,9 +130,10 @@ public final class EngineService: @unchecked Sendable {
         handle = EngineHandle(pointer: created)
         // Changing these takes effect on the next search; Stockfish rebuilds its thread pool
         // and table as the options are set, so they are set here and nowhere else.
+        multiPV = max(1, configuration.multiPV)
         setOption("Threads", "\(max(1, configuration.threads))")
         setOption("Hash", "\(max(1, configuration.hashMegabytes))")
-        setOption("MultiPV", "\(max(1, configuration.multiPV))")
+        setOption("MultiPV", "\(multiPV)")
     }
 
     deinit {
@@ -205,7 +210,9 @@ public final class EngineService: @unchecked Sendable {
     /// the running search is stopped, waited for, and its stream finished before this one
     /// installs itself, all in that order on the serial queue. Callers therefore cannot
     /// interleave two searches however hard they try, and no stream is ever left hanging.
-    public func analyse(_ game: Game, budget: SearchBudget = .untilStopped) -> AsyncStream<Analysis> {
+    public func analyse(
+        _ game: Game, budget: SearchBudget = .untilStopped, lines: Int = 3
+    ) -> AsyncStream<Analysis> {
         let startFEN = game.startFEN
         let moves = game.uciMoves
         let state = game.state
@@ -223,6 +230,15 @@ public final class EngineService: @unchecked Sendable {
                 // the old and new streams cannot be crossed.
                 cf_engine_stop(handle.pointer)
                 cf_engine_wait(handle.pointer)
+
+                // The previous search has fully stopped, so an option change here cannot race
+                // one. MultiPV is the one option the app varies per search — everything else is
+                // set once at init because changing it rebuilds the thread pool — and Stockfish
+                // applies it to the search this go starts.
+                if lines != multiPV {
+                    cf_engine_set_option(handle.pointer, "MultiPV", "\(max(1, lines))")
+                    multiPV = lines
+                }
 
                 // Accumulates the MultiPV lines of one Depth, then emits them together.
                 let group = Mutex(DepthGroup(state: state, perspective: perspective))
@@ -301,7 +317,7 @@ public final class EngineService: @unchecked Sendable {
         await waitWhilePaused()
         guard !Task.isCancelled else { return nil }
         var last: Analysis?
-        for await analysis in analyse(game, budget: budget) { last = analysis }
+        for await analysis in analyse(game, budget: budget, lines: 1) { last = analysis }
         return last?.best?.score
     }
 
@@ -339,7 +355,9 @@ public final class EngineService: @unchecked Sendable {
                 await waitWhilePaused()
                 if Task.isCancelled { break }
                 best = nil
-                for await analysis in analyse(position, budget: .depth(depth)) { best = analysis }
+                // One line: a Review reads the best Score only, and every extra line is
+                // twice the wait per ply of a walk that visits every ply of a long game.
+                for await analysis in analyse(position, budget: .depth(depth), lines: 1) { best = analysis }
             } while isPaused && !Task.isCancelled
             scores.append(best?.best?.score)
             onPly?(ply - 1, best?.best?.score)

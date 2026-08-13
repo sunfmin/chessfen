@@ -26,9 +26,13 @@ final class ScriptedEngine: Engine {
     /// from a phone. What each was given matters because time is the only dial the app has: a
     /// budget is the whole of how hard the engine was asked to play (docs/adr/0009).
     private let asked = Mutex<[SearchBudget]>([])
+    private let askedLines = Mutex<[Int]>([])
 
     /// Every search asked for so far, in order, each with the clock it was given.
     var budgets: [SearchBudget] { asked.withLock { $0 } }
+
+    /// The candidate-line count each of those searches was asked for.
+    var lines: [Int] { askedLines.withLock { $0 } }
 
     var searchCount: Int { budgets.count }
 
@@ -42,8 +46,9 @@ final class ScriptedEngine: Engine {
     func resume() { paused.withLock { $0 = false } }
     func clear() async {}
 
-    func analyse(_ game: Game, budget: SearchBudget) -> AsyncStream<Analysis> {
+    func analyse(_ game: Game, budget: SearchBudget, lines: Int) -> AsyncStream<Analysis> {
         asked.withLock { $0.append(budget) }
+        askedLines.withLock { $0.append(lines) }
         return AsyncStream { continuation in
             for snapshot in snapshots { continuation.yield(snapshot) }
             // An endless search never finishes on its own: it ends when the stream goes away,

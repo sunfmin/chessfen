@@ -565,8 +565,9 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         searchProgress = nil
         isThinking = true
         searchTask = Task { [weak self] in
-            // Unbounded: how long it runs is how long the button is held.
-            for await snapshot in engine.analyse(position, budget: .untilStopped) {
+            // Unbounded: how long it runs is how long the button is held. One line: the
+            // answer is one move, and every extra line halves how deep the hold looks.
+            for await snapshot in engine.analyse(position, budget: .untilStopped, lines: 1) {
                 if Task.isCancelled { return }
                 guard let self else { return }
                 record(snapshot)
@@ -699,7 +700,9 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
             let budget = thinkingTime.budget(mirroring: lastHumanThink)
             searchTask = Task { [weak self] in
                 var last: Analysis?
-                for await snapshot in engine.analyse(position, budget: budget) {
+                // One line: the engine is choosing a move, not advising, and each extra line
+                // roughly doubles the time to the same Depth — a weaker move on the same clock.
+                for await snapshot in engine.analyse(position, budget: budget, lines: 1) {
                     if Task.isCancelled { return }
                     self?.record(snapshot)
                     self?.thinkingBest = snapshot.bestMove
@@ -722,8 +725,9 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
             guard !isPractising else { return }
             searchTask = Task { [weak self] in
                 // Unbounded: it deepens for as long as the player is thinking, and what it
-                // recommends keeps changing (docs/adr/0009).
-                for await snapshot in engine.analyse(position, budget: .untilStopped) {
+                // recommends keeps changing (docs/adr/0009). Three lines, because this is the
+                // one search whose product is the panel's candidates rather than one move.
+                for await snapshot in engine.analyse(position, budget: .untilStopped, lines: 3) {
                     if Task.isCancelled { return }
                     self?.record(snapshot)
                 }

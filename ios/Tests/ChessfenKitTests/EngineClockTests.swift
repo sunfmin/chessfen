@@ -143,4 +143,19 @@ struct EngineClock {
             "what runs instead is the advice the position on screen deserves"
         )
     }
+
+    /// What a search is for decides how many Lines it is asked for: choosing a move is one
+    /// candidate, advice to a player is the three the panel has room for — and each extra
+    /// line costs about as much as a Depth, so the distinction is the clock's worth.
+    @Test("a move the engine plays for itself is one line; advice is three")
+    func movePickingAsksForOneLine() async throws {
+        let engine = ScriptedEngine(Self.searching)
+        let session = try session(engine, controllers: [.white: .engine, .black: .engine])
+        await hop()
+        #expect(engine.lines.allSatisfy { $0 == 1 }, "a move only has to be one move")
+
+        session.step(by: -1)
+        await hop()
+        #expect(engine.lines.last == 3, "what a player reads is the panel's candidates")
+    }
 }

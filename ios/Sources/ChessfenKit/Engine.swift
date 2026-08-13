@@ -38,7 +38,11 @@ public enum SearchBudget: Hashable, Sendable {
 /// evaluate/review for the Review, and the pause gate for the app leaving the front.
 public protocol Engine: AnyObject, Sendable {
     var isPaused: Bool { get }
-    func analyse(_ game: Game, budget: SearchBudget) -> AsyncStream<Analysis>
+    /// `lines` is how many candidate Lines each snapshot carries. A search whose only
+    /// product is a move needs one; advice shown to a player wants the three the panel
+    /// has room for. Each extra line roughly doubles the time to a given Depth, so the
+    /// number is asked per search rather than set once.
+    func analyse(_ game: Game, budget: SearchBudget, lines: Int) -> AsyncStream<Analysis>
     func pause()
     func resume()
     func clear() async

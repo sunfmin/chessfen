@@ -39,10 +39,17 @@ case "perft":
 
 case "analyse":
     guard arguments.count >= 2 else {
-        fail("usage: chessfen-cli analyse <fen> [depth]  (default 20)")
+        fail("usage: chessfen-cli analyse <fen> [depth] [--threads N] [--multipv N]")
     }
     guard let game = Game(startFEN: arguments[1]) else { fail("not a position I can play from") }
     let depth = arguments.count >= 3 ? Int(arguments[2]) ?? 20 : 20
+    /// `--threads N` and `--multipv N`, for settling "what does an option cost" with two runs
+    /// instead of a phone.
+    func flagValue(_ name: String) -> Int? {
+        guard let index = arguments.firstIndex(of: name), arguments.indices.contains(index + 1)
+        else { return nil }
+        return Int(arguments[index + 1])
+    }
 
     // The weights are 112 MiB and live in the repository, not in this binary. A developer
     // tool may reasonably know where the repository it was built from is; anyone moving
@@ -56,13 +63,16 @@ case "analyse":
     do {
         service = try EngineService(
             bigNetURL: nets.appending(path: "nn-c288c895ea92.nnue"),
-            smallNetURL: nets.appending(path: "nn-37f18f62d772.nnue")
+            smallNetURL: nets.appending(path: "nn-37f18f62d772.nnue"),
+            configuration: .init(threads: flagValue("--threads"))
         )
     } catch {
         fail("\(error) — looked in \(nets.path); set CHESSFEN_NETS to point elsewhere")
     }
 
-    for await analysis in service.analyse(game, budget: .depth(depth)) {
+    for await analysis in service.analyse(
+        game, budget: .depth(depth), lines: flagValue("--multipv") ?? 3
+    ) {
         let speed = analysis.nodesPerSecond / 1000
         print("depth \(analysis.depth)/\(analysis.selectiveDepth)  \(speed)k nps", terminator: "")
         print("  \(analysis.nodes) nodes  \(analysis.timeMilliseconds) ms")
