@@ -31,6 +31,14 @@ public struct Game: Hashable, Sendable {
     }
 
     public let startFEN: String
+    /// Who makes the first move, and the move number the first move is counted from.
+    ///
+    /// A Game recognised from a picture usually starts mid-game, often with Black to move,
+    /// and everything shown or written about its moves — PGN numbering, the notation, who
+    /// played the first ply — hangs off these two. Stored rather than re-parsed from the
+    /// FEN by each reader, which is how four of them could disagree about whose move it was.
+    public let startingSideToMove: PieceColour
+    public let startingFullmoveNumber: Int
     public private(set) var plies: [Ply]
     /// The position after every ply, recomputed whenever the Game changes.
     public private(set) var state: GameState
@@ -40,6 +48,8 @@ public struct Game: Hashable, Sendable {
     public init?(startFEN: String) {
         guard let state = Rules.probe(startFEN: startFEN) else { return nil }
         self.startFEN = startFEN
+        self.startingSideToMove = state.sideToMove
+        self.startingFullmoveNumber = state.fullmoveNumber
         self.plies = []
         self.state = state
     }
@@ -58,6 +68,14 @@ public struct Game: Hashable, Sendable {
 
     /// Every position the Game has stood in, as UCI move prefixes — what a Review walks.
     public var uciMoves: [String] { plies.map(\.uci) }
+
+    /// The two squares of the move at `ply`, for the board to join with an arrow — the one
+    /// place a ply becomes the squares to mark. The session and the Review each used to turn
+    /// the same ply into the same squares their own way.
+    public func moveSquares(atPly ply: Int) -> MoveSquares? {
+        guard ply > 0, plies.indices.contains(ply - 1) else { return nil }
+        return MoveSquares(uci: plies[ply - 1].uci)
+    }
 
     @discardableResult
     public mutating func apply(_ move: Move) -> Bool {

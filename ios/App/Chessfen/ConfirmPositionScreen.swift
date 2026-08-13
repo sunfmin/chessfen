@@ -80,15 +80,14 @@ struct ConfirmPositionScreen: View {
     /// True while 按住看照片 is held. Separate from the mode so releasing goes back to whatever was
     /// set rather than to a fourth state nobody chose.
     @State private var isPeeking = false
-    /// The photograph, converted once and then kept.
-    ///
-    /// Held rather than computed, because turning an `RGBImage` into something SwiftUI can draw
-    /// builds a fresh RGBA buffer and a fresh `CGImage` every single call — about five megabytes for
-    /// a board — and a computed property is read on every pass of the body. Behind a backdrop that
-    /// is several conversions per frame for as long as the screen is open: it took the app to three
-    /// and a half gigabytes and the system killed it. The picture cannot change while this screen is
-    /// up, so it is converted on the way in and after that it is just an image.
-    @State private var photoImage: Image?
+    /// The photograph as something SwiftUI can draw. A plain read: `RGBImage` owns its
+    /// `CGImage` conversion now — a fresh buffer per read is what once took the app to
+    /// three and a half gigabytes, and this used to be an `@State` cache that stood in
+    /// for the cache the pixels themselves were missing.
+    private var photoImage: Image? {
+        guard let picture = proposal.picture else { return nil }
+        return Image(rgb: picture)
+    }
 
     enum Brush: Hashable {
         case piece(Piece)
@@ -173,12 +172,6 @@ struct ConfirmPositionScreen: View {
                 }
             }
         }
-        // Converted here and nowhere else. A sheet's content closure runs on its own renders too,
-        // so this used to be a second place a five-megabyte conversion could happen repeatedly.
-        .onAppear {
-            guard photoImage == nil, let picture = proposal.picture else { return }
-            photoImage = Image(rgb: picture)
-        }
         .sheet(isPresented: $isPictureShowing) {
             if let photoImage {
                 NavigationStack {
@@ -208,9 +201,9 @@ struct ConfirmPositionScreen: View {
 
     private var instruction: some View {
         HStack(spacing: 8) {
-            if !proposal.shaky.isEmpty {
+            if let summary = proposal.shaky.shakySummary {
                 Image(systemName: "questionmark.circle").foregroundStyle(Palette.alarm)
-                Text("橙框那 \(proposal.shaky.count) 个格子拿不太准")
+                Text(summary)
                     .font(.footnote)
                     .foregroundStyle(Palette.alarm)
             } else {

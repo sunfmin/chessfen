@@ -26,6 +26,16 @@ import Foundation
 
     public var isReady: Bool { service != nil }
 
+    /// Why there is no engine to advise, or nil while one is on its way or ready.
+    ///
+    /// The one predicate the screens read for the no-engine case: they used to each choose
+    /// their own — `status`, `isReady`, `service` — and three ways of asking "is the engine
+    /// there" are three chances to disagree about the answer.
+    public var unavailableReason: String? {
+        guard case .unavailable(let reason) = status else { return nil }
+        return reason
+    }
+
     /// Where the two NNUE files are. Injected rather than read off `Bundle.main`, because the
     /// bundle is the *app's* answer and this now lives beside the engine it starts: the package's
     /// own tests and `chessfen-cli` find the same weights in the source tree.

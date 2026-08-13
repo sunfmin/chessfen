@@ -13,6 +13,12 @@ enum Step: Hashable {
     case review(GameSession)
 }
 
+/// A typed name, or nil for one that was only spaces — which is how a name is taken back off.
+private func trimmed(_ text: String) -> String? {
+    let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    return clean.isEmpty ? nil : clean
+}
+
 struct LibraryScreen: View {
     @Environment(EngineHost.self) private var engine
     @Environment(GameLibrary.self) private var library
@@ -34,7 +40,7 @@ struct LibraryScreen: View {
             ScrollView {
                 VStack(spacing: 14) {
                     masthead
-                    if case .unavailable(let reason) = engine.status {
+                    if let reason = engine.unavailableReason {
                         note(reason, symbol: "exclamationmark.triangle.fill")
                     }
                     entries
@@ -131,19 +137,13 @@ struct LibraryScreen: View {
         .alert("重命名作品集", isPresented: .constant(renamingCollection != nil)) {
             TextField("作品集名字", text: $collectionDraft)
             Button("好") {
-                if let old = renamingCollection, let name = Self.trimmed(collectionDraft) {
+                if let old = renamingCollection, let name = trimmed(collectionDraft) {
                     library.renameCollection(old, to: name)
                 }
                 renamingCollection = nil
             }
             Button("取消", role: .cancel) { renamingCollection = nil }
         }
-    }
-
-    /// A typed name, or nil for one that was only spaces — which is how a name is taken back off.
-    private static func trimmed(_ text: String) -> String? {
-        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return clean.isEmpty ? nil : clean
     }
 
     // ------------------------------------------------------------------ parts
@@ -443,7 +443,7 @@ struct GameList: View {
         .alert("给这一局起个名字", isPresented: .constant(renaming != nil)) {
             TextField("名字", text: $nameDraft)
             Button("好") {
-                if let entry = renaming { library.rename(entry, to: Self.trimmed(nameDraft)) }
+                if let entry = renaming { library.rename(entry, to: trimmed(nameDraft)) }
                 renaming = nil
             }
             Button("取消", role: .cancel) { renaming = nil }
@@ -474,7 +474,7 @@ struct GameList: View {
     private func commitFiling() {
         defer { filing = nil }
         guard let filing else { return }
-        let collection = filing.collection ?? Self.trimmed(collectionDraft)
+        let collection = filing.collection ?? trimmed(collectionDraft)
         guard let collection else { return }
         // Both tags in one write. Two calls each read the entry's own copy of the PGN, so the second
         // would carry the first one's change away with it — the name would land and the collection
@@ -482,7 +482,7 @@ struct GameList: View {
         var changes: [(name: String, value: String?)] = [("Event", collection)]
         // The name is only touched when something was typed, so backing out of naming does not wipe
         // a name the game already had.
-        if let name = Self.trimmed(nameDraft) {
+        if let name = trimmed(nameDraft) {
             changes.append((GameLibrary.nameTag, name))
         }
         library.setTags(changes, on: filing.entry)
@@ -492,12 +492,6 @@ struct GameList: View {
         nameDraft = entry.name ?? ""
         collectionDraft = ""
         filing = Filing(entry: entry, collection: collection)
-    }
-
-    /// A typed name, or nil for one that was only spaces — which is how a name is taken back off.
-    private static func trimmed(_ text: String) -> String? {
-        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return clean.isEmpty ? nil : clean
     }
 
     private func row(_ entry: GameLibrary.Entry) -> some View {

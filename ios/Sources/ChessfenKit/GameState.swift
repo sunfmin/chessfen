@@ -37,6 +37,20 @@ public struct GameState: Hashable, Sendable {
     public let fullmoveNumber: Int
     public let legalMoves: [Move]
 
+    /// The squares the board view marks when the position is in check: every checker, and
+    /// the king standing in it — the square a player looks for, which `checkers` does not
+    /// name. One answer for every board that shows it, where the Review used to leave the
+    /// king unmarked and the game screen marked it.
+    public var checkSquares: Set<Square> {
+        guard inCheck else { return [] }
+        var squares = Set(checkers)
+        for (square, piece) in BoardRenderer.placement(fen) ?? [:]
+        where piece.kind == .king && piece.colour == sideToMove {
+            squares.insert(square)
+        }
+        return squares
+    }
+
     public func moves(from square: Square) -> [Move] {
         legalMoves.filter { $0.from == square }
     }

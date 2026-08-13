@@ -79,11 +79,9 @@ public struct PGN: Hashable, Sendable {
     private var movetextTokens: [String] {
         // A Game recognised from a picture usually starts mid-game, and may start with
         // black to move — in which case PGN wants "12... Nf6" before the first white move.
-        let moveNumber = Int(game.startFEN.split(separator: " ").last.flatMap { Int($0) } ?? 1)
-        let sideToMove: PieceColour =
-            game.startFEN.split(separator: " ").dropFirst().first == "b" ? .black : .white
-        return Self.tokens(for: game.plies, from: moveNumber, sideToMove: sideToMove)
-            + [game.resultToken]
+        return Self.tokens(
+            for: game.plies, from: game.startingFullmoveNumber, sideToMove: game.startingSideToMove
+        ) + [game.resultToken]
     }
 
     /// One line of moves, with its Variations in brackets after the moves they replace —

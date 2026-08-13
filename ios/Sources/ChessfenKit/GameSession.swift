@@ -101,6 +101,10 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// The best move known to the search the engine was asked for — the arrow it started from, then
     /// whatever it has found since. What letting go of the button plays.
     private var askedBest: String?
+    /// The best move of the search the engine is running on its own turn, kept as the
+    /// snapshots land so `moveNow` can play it the instant it is asked for, without
+    /// waiting for the stream to end.
+    private var thinkingBest: String?
     /// Whether the button has already been let go of while its search was still starting up.
     private var isAskReleased = false
 
@@ -385,10 +389,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     public var isAtLatest: Bool { cursor >= game.plies.count }
 
     /// The move that led to the position on screen.
-    public var lastMove: MoveSquares? {
-        guard cursor > 0, game.plies.indices.contains(cursor - 1) else { return nil }
-        return MoveSquares(uci: game.plies[cursor - 1].uci)
-    }
+    public var lastMove: MoveSquares? { game.moveSquares(atPly: cursor) }
 
     /// The lines that were played from the position on screen instead of the move that
     /// follows it.
@@ -555,19 +556,17 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
 
     /// Let go: the engine stops where it has got to and plays what it likes best.
     ///
-    /// The move is played here rather than left to the stream ending, because a press can be shorter
-    /// than the trip to the engine and back: asking a search that has not started yet to stop is a
-    /// no-op, and a game that only moves when the engine happens to notice is not a button. So a
-    /// release plays what is known at that instant and takes the search down with it — and the one
-    /// case where nothing is known yet waits for the first snapshot, which is the soonest an answer
-    /// can exist at all.
+    /// The move is played here rather than left to the stream ending, because a press can be
+    /// shorter than the trip to the engine and back: the search may not have started yet, and a
+    /// game that only moves when the engine happens to notice is not a button. So a release
+    /// plays what is known at that instant and takes the search down with it — cancelling the
+    /// task is what takes the search down, the stream's termination being the one way in. The
+    /// one case where nothing is known yet waits for the first snapshot, which is the soonest
+    /// an answer can exist at all, and the loop plays it the moment it lands.
     public func endAskedMove() {
         guard isThinking else { return }
         isAskReleased = true
-        guard askedBest != nil else {
-            engine?.stop()
-            return
-        }
+        guard askedBest != nil else { return }
         let position = viewed
         searchTask?.cancel()
         searchTask = nil
@@ -614,9 +613,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     // ------------------------------------------------------------- who starts
 
     /// Which colour moves first from the position this game began in.
-    public var startingSideToMove: PieceColour {
-        game.startFEN.split(separator: " ").dropFirst().first == "b" ? .black : .white
-    }
+    public var startingSideToMove: PieceColour { game.startingSideToMove }
 
     /// Whether the game could begin with `colour` to move at all. Handing the move to the
     /// other side can make a position illegal, because their opponent may be standing in
@@ -655,6 +652,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         searchTask?.cancel()
         searchTask = nil
         isThinking = false
+        thinkingBest = nil
         turnBegan = nil
 
         let position = viewed
@@ -676,6 +674,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
                 for await snapshot in engine.analyse(position, budget: budget) {
                     if Task.isCancelled { return }
                     self?.record(snapshot)
+                    self?.thinkingBest = snapshot.bestMove
                     last = snapshot
                 }
                 guard let self, !Task.isCancelled else { return }
@@ -706,11 +705,20 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
 
     /// Cuts the engine's thinking short and takes whatever it likes best right now.
     ///
-    /// Stopping a search is not abandoning it: Stockfish still reports its best move, so this
-    /// plays the move the engine would have played, just sooner.
+    /// What the engine likes best is the newest snapshot it has reported, and that is already
+    /// in hand — so the move is played here rather than left to the stream ending, and
+    /// cancelling the task is what cuts the search short: the stream's termination is the one
+    /// way in, so the engine never outlives the button that ends it.
     public func moveNow() {
         guard isThinking else { return }
-        engine?.stop()
+        let position = viewed
+        searchTask?.cancel()
+        searchTask = nil
+        isThinking = false
+        if let uci = thinkingBest, let move = position.state.move(matching: uci) {
+            playByEngine(move)
+        }
+        thinkingBest = nil
     }
 
     /// A move the engine played for itself. It does not touch the mirror — the engine's own
@@ -720,11 +728,13 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     }
 
     /// Stops thinking — the screen has gone away, or the app has.
+    ///
+    /// Cancelling is the whole of it: the stream's termination stops the engine, on its own
+    /// queue and with the generation check that a bare stop call never had.
     public func suspend() {
         searchTask?.cancel()
         searchTask = nil
         isThinking = false
-        engine?.stop()
     }
 
     private func record(_ snapshot: Analysis) {

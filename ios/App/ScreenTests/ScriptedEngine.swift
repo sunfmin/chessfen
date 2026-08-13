@@ -3,6 +3,10 @@ import Synchronization
 
 /// An engine that reports what it was told to report.
 ///
+/// ScreenTests' copy of the fake the kit tests drive sessions with — a second
+/// test bundle cannot import the first, so the one file has two homes that must
+/// stay in step. The kit's is at Tests/ChessfenKitTests/ScriptedEngine.swift.
+///
 /// The seam is the search and nothing above it (see `Engine`): a screen driven by this one runs
 /// the real `retune`, the real `record`, the real Score written against the real ply — what is
 /// faked is only the one thing in the app that cannot be asked twice for the same answer.

@@ -254,7 +254,7 @@ struct GameScreen: View {
                             .foregroundStyle(Palette.analysis)
                     }
                     .buttonStyle(.plain)
-                } else if case .unavailable = engine.status {
+                } else if engine.unavailableReason != nil {
                     Text("没有引擎").font(.caption).foregroundStyle(Palette.alarm)
                 }
                 Spacer(minLength: 4)
@@ -302,7 +302,7 @@ struct GameScreen: View {
             pieces: pieces,
             orientation: session.orientation,
             lastMove: session.lastMove,
-            checks: checkSquares,
+            checks: viewed.state.checkSquares,
             // The doubtful squares stay ringed on the board being played on, right up until the
             // first move — which is what replaces the old gate: the reading's own uncertainty is
             // visible where it matters, and 改棋子 is one tap away (docs/adr/0011).
@@ -404,8 +404,7 @@ struct GameScreen: View {
     }
 
     private var correctionText: String {
-        let count = session.shaky.count
-        return count == 0 ? "照片认错了棋子？" : "橙框那 \(count) 个格子拿不太准"
+        session.shaky.shakySummary ?? "照片认错了棋子？"
     }
 
     /// What the engine is looking at, three lines deep. A fixed height, because the lines change
@@ -439,7 +438,7 @@ struct GameScreen: View {
                 Text("这局走完了。去「复盘」看每一步的得失。")
                     .font(.footnote)
                     .foregroundStyle(Palette.inkSoft)
-            } else if case .unavailable(let reason) = engine.status {
+            } else if let reason = engine.unavailableReason {
                 Text(reason).font(.footnote).foregroundStyle(Palette.alarm)
             } else {
                 Text("引擎在算").font(.footnote).foregroundStyle(Palette.inkSoft)
@@ -858,26 +857,14 @@ struct GameScreen: View {
         return viewed.state.moves(from: selected)
     }
 
-    private var checkSquares: Set<Square> {
-        guard viewed.state.inCheck else { return [] }
-        var squares = Set(viewed.state.checkers)
-        // The king in check is the square a player looks for, and it is not in `checkers`.
-        for (square, piece) in pieces
-        where piece.kind == .king && piece.colour == viewed.state.sideToMove {
-            squares.insert(square)
-        }
-        return squares
-    }
-
     private var recommendation: MoveSquares? {
         session.analysis?.bestMove.flatMap { MoveSquares(uci: $0) }
     }
 
     private var notationText: AttributedString {
         var text = AttributedString()
-        var number = Int(session.game.startFEN.split(separator: " ").last.flatMap { Int($0) } ?? 1)
-        var sideToMove: PieceColour =
-            session.game.startFEN.split(separator: " ").dropFirst().first == "b" ? .black : .white
+        var number = session.game.startingFullmoveNumber
+        var sideToMove = session.game.startingSideToMove
 
         for (index, ply) in session.game.plies.enumerated() {
             if sideToMove == .white {

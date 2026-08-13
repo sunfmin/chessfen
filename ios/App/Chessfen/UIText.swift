@@ -105,3 +105,12 @@ extension Game {
         }
     }
 }
+
+extension Set where Element == Square {
+    /// The one line the app says about squares the camera was not sure of — nil when it
+    /// was sure of every square it read. The game screen and the Confirm Position screen
+    /// used to each own this line, byte for byte.
+    var shakySummary: String? {
+        isEmpty ? nil : "橙框那 \(count) 个格子拿不太准"
+    }
+}

@@ -35,7 +35,7 @@ struct AboutScreen: View {
                     switch engine.status {
                     case .ready: row("引擎状态", "已就绪")
                     case .starting: row("引擎状态", "启动中")
-                    case .unavailable(let reason): row("引擎状态", reason)
+                    case .unavailable: row("引擎状态", engine.unavailableReason ?? "")
                     }
                 }
 

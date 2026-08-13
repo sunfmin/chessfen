@@ -39,7 +39,6 @@ public enum SearchBudget: Hashable, Sendable {
 public protocol Engine: AnyObject, Sendable {
     var isPaused: Bool { get }
     func analyse(_ game: Game, budget: SearchBudget) -> AsyncStream<Analysis>
-    func stop()
     func pause()
     func resume()
     func clear() async

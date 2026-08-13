@@ -83,13 +83,27 @@ public final class EngineService: @unchecked Sendable {
 
     private let generations = Atomic<UInt64>(0)
 
+    /// Which kinds of search a paused engine lets past, as a pure value — the pause rule
+    /// with a seam under it, so it can be asked directly instead of being reached through a
+    /// running search. A standing Analysis is refused (the screen asks again on the way
+    /// back), and a bounded search is admitted to the waiting room: it holds at the gate and
+    /// runs on the way back (docs/adr/0009).
+    enum SearchGate {
+        static func admits(_ budget: SearchBudget) -> Bool {
+            switch budget {
+            case .untilStopped: return false
+            case .time, .depth, .nodes: return true
+            }
+        }
+    }
+
     /// Whether searching is allowed at all, and who is waiting for it to be.
     ///
     /// The app pauses the engine whenever it is not in front of the user, and the gate lives
     /// here rather than in the screens because a screen can forget and this cannot: every way
     /// into a search passes it. What a search that wants to start while paused does depends on
-    /// what kind of search it is, and that distinction is drawn in `analyse` and in the
-    /// bounded callers below.
+    /// what kind of search it is, and that distinction is drawn by `SearchGate`, applied in
+    /// `analyse` and in the bounded callers below.
     private struct Gate {
         var isPaused = false
         /// Keyed so a cancelled caller can take its own continuation back out.
@@ -110,23 +124,19 @@ public final class EngineService: @unchecked Sendable {
         }
         guard let created else { throw StartupFailure(status) }
         handle = EngineHandle(pointer: created)
-        apply(configuration)
+        // Changing these takes effect on the next search; Stockfish rebuilds its thread pool
+        // and table as the options are set, so they are set here and nowhere else.
+        setOption("Threads", "\(max(1, configuration.threads))")
+        setOption("Hash", "\(max(1, configuration.hashMegabytes))")
+        setOption("MultiPV", "\(max(1, configuration.multiPV))")
     }
 
     deinit {
         cf_engine_destroy(handle.pointer)
     }
 
-    /// Changing this takes effect on the next search; Stockfish rebuilds its thread pool
-    /// and table as the options are set, so it is not something to do mid-game.
-    public func apply(_ configuration: Configuration) {
-        setOption("Threads", "\(max(1, configuration.threads))")
-        setOption("Hash", "\(max(1, configuration.hashMegabytes))")
-        setOption("MultiPV", "\(max(1, configuration.multiPV))")
-    }
-
     @discardableResult
-    public func setOption(_ name: String, _ value: String) -> Bool {
+    private func setOption(_ name: String, _ value: String) -> Bool {
         cf_engine_set_option(handle.pointer, name, value)
     }
 
@@ -186,10 +196,10 @@ public final class EngineService: @unchecked Sendable {
 
     /// Deepening Analysis of the Game's current Position, one snapshot per Depth.
     ///
-    /// The stream ends when the search stops — because `stop()` was called, because the
-    /// budget ran out, or because the consuming task went away. Ending the loop *is* the way
-    /// to end an unbounded Analysis: the stream's termination handler stops the engine, so a
-    /// screen that is dismissed takes its search with it.
+    /// The stream ends when the search stops — because the budget ran out, or because the
+    /// consuming task went away. Ending the loop *is* the way to end an unbounded Analysis:
+    /// the stream's termination handler stops the engine, so a screen that is dismissed takes
+    /// its search with it, and there is no other stop to call.
     ///
     /// There is one engine, so there is one search. Asking for another supersedes the first:
     /// the running search is stopped, waited for, and its stream finished before this one
@@ -215,7 +225,7 @@ public final class EngineService: @unchecked Sendable {
                 cf_engine_wait(handle.pointer)
 
                 // Accumulates the MultiPV lines of one Depth, then emits them together.
-                let group = Mutex(DepthGroup())
+                let group = Mutex(DepthGroup(state: state, perspective: perspective))
                 let emit: @Sendable () -> Void = {
                     let ready: Analysis? = group.withLock { $0.take() }
                     if let ready { continuation.yield(ready) }
@@ -226,8 +236,7 @@ public final class EngineService: @unchecked Sendable {
                     current = Sink(
                         generation: generation,
                         onInfo: { info in
-                            let line = Line(info, in: state, perspective: perspective)
-                            let flush = group.withLock { $0.absorb(info, line: line) }
+                            let flush = group.withLock { $0.absorb(info) }
                             if flush { emit() }
                         },
                         onFinish: {
@@ -239,12 +248,13 @@ public final class EngineService: @unchecked Sendable {
                 }
                 superseded.onFinish?()
 
-                // A standing Analysis belongs to a screen someone is looking at, so a paused
-                // engine does not start one — the screen asks again on the way back. A bounded
-                // search is a job whose answer is being waited on, and those hold at the gate
-                // instead (`review`, `evaluate`, `bestMove`) rather than coming back empty,
-                // which is why only the unbounded case is refused here.
-                let refused = budget == .untilStopped && isPaused
+                // The pause rule, applied at the one way in. A standing Analysis belongs to a
+                // screen someone is looking at, so a paused engine does not start one — the
+                // screen asks again on the way back. A bounded search is a job whose answer is
+                // being waited on, and those hold at the gate instead (`review`, `evaluate`)
+                // rather than coming back empty — which is why only the unbounded case is
+                // refused here.
+                let refused = isPaused && !SearchGate.admits(budget)
                 let started = refused ? false : withCStrings(moves) { pointers in
                     var limits = budget.cLimits
                     return cf_engine_go(
@@ -282,23 +292,6 @@ public final class EngineService: @unchecked Sendable {
         let isCurrent = sink.withLock { $0.generation == generation }
         guard isCurrent else { return }
         cf_engine_stop(handle.pointer)
-    }
-
-    /// The Best Move for the Game, thought about for as long as the budget allows.
-    ///
-    /// This is what the engine plays with when it holds a Controller. `budget` carries
-    /// Mirrored Time; the engine is never handicapped, so how well it plays is entirely a
-    /// question of how long it was given.
-    public func bestMove(for game: Game, budget: SearchBudget) async -> Move? {
-        // The engine thinks about its move when there is someone there to see it played, not
-        // in a pocket. Held rather than skipped, because a turn that is the engine's stays the
-        // engine's however long the app was away.
-        await waitWhilePaused()
-        guard !Task.isCancelled else { return nil }
-        var last: Analysis?
-        for await analysis in analyse(game, budget: budget) { last = analysis }
-        guard let uci = last?.bestMove else { return nil }
-        return game.state.move(matching: uci)
     }
 
     /// The Score of a Game's current Position at one Depth, and nothing else — the
@@ -355,22 +348,6 @@ public final class EngineService: @unchecked Sendable {
         return scores
     }
 
-    /// Asks the running search to wind up. It still reports its best move, which is how an
-    /// unbounded Analysis produces a final answer.
-    public func stop() {
-        cf_engine_stop(handle.pointer)
-    }
-
-    /// Waits for the running search to finish reporting. Blocking, so it goes on the queue.
-    public func waitForSearchToFinish() async {
-        await withCheckedContinuation { continuation in
-            queue.async { [handle] in
-                cf_engine_wait(handle.pointer)
-                continuation.resume()
-            }
-        }
-    }
-
     /// Forgets the transposition table and history. The honest thing to do before a Review,
     /// so an earlier Analysis of the same position cannot make one ply look deeper than the
     /// uniform Depth asked for.
@@ -386,8 +363,16 @@ public final class EngineService: @unchecked Sendable {
 
 // ------------------------------------------------------------------ plumbing
 
-/// Collects the MultiPV lines belonging to one Depth.
-private struct DepthGroup {
+/// Collects the MultiPV lines belonging to one Depth, and turns Stockfish's raw info frames
+/// into something a player can read.
+///
+/// The conversion used to be spread across the caller, which built a `Line` per frame and
+/// handed it in. Now the group owns it: it knows the position and whose move it is, and a
+/// frame in becomes an Analysis out — the White-relative flip and the mate conversion happen
+/// here and nowhere else, so the whole conversion is testable without an engine behind it.
+struct DepthGroup {
+    private let state: GameState
+    private let perspective: PieceColour
     private var depth = 0
     private var selectiveDepth = 0
     private var nodes: UInt64 = 0
@@ -397,9 +382,14 @@ private struct DepthGroup {
     private var isPartial = false
     private var lines: [Int: Line] = [:]
 
-    /// Absorbs one info line; returns true when the *previous* Depth is complete and should
+    init(state: GameState, perspective: PieceColour) {
+        self.state = state
+        self.perspective = perspective
+    }
+
+    /// Absorbs one info frame; returns true when the *previous* Depth is complete and should
     /// be emitted before this one is filled in.
-    mutating func absorb(_ info: CfSearchInfo, line: Line) -> Bool {
+    mutating func absorb(_ info: CfSearchInfo) -> Bool {
         // Stockfish walks multipv 1...N within a Depth, so index 1 opens a new group.
         let opensGroup = Int(info.multiPvIndex) <= 1 && !lines.isEmpty
         if opensGroup { pending = snapshot() }
@@ -415,7 +405,7 @@ private struct DepthGroup {
         timeMilliseconds = info.timeMs
         hashFull = Int(info.hashFull)
         if info.isBound { isPartial = true }
-        lines[Int(info.multiPvIndex)] = line
+        lines[Int(info.multiPvIndex)] = Line(info, in: state, perspective: perspective)
         return pending != nil
     }
 

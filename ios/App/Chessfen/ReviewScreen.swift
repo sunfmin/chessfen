@@ -77,9 +77,10 @@ struct ReviewScreen: View {
             ply = game.plies.count
             begin()
         }
+        // Cancelling is the whole of leaving: each ply's stream ends with the task, and the
+        // stream's termination is what stops the engine.
         .onDisappear {
             task?.cancel()
-            engine.service?.stop()
         }
     }
 
@@ -102,7 +103,7 @@ struct ReviewScreen: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-        } else if !engine.isReady {
+        } else if engine.unavailableReason != nil {
             Text("引擎不可用，无法复盘。").font(.footnote).foregroundStyle(.orange)
         } else if run.total > 0 {
             Text("已按统一深度 \(depth) 重算完，曲线上的每一点都可以互相比较。")
@@ -116,7 +117,7 @@ struct ReviewScreen: View {
             pieces: BoardRenderer.placement(position.state.fen) ?? [:],
             orientation: session.orientation,
             lastMove: lastMove,
-            checks: position.state.inCheck ? Set(position.state.checkers) : [],
+            checks: position.state.checkSquares,
             coordinates: true,
             isInteractive: false
         )
@@ -207,8 +208,7 @@ struct ReviewScreen: View {
     }
 
     private var lastMove: MoveSquares? {
-        guard ply > 0 else { return nil }
-        return game.plies[safe: ply - 1].flatMap { MoveSquares(uci: $0.uci) }
+        game.moveSquares(atPly: ply)
     }
 
     private var plyTitle: String {
@@ -229,9 +229,7 @@ struct ReviewScreen: View {
     /// Who played the `ply`th move, counting from one. Not always White: a recognised
     /// position may well have started with Black to move.
     private func moverOfPly(_ ply: Int) -> PieceColour {
-        let startedWith: PieceColour =
-            game.startFEN.split(separator: " ").dropFirst().first == "b" ? .black : .white
-        return ply.isMultiple(of: 2) ? startedWith.opposite : startedWith
+        ply.isMultiple(of: 2) ? game.startingSideToMove.opposite : game.startingSideToMove
     }
 }
 
