@@ -112,6 +112,15 @@ and the reason `#expect(rendered.says("+0.38"))` can be written at all.
 
 ## How the app hangs together
 
+**拍棋盘 is our own camera**
+([ADR 0013](../docs/adr/0013-the-camera-is-ours-and-the-viewfinder-judges-with-the-same-score.md)).
+It opens on the ultra-wide so a board twenty centimetres away is in focus rather than being
+hunted for, focus can be aimed by tapping, and the shutter is manual — nothing is ever captured
+automatically. A box is drawn live around the board it can see, found by the same two measures
+the recogniser uses, so "it can see the board" is the app's own opinion and not a second one.
+VisionKit's document scanner does all of this and none of it can be configured: it was built,
+tried and taken back out, which is what the ADR is about.
+
 **Recognition never becomes a game on its own.** Every reading goes through the Confirm
 Position gate ([ADR 0008](../docs/adr/0008-a-confirm-position-gate-stands-between-recognition-and-game.md)):
 the squares it was unsure about are ringed in orange, every square can be corrected by hand,

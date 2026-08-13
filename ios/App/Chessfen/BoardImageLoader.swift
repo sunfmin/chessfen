@@ -72,49 +72,6 @@ enum BoardImageLoader {
     }
 }
 
-/// The camera, which SwiftUI still has no picker of its own for.
-struct CameraPicker: UIViewControllerRepresentable {
-    let onPicked: (UIImage) -> Void
-    @Environment(\.dismiss) private var dismiss
-
-    func makeUIViewController(context: Context) -> UIImagePickerController {
-        let controller = UIImagePickerController()
-        controller.sourceType = .camera
-        controller.delegate = context.coordinator
-        return controller
-    }
-
-    func updateUIViewController(_ controller: UIImagePickerController, context: Context) {}
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onPicked: onPicked, onFinish: { dismiss() })
-    }
-
-    final class Coordinator: NSObject, UIImagePickerControllerDelegate,
-        UINavigationControllerDelegate
-    {
-        private let onPicked: (UIImage) -> Void
-        private let onFinish: () -> Void
-
-        init(onPicked: @escaping (UIImage) -> Void, onFinish: @escaping () -> Void) {
-            self.onPicked = onPicked
-            self.onFinish = onFinish
-        }
-
-        func imagePickerController(
-            _ picker: UIImagePickerController,
-            didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
-        ) {
-            if let image = info[.originalImage] as? UIImage { onPicked(image) }
-            onFinish()
-        }
-
-        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            onFinish()
-        }
-    }
-}
-
 /// An `RGBImage` as something SwiftUI can show.
 extension Image {
     init?(rgb: RGBImage) {

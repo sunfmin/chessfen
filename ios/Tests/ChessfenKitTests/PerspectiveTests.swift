@@ -108,6 +108,85 @@ func refinementFindsTheBoardEdges() throws {
     }
 }
 
+/// A picture that has already been through a document scanner — Notes, or any of the scanning
+/// apps, and then 从相册选 — is not a photograph. It is the board already straightened, cropped
+/// to the very edge of the scanner's guess at the quad, and stretched to the aspect ratio it
+/// inferred for that quad. Both are unusual here: every other way in gives a board with
+/// something around it. And the aspect is an estimate, so a board scanned from a low angle
+/// comes back a few percent off square, which over eight ranks is a fraction of a square by the
+/// far edge.
+///
+/// Which of the two stages absorbs that is the thing worth pinning down, because it decides
+/// what a bad estimate costs: a small error goes through the axis-aligned reading untouched,
+/// and one big enough to break that reading is recovered by the quad stage rectifying the whole
+/// frame back to square. So there is no aspect ratio at which the scanner's guess strands the
+/// recogniser — only one where it stops being free.
+@Test("a scan cropped to the board's edge and out of square is still read")
+func aScannedBoardIsRead() async throws {
+    let fen = "r3k3/2N5/8/8/8/8/8/4K3 w - - 0 1"
+    let board = try #require(BoardRenderer.image(fen: fen, options: .init(size: 320)))
+
+    // Three percent out, which is about as wrong as the scanner's estimate gets.
+    let slight = try await Recognizer.recognise(
+        photograph: board.resized(width: 310, height: 320),
+        orientation: .whiteAtBottom, castling: .none
+    )
+    #expect(slight.fen == fen)
+    #expect(slight.image.width != slight.image.height, "read as it arrived, not rectified")
+
+    // Far past that, and past where the axis-aligned reading gives up: the grid it would lay
+    // down drifts most of a square by the eighth rank.
+    let stretched = try await Recognizer.recognise(
+        photograph: board.resized(width: 310, height: 360),
+        orientation: .whiteAtBottom, castling: .none
+    )
+    #expect(stretched.fen == fen)
+    #expect(stretched.image.width == stretched.image.height, "squared up by the quad stage")
+}
+
+/// The viewfinder's job is not to be right about the corners — the photograph goes through the
+/// full search afterwards — it is to be right about *whether there is a board*, many times a
+/// second, so that the box drawn on the preview means something.
+@Test("the viewfinder finds a board in a frame, and finds nothing in a frame without one")
+func theViewfinderLocatesABoard() async throws {
+    let board = try #require(
+        BoardRenderer.image(fen: PGN.standardStartFEN, options: .init(size: 480))
+    )
+    let quad = BoardQuad(
+        topLeft: CGPoint(x: 100, y: 60),
+        topRight: CGPoint(x: 580, y: 110),
+        bottomRight: CGPoint(x: 620, y: 570),
+        bottomLeft: CGPoint(x: 70, y: 540)
+    )
+    let frame = try photographed(board, onto: quad, width: 700, height: 660)
+        .scaled(toLongestSide: 384)
+    let scale = 384.0 / 700
+
+    let found = try #require(await PerspectiveCorrection.located(in: frame))
+    // Loosely: these corners have had no descent run on them, and a box on a moving preview
+    // does not need better than "that is the board and not the table".
+    for (corner, truth) in zip(found.corners, quad.corners) {
+        let distance = (
+            (corner.x - truth.x * scale) * (corner.x - truth.x * scale)
+            + (corner.y - truth.y * scale) * (corner.y - truth.y * scale)
+        ).squareRoot()
+        #expect(distance < 30, "corner \(corner) should be near \(truth.applying(.init(scaleX: scale, y: scale)))")
+    }
+
+    // A dark slab on a light table: rectangular, and not a board.
+    var pixels = [UInt8](repeating: 190, count: 384 * 384 * 3)
+    for y in 90..<300 {
+        for x in 70..<310 {
+            let base = (y * 384 + x) * 3
+            pixels[base] = 60
+            pixels[base + 1] = 70
+            pixels[base + 2] = 90
+        }
+    }
+    let table = RGBImage(width: 384, height: 384, pixels: pixels)
+    #expect(await PerspectiveCorrection.located(in: table) == nil)
+}
+
 @Test("a quad that has folded over itself is refused rather than scored")
 func implausibleQuadsAreRefused() {
     let inside = BoardQuad(rect: CGRect(x: 10, y: 10, width: 200, height: 200))

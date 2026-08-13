@@ -84,7 +84,7 @@ struct LibraryScreen: View {
             }
         }
         .fullScreenCover(isPresented: $isCameraOpen) {
-            CameraPicker { picked in
+            BoardCameraScreen { picked in
                 guard let image = BoardImageLoader.image(from: picked) else {
                     failure = "这张照片打不开。"
                     return

@@ -151,13 +151,52 @@ public enum PerspectiveCorrection {
     public static func score(
         _ quad: BoardQuad, in image: RGBImage, size: Int = 320
     ) -> Double {
+        let measured = measure(quad, in: image, size: size)
+        return measured.grid * measured.checker
+    }
+
+    /// The two measures behind `score`, kept apart for the one caller that needs to ask them
+    /// different questions: the product ranks quads against each other, but only the checker
+    /// score means anything on its own — it is a contrast ratio, so it does not move with the
+    /// size the quad was rectified to, and it is already the pipeline's accept gate.
+    static func measure(
+        _ quad: BoardQuad, in image: RGBImage, size: Int
+    ) -> (grid: Double, checker: Double) {
         guard quad.isPlausible(in: image.width, height: image.height),
               let rectified = rectified(image, quad: quad, size: size)
-        else { return 0 }
+        else { return (0, 0) }
         let grey = rectified.luma
         let frame = BoardRect(left: 0, top: 0, size: size)
-        return BoardGeometry.gridScore(grey, frame)
-            * BoardGeometry.checkerScore(grey, frame)
+        return (BoardGeometry.gridScore(grey, frame), BoardGeometry.checkerScore(grey, frame))
+    }
+
+    /// Side the quads are rectified to when a live camera frame is being looked at. Small
+    /// enough that a frame can be answered several times a second, and still twenty pixels to
+    /// a square.
+    public static let viewfinderSize = 128
+
+    /// The board in one camera frame, or nothing — the cheap half of the search.
+    ///
+    /// The same candidates and the same two measures as the full search, with the coordinate
+    /// descent left out: a viewfinder needs an answer many times a second and the descent costs
+    /// seconds, while what it buys — corners accurate to a few pixels — is worth nothing to a
+    /// box drawn on a moving preview. The photograph that is eventually taken goes through the
+    /// full search like any other, so nothing here decides how the board is read; it decides
+    /// only what the person sees while aiming.
+    ///
+    /// Ranked by the product, accepted on the checker score alone, and the gap between a board
+    /// and anything else is not close: measured on a rendered board photographed at an angle,
+    /// the board's own quad scores in the tens and the frame around it, the half-board and the
+    /// tablecloth all score under a quarter.
+    public static func located(in image: RGBImage) async -> BoardQuad? {
+        var best: (quad: BoardQuad, rank: Double)?
+        for quad in await candidates(in: image) {
+            let measured = autoreleasepool { measure(quad, in: image, size: viewfinderSize) }
+            guard measured.checker >= BoardGeometry.minimumCheckerScore else { continue }
+            let rank = measured.grid * measured.checker
+            if rank > (best?.rank ?? 0) { best = (quad, rank) }
+        }
+        return best?.quad
     }
 
     /// Nudges one corner at a time, keeping whatever improves the score, with the step
