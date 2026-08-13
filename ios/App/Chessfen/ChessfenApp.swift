@@ -18,6 +18,9 @@ struct ChessfenApp: App {
             LibraryScreen()
                 .environment(engine)
                 .environment(library)
+                // The kit's `Sounds` is a seam holding whichever Feedback was installed on the
+                // way up; the app installs its own, and everything that plays goes through it.
+                .task { _ = SystemFeedback.shared }
                 .task { await engine.start() }
                 // Finding the iCloud folder and moving the old games into it, once, after the
                 // local folder has already been listed and drawn (docs/adr/0012).
