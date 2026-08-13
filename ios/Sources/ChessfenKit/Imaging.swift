@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreImage
 import Foundation
 import ImageIO
 
@@ -8,7 +9,25 @@ public struct RGBImage: Sendable {
     public let width: Int
     public let height: Int
     /// Row-major, three bytes per pixel.
-    public private(set) var pixels: [UInt8]
+    public private(set) var pixels: [UInt8] {
+        // The one way in for new pixels, and therefore the one place the cached CGImage
+        // must be replaced: the cache describes the pixels, and any write makes it a lie
+        // for the copy being written — so that copy gets a fresh box, while the copies
+        // it forked from keep the cache their unchanged pixels built.
+        didSet { cgImageCache = CGImageCache() }
+    }
+
+    /// The pixels as a `CGImage`, built on first read and kept. A full RGBA buffer, a data
+    /// provider and a `CGImage` on every read used to be the price of one — and the callers
+    /// that read it most, the rectification descent hundreds of times per recognition,
+    /// were the ones that died for it. Now the image owns the conversion, and every caller
+    /// that used to defend itself against the cost just reads.
+    ///
+    /// The cache lives in a box because a computed getter may not write to the struct, but
+    /// it may write through a reference it holds; the box is `@unchecked Sendable` because
+    /// the race it admits is the benign one — two first readers build the same image and
+    /// one of the copies is dropped, unread.
+    private var cgImageCache = CGImageCache()
 
     public init(width: Int, height: Int, pixels: [UInt8]) {
         precondition(pixels.count == width * height * 3)
@@ -59,6 +78,12 @@ public struct RGBImage: Sendable {
         }
         return LumaImage(width: width, height: height, values: out)
     }
+}
+
+/// The cache box `RGBImage` writes its `CGImage` through — a getter may not touch the
+/// struct, but it may touch what the struct points at.
+private final class CGImageCache: @unchecked Sendable {
+    var image: CGImage?
 }
 
 // -------------------------------------------------------------------- loading
@@ -115,6 +140,7 @@ extension RGBImage {
     }
 
     public var cgImage: CGImage? {
+        if let cached = cgImageCache.image { return cached }
         var rgba = [UInt8](repeating: 255, count: width * height * 4)
         for index in 0..<(width * height) {
             rgba[index * 4] = pixels[index * 3]
@@ -122,7 +148,7 @@ extension RGBImage {
             rgba[index * 4 + 2] = pixels[index * 3 + 2]
         }
         guard let provider = CGDataProvider(data: Data(rgba) as CFData) else { return nil }
-        return CGImage(
+        let built = CGImage(
             width: width,
             height: height,
             bitsPerComponent: 8,
@@ -135,6 +161,8 @@ extension RGBImage {
             shouldInterpolate: false,
             intent: .defaultIntent
         )
+        cgImageCache.image = built
+        return built
     }
 
     /// The same picture with its longer side at most `longestSide`, or itself if it
@@ -196,6 +224,50 @@ extension RGBImage {
         }
         return RGBImage(width: newWidth, height: newHeight, pixels: out)
     }
+}
+
+// ------------------------------------------------------------ the pixels' lifetime
+
+/// The one home for the pixels' lifetime and the sizes derived from them.
+///
+/// These used to be scattered: six resolution constants across five files, two
+/// `CIContext`s, two `autoreleasepool`s, each with its own name for the same idea —
+/// and the relationship between the working resolution and the decode size was stated
+/// in prose at the decode site, "a little above the recogniser's own working
+/// resolution", where nothing could keep it true. Here they are one list, and the
+/// derivation is arithmetic.
+public enum Imaging {
+    /// The resolution photographs are read at: scaled to this before the board is looked
+    /// for, so every part of the pipeline measures the same pixels.
+    public static let workingResolution = 1200
+
+    /// Decoding keeps a third more than reading needs, so that straightening a photograph
+    /// has some detail to work with before it downsamples again.
+    public static let decodedLongestSide = workingResolution * 4 / 3
+
+    /// Side of the rectified board, in pixels. Eight squares of a hundred pixels is more
+    /// than the matcher needs and less than a phone camera hands over.
+    public static let rectifiedSize = 800
+
+    /// The window the checkerboard score is measured in.
+    public static let scoreSize = 320
+
+    /// Side the quads are rectified to when a live camera frame is being looked at. Small
+    /// enough that a frame can be answered several times a second, and still twenty pixels
+    /// to a square.
+    public static let viewfinderSize = 128
+
+    /// The size a viewfinder frame is shrunk to before looking. Bigger buys nothing: the
+    /// box is a few hundred points wide on screen, and every extra pixel is paid for at
+    /// whatever rate the frames arrive.
+    public static let viewfinderFrameSize = 384
+
+    /// One renderer for everything that straightens or scales pixels. A `CIContext` is a
+    /// piece of the GPU's plumbing, and every module used to build its own: one per score
+    /// call made the rectification descent pay that cost hundreds of times over, and the
+    /// camera's viewfinder built a second one alongside it. A context is thread-safe; one
+    /// is enough.
+    public static let renderContext = CIContext(options: [.useSoftwareRenderer: false])
 }
 
 // ----------------------------------------------------------------- morphology

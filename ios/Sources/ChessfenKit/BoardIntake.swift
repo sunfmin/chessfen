@@ -103,10 +103,6 @@ public enum BoardIntake {
 
     // ---------------------------------------------------------------- decoding
 
-    /// A little above the recogniser's own working resolution, so that straightening a
-    /// photograph has some detail to work with before it downsamples again.
-    public static let longestSide = 1600
-
     /// The source as pixels, nil when it could not be made into one. Public because the
     /// CLI wants the picture for its own recognition diagnostics.
     ///
@@ -130,7 +126,7 @@ public enum BoardIntake {
         guard let source else { return nil }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceThumbnailMaxPixelSize: longestSide,
+            kCGImageSourceThumbnailMaxPixelSize: Imaging.decodedLongestSide,
             // Photographs carry their rotation in EXIF. Without this a board shot in
             // portrait arrives on its side, and every square is in the wrong place.
             kCGImageSourceCreateThumbnailWithTransform: true,

@@ -48,10 +48,6 @@ public struct Recognition: Sendable {
 }
 
 public enum Recognizer {
-    /// Longest side the search runs at. A phone camera hands over twelve megapixels of a
-    /// board that needs a few hundred pixels a square to be read; the rest is search cost
-    /// and JPEG noise. Boards arriving as screenshots are smaller than this and untouched.
-    public static let workingResolution = 1200
 
     /// Recognises the Position in a board image.
     ///
@@ -65,7 +61,7 @@ public enum Recognizer {
         orientation requested: Orientation? = nil,
         castling: CastlingGuess = .fromHomeSquares
     ) throws -> Recognition {
-        let image = source.scaled(toLongestSide: workingResolution)
+        let image = source.scaled(toLongestSide: Imaging.workingResolution)
         let rect = try BoardGeometry.findBoard(in: image)
 
         // Every Cell is read before any of them is judged, because what tells a white piece
@@ -129,7 +125,7 @@ public enum Recognizer {
         orientation requested: Orientation? = nil,
         castling: CastlingGuess = .fromHomeSquares
     ) async throws -> Recognition {
-        let image = source.scaled(toLongestSide: workingResolution)
+        let image = source.scaled(toLongestSide: Imaging.workingResolution)
         let direct = try? recognise(
             image, turn: turn, orientation: requested, castling: castling
         )

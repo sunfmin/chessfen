@@ -11,7 +11,7 @@ enum BoardImageLoader {
     static func image(from uiImage: UIImage) -> RGBImage? {
         let longest = max(uiImage.size.width, uiImage.size.height)
         guard longest > 0 else { return nil }
-        let scale = min(1, CGFloat(BoardIntake.longestSide) / longest)
+        let scale = min(1, CGFloat(Imaging.decodedLongestSide) / longest)
         let target = CGSize(
             width: (uiImage.size.width * scale).rounded(),
             height: (uiImage.size.height * scale).rounded()

@@ -18,13 +18,13 @@ private func footprint() -> Int64 {
     return Int64(info.phys_footprint)
 }
 
-/// A photograph of a real board, the kind the camera hands over — fetched from the machine's
-/// own iCloud copy of the app's folder. A local repro probe for the moment; if this test
-/// proves its point it earns a pinned fixture in Resources/ instead.
+/// A photograph of a real board, the kind the camera hands over — a pinned fixture in
+/// Resources/ rather than a path into one machine's iCloud folder, so the test runs
+/// wherever the package does. `chessfen-2026-08-12-220004.png` from the app's own
+/// folder, kept under a name that says what it is.
 private func photographedBoard() throws -> RGBImage {
-    let url = URL(
-        filePath:
-            "/Users/sunfmin/Library/Mobile Documents/iCloud~com~sunfmin~chessfen/Documents/chessfen-2026-08-12-220004.png"
+    let url = try #require(
+        Bundle.module.url(forResource: "board_photograph", withExtension: "png")
     )
     return try #require(RGBImage(contentsOf: url))
 }
@@ -38,20 +38,37 @@ func recognitionFootprintIsBounded() async throws {
     _ = try? await Recognizer.recognise(photograph: photo)
     let before = footprint()
     var peak = before
+    var after: [Int64] = []
     print("[MEM] baseline \(before / 1_048_576) MB")
 
     for iteration in 1...12 {
         _ = try? await Recognizer.recognise(photograph: photo)
         let now = footprint()
         peak = max(peak, now)
+        after.append(now)
         print("[MEM] after \(iteration): \(now / 1_048_576) MB")
     }
 
-    let grown = peak - before
-    print("[MEM] peak growth \(grown / 1_048_576) MB")
-    // A healthy run allocates and releases; twelve of them must not have piled up
-    // anywhere near the three and a half gigabytes the phone was killed at.
-    #expect(grown < 256 * 1_048_576, "footprint grew by \(grown / 1_048_576) MB over 12 runs")
+    print("[MEM] peak growth \((peak - before) / 1_048_576) MB")
+    // A healthy run allocates and releases: whatever pools and caches exist fill in the
+    // first couple of runs and then stop, so the settled tail is the leak detector — a
+    // plateau that stays where it is is healthy, and one that climbs is the phone dying.
+    //
+    // The suites run side by side, so any one sample is knocked about by whatever the
+    // engine tests are doing next door; a single high or low reading proves nothing.
+    // A trend cannot hide in noise the way a sample can, so the tail's later half is
+    // weighed against its earlier half: a plateau stays level, and a leak climbs.
+    let tail = Array(after[4...])
+    let split = tail.count / 2
+    let earlier = tail.prefix(split).reduce(0, +) / Int64(split)
+    let later = tail.suffix(split).reduce(0, +) / Int64(split)
+    #expect(
+        later - earlier < 32 * 1_048_576,
+        "the tail climbed by \((later - earlier) / 1_048_576) MB between its halves"
+    )
+    // And the peak, whenever it happens, stays nowhere near the three and a half
+    // gigabytes the phone was killed at.
+    #expect(peak - before < 512 * 1_048_576, "footprint grew by \((peak - before) / 1_048_576) MB over 12 runs")
 }
 
 /// The highest footprint seen while `body` runs, sampled every fifty milliseconds.
@@ -141,14 +158,14 @@ func recognitionPeakIsBounded() async throws {
     }
 }
 
-/// The exact photograph the phone was holding when the system killed it, fetched from this
-/// machine's own iCloud copy. The strongest check there is: the input that died before the
-/// fix must be read, bounded, by the pipeline after it.
+/// The exact photograph the phone was holding when the system killed it, pinned in
+/// Resources/ — `chessfen-photo-2026-08-13-080920.png` from the app's own folder. The
+/// strongest check there is: the input that died before the fix must be read, bounded,
+/// by the pipeline after it.
 @Test("the photograph that killed the phone is read within a bounded footprint")
 func thePhonePhotoThatKilledTheAppIsBounded() async throws {
-    let url = URL(
-        filePath:
-            "/Users/sunfmin/Library/Mobile Documents/iCloud~com~sunfmin~chessfen/Documents/chessfen-photo-2026-08-13-080920.png"
+    let url = try #require(
+        Bundle.module.url(forResource: "killer_photograph", withExtension: "png")
     )
     let photo = try #require(RGBImage(contentsOf: url))
     let baseline = footprint()

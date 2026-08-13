@@ -83,10 +83,6 @@ public struct BoardQuad: Hashable, Sendable {
 /// score wins (docs/adr/0007). A judge that the rest of the pipeline does not share would
 /// be a second opinion about what a chessboard looks like, and the two would drift.
 public enum PerspectiveCorrection {
-    /// Side of the rectified board, in pixels. Eight squares of a hundred pixels is more
-    /// than the matcher needs and less than a phone camera hands over.
-    public static let rectifiedSize = 800
-
     /// Quads worth trying, most promising first.
     ///
     /// Vision proposes; it never decides. Its rectangles come from edges, and a board's
@@ -149,7 +145,7 @@ public enum PerspectiveCorrection {
     /// sharp one has to be in the objective; the robust one keeps a quad that has slid onto
     /// the tablecloth from winning on texture alone.
     public static func score(
-        _ quad: BoardQuad, in image: RGBImage, size: Int = 320
+        _ quad: BoardQuad, in image: RGBImage, size: Int = Imaging.scoreSize
     ) -> Double {
         let measured = measure(quad, in: image, size: size)
         return measured.grid * measured.checker
@@ -170,11 +166,6 @@ public enum PerspectiveCorrection {
         return (BoardGeometry.gridScore(grey, frame), BoardGeometry.checkerScore(grey, frame))
     }
 
-    /// Side the quads are rectified to when a live camera frame is being looked at. Small
-    /// enough that a frame can be answered several times a second, and still twenty pixels to
-    /// a square.
-    public static let viewfinderSize = 128
-
     /// The board in one camera frame, or nothing — the cheap half of the search.
     ///
     /// The same candidates and the same two measures as the full search, with the coordinate
@@ -191,7 +182,7 @@ public enum PerspectiveCorrection {
     public static func located(in image: RGBImage) async -> BoardQuad? {
         var best: (quad: BoardQuad, rank: Double)?
         for quad in await candidates(in: image) {
-            let measured = autoreleasepool { measure(quad, in: image, size: viewfinderSize) }
+            let measured = measure(quad, in: image, size: Imaging.viewfinderSize)
             guard measured.checker >= BoardGeometry.minimumCheckerScore else { continue }
             let rank = measured.grid * measured.checker
             if rank > (best?.rank ?? 0) { best = (quad, rank) }
@@ -210,7 +201,7 @@ public enum PerspectiveCorrection {
     public static func refined(
         _ quad: BoardQuad,
         in image: RGBImage,
-        size: Int = 320,
+        size: Int = Imaging.scoreSize,
         maximumPasses: Int = 40
     ) -> (quad: BoardQuad, score: Double) {
         var best = quad
@@ -230,12 +221,7 @@ public enum PerspectiveCorrection {
                         x: corners[index].x + delta.x, y: corners[index].y + delta.y
                     )
                     trial.corners = corners
-                    // Each score renders the quad through Core Image, whose intermediates
-                    // are autoreleased. The descent is one synchronous loop, so without a
-                    // pool per trial those intermediates — megabytes per render — pile up
-                    // until the loop ends; on a phone they reached three gigabytes and the
-                    // system killed the app.
-                    let trialScore = autoreleasepool { score(trial, in: image, size: size) }
+                    let trialScore = score(trial, in: image, size: size)
                     if trialScore > bestScore {
                         bestScore = trialScore
                         best = trial
@@ -253,15 +239,16 @@ public enum PerspectiveCorrection {
         return (best, bestScore)
     }
 
-    /// One renderer for every rectification the descent makes. A `CIContext` is a piece of
-    /// the GPU's plumbing, and building one per score call made the descent pay that cost
-    /// hundreds of times over — the descent is the reason this method exists, and it is
-    /// the caller that runs it hundreds of times.
-    private static let renderContext = CIContext(options: [.useSoftwareRenderer: false])
-
     /// The quad's contents, straightened into a `size`-by-`size` picture.
+    ///
+    /// The render is pooled. Core Image's intermediates are autoreleased, and the descent
+    /// calls here once per score — one synchronous loop, hundreds of renders, so without
+    /// a pool per render those intermediates, megabytes per render, pile up until the
+    /// loop ends; on a phone they reached three gigabytes and the system killed the app.
+    /// The pool lives here rather than at each caller: this is the one place the render
+    /// happens, and the callers used to take turns remembering it.
     public static func rectified(
-        _ image: RGBImage, quad: BoardQuad, size: Int = rectifiedSize
+        _ image: RGBImage, quad: BoardQuad, size: Int = Imaging.rectifiedSize
     ) -> RGBImage? {
         guard let source = image.cgImage else { return nil }
         let height = Double(image.height)
@@ -270,20 +257,20 @@ public enum PerspectiveCorrection {
             CGPoint(x: point.x, y: height - point.y)
         }
 
-        let filter = CIFilter.perspectiveCorrection()
-        filter.inputImage = CIImage(cgImage: source)
-        filter.topLeft = flipped(quad.topLeft)
-        filter.topRight = flipped(quad.topRight)
-        filter.bottomRight = flipped(quad.bottomRight)
-        filter.bottomLeft = flipped(quad.bottomLeft)
-        filter.crop = true
-        guard let output = filter.outputImage, !output.extent.isInfinite,
-              output.extent.width >= 1, output.extent.height >= 1
-        else { return nil }
-
-        guard let rendered = renderContext.createCGImage(output, from: output.extent),
-              let straightened = RGBImage(cgImage: rendered)
-        else { return nil }
+        let rendered: CGImage? = autoreleasepool {
+            let filter = CIFilter.perspectiveCorrection()
+            filter.inputImage = CIImage(cgImage: source)
+            filter.topLeft = flipped(quad.topLeft)
+            filter.topRight = flipped(quad.topRight)
+            filter.bottomRight = flipped(quad.bottomRight)
+            filter.bottomLeft = flipped(quad.bottomLeft)
+            filter.crop = true
+            guard let output = filter.outputImage, !output.extent.isInfinite,
+                  output.extent.width >= 1, output.extent.height >= 1
+            else { return nil }
+            return Imaging.renderContext.createCGImage(output, from: output.extent)
+        }
+        guard let rendered, let straightened = RGBImage(cgImage: rendered) else { return nil }
         return straightened.resized(width: size, height: size)
     }
 }

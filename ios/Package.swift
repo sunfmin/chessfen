@@ -56,11 +56,15 @@ let package = Package(
         .executableTarget(name: "chessfen-cli", dependencies: ["ChessfenKit"]),
         .testTarget(
             name: "ChessfenKitTests",
-            dependencies: ["ChessfenKit"],
-            // A real screenshot of a real board: a different piece set, inline
-            // coordinates, a highlighted square. Nothing rendered here can stand in
-            // for it.
-            resources: [.copy("Resources/reference_board.png")]
+            // CStockfish directly, for the seam tests: they feed synthetic info frames to
+            // the depth grouper, and a frame is the bridge's own struct.
+            dependencies: ["ChessfenKit", "CStockfish"],
+            // Real pictures of real boards, the same ones the app reads: a different
+            // piece set, inline coordinates, a highlighted square. Nothing rendered
+            // here can stand in for them. The whole folder rather than the three files
+            // it currently holds, so a fixture added to Resources/ is in the bundle
+            // without a second edit here.
+            resources: [.copy("Resources")]
         ),
     ],
     cxxLanguageStandard: .cxx17

@@ -42,7 +42,6 @@ nonisolated final class BoardCamera: NSObject, AVCaptureVideoDataOutputSampleBuf
     /// its own, so that a frame taking a fifth of a second to answer never delays the shutter.
     private let frames = AVCaptureVideoDataOutput()
     private let looking = DispatchQueue(label: "com.sunfmin.chessfen.viewfinder")
-    private let renderer = CIContext(options: [.useSoftwareRenderer: false])
     /// True while a frame is being looked at. Frames that arrive meanwhile are dropped rather
     /// than queued: a backlog of stale frames would draw the board where it *was*.
     private var busy = false
@@ -242,11 +241,6 @@ nonisolated final class BoardCamera: NSObject, AVCaptureVideoDataOutputSampleBuf
 
     // ------------------------------------------------------------------ the viewfinder
 
-    /// One frame's worth of looking, at the resolution the search is given. Bigger buys
-    /// nothing: the box is a few hundred points wide on screen, and every extra pixel is paid
-    /// for at whatever rate the frames arrive.
-    private static let lookingSize = 384
-
     func captureOutput(
         _ output: AVCaptureOutput,
         didOutput sampleBuffer: CMSampleBuffer,
@@ -261,9 +255,9 @@ nonisolated final class BoardCamera: NSObject, AVCaptureVideoDataOutputSampleBuf
         let source = CIImage(cvPixelBuffer: buffer)
         let longest = max(source.extent.width, source.extent.height)
         guard longest > 0 else { return }
-        let scale = min(1, CGFloat(Self.lookingSize) / longest)
+        let scale = min(1, CGFloat(Imaging.viewfinderFrameSize) / longest)
         let small = source.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-        guard let rendered = renderer.createCGImage(small, from: small.extent),
+        guard let rendered = Imaging.renderContext.createCGImage(small, from: small.extent),
               let frame = RGBImage(cgImage: rendered)
         else { return }
 
