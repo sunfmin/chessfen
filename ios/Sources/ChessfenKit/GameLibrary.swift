@@ -7,7 +7,7 @@ import Foundation
 /// ever saved. The cost is re-parsing on launch, which for text files of a few kilobytes
 /// is not a cost.
 @Observable @MainActor public final class GameLibrary {
-    public struct Entry: Identifiable, Hashable {
+    public struct Entry: Identifiable, Hashable, Sendable {
         public let url: URL
         public var id: URL { url }
         /// Nil when the file is there but will not parse — listed rather than hidden,
@@ -200,10 +200,38 @@ import Foundation
     public func connect() async {
         guard await folder.connect() else { return }
         reload()
-        folder.onChange { [weak self] in self?.reload() }
+        folder.onChange { [weak self] in self?.reloadQuietly() }
     }
 
     public func reload() {
+        entries = Self.gather(in: directory, isCloud: folder.isCloud)
+        fetchMissing()
+    }
+
+    /// The metadata query's `reload`: the scan runs off the main thread, because a directory
+    /// full of games read and parsed on the main actor is a hang per save. The query reports
+    /// this device's own writes among the rest, so `GameFolder` coalesces the burst before
+    /// this is even called.
+    private func reloadQuietly() {
+        let directory = directory
+        let isCloud = folder.isCloud
+        reloadTask?.cancel()
+        reloadTask = Task { [weak self] in
+            let gathered = await Task.detached(priority: .utility) {
+                Self.gather(in: directory, isCloud: isCloud)
+            }.value
+            guard let self, !Task.isCancelled else { return }
+            entries = gathered
+            fetchMissing()
+        }
+    }
+
+    private var reloadTask: Task<Void, Never>?
+
+    /// The directory listing, read off the main thread when asked to be. In iCloud every file
+    /// here costs a round trip to the sync daemon — its download status and a coordinated read
+    /// each — and the only thing that gets back is `Entry` values, which are plain data.
+    private nonisolated static func gather(in directory: URL, isCloud: Bool) -> [Entry] {
         let manager = FileManager.default
         let urls =
             (try? manager.contentsOfDirectory(
@@ -212,14 +240,15 @@ import Foundation
                 options: [.skipsHiddenFiles]
             )) ?? []
 
-        entries = urls
+        return urls
             .filter { $0.pathExtension.lowercased() == "pgn" }
             .map { url in
                 // A game another device saved is a name here before it is bytes. Asking for it
                 // is enough — the folder says when it has landed, and the list is built again.
-                let isHere = folder.isHere(url)
-                if !isHere { folder.fetch(url) }
-                let text = folder.read(at: url) { try? String(contentsOf: $0, encoding: .utf8) }
+                let isHere = GameFolder.isHere(url, isCloud: isCloud)
+                let text = GameFolder.read(at: url, isCloud: isCloud) {
+                    try? String(contentsOf: $0, encoding: .utf8)
+                }
                 let modified =
                     (try? url.resourceValues(forKeys: [.contentModificationDateKey])
                         .contentModificationDate) ?? .distantPast
@@ -231,6 +260,13 @@ import Foundation
                 )
             }
             .sorted { $0.modified > $1.modified }
+    }
+
+    /// Asks iCloud for the games this device only knows the name of.
+    private func fetchMissing() {
+        for entry in entries where entry.isDownloading {
+            folder.fetch(entry.url)
+        }
     }
 
     /// A file name that reads as what it is in any file browser, and sorts by when it was
@@ -249,10 +285,29 @@ import Foundation
     @discardableResult
     public func write(_ pgn: PGN, to url: URL) -> Bool {
         guard let data = pgn.text.data(using: .utf8) else { return false }
+        if folder.isCloud {
+            // A coordinated write is a conversation with iCloud's daemon, and the main thread
+            // is no place for a conversation that can take as long as a sync. Chained so the
+            // saves land in the order they were made: the newest state is the last write,
+            // whatever order the detached work finishes in.
+            let previous = writeChain
+            writeChain = Task { [weak self] in
+                await previous?.value
+                let written = await Task.detached(priority: .utility) {
+                    GameFolder.write(data, to: url, isCloud: true)
+                }.value
+                guard written, let self else { return }
+                self.refreshEntry(at: url, with: pgn)
+            }
+            return true
+        }
         guard folder.write(data, to: url) else { return false }
         refreshEntry(at: url, with: pgn)
         return true
     }
+
+    /// Saves in flight, in order. Nil once the chain has drained.
+    private var writeChain: Task<Void, Never>?
 
     public func delete(_ entry: Entry) {
         folder.remove(entry.url)
@@ -290,8 +345,18 @@ import Foundation
     }
 
     public func writePicture(_ image: RGBImage, for game: URL) {
+        let url = Self.pictureURL(for: game)
+        if folder.isCloud {
+            // Encoding a photograph is the expensive half; the coordinated write is the slow
+            // one. Both happen off the main thread, where a save belongs.
+            Task.detached(priority: .utility) {
+                guard let data = image.pngData else { return }
+                GameFolder.write(data, to: url, isCloud: true)
+            }
+            return
+        }
         guard let data = image.pngData else { return }
-        folder.write(data, to: Self.pictureURL(for: game))
+        folder.write(data, to: url)
     }
 
     /// Nil for a game with no picture, and also for one whose picture is still coming down from

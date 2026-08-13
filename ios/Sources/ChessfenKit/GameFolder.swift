@@ -119,6 +119,19 @@ import Foundation
         startQuery()
     }
 
+    /// Coalesced: the query reports this device's own writes among the rest, and a save that
+    /// writes a game and its picture is one change, not a rescan per file.
+    private var pendingChange: Task<Void, Never>?
+
+    private func dispatchChange() {
+        pendingChange?.cancel()
+        pendingChange = Task {
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            changed?()
+        }
+    }
+
     /// A metadata query rather than a directory watch: files in iCloud change without anything
     /// touching this device's disk, and this is the only thing that hears about that.
     private func startQuery() {
@@ -130,7 +143,7 @@ import Foundation
             NSNotification.Name.NSMetadataQueryDidFinishGathering,
             NSNotification.Name.NSMetadataQueryDidUpdate,
         ] {
-            observe(name, from: query) { folder in folder.changed?() }
+            observe(name, from: query) { folder in folder.dispatchChange() }
         }
         query.start()
         self.query = query
@@ -141,7 +154,7 @@ import Foundation
         guard !isWatchingAccount else { return }
         isWatchingAccount = true
         observe(.NSUbiquityIdentityDidChange, from: nil) { folder in
-            Task { if await folder.connect() { folder.changed?() } }
+            Task { if await folder.connect() { folder.dispatchChange() } }
         }
     }
 
@@ -166,6 +179,10 @@ import Foundation
     /// another device saves it, and arrives when it arrives. Everything that reads has to be
     /// able to say "not yet" rather than "broken".
     public func isHere(_ url: URL) -> Bool {
+        Self.isHere(url, isCloud: isCloud)
+    }
+
+    nonisolated static func isHere(_ url: URL, isCloud: Bool) -> Bool {
         guard isCloud else { return true }
         let status = try? url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
             .ubiquitousItemDownloadingStatus
@@ -187,12 +204,19 @@ import Foundation
     /// sync daemon is never read halfway through. `.withoutChanges` and the `isHere` guard keep
     /// this from ever being the thing that waits on the network: a coordinated read of a file
     /// that has not arrived blocks until it does, which on the main thread is a hang.
-    public func read<T>(at url: URL, _ body: (URL) -> T?) -> T? {
-        guard isCloud else { return body(url) }
-        guard isHere(url) else {
+    public func read<T: Sendable>(at url: URL, _ body: @Sendable (URL) -> T?) -> T? {
+        if isCloud && !Self.isHere(url, isCloud: true) {
             fetch(url)
             return nil
         }
+        return Self.read(at: url, isCloud: isCloud, body)
+    }
+
+    nonisolated static func read<T: Sendable>(
+        at url: URL, isCloud: Bool, _ body: @Sendable (URL) -> T?
+    ) -> T? {
+        guard isCloud else { return body(url) }
+        guard isHere(url, isCloud: isCloud) else { return nil }
         var out: T?
         var failure: NSError?
         NSFileCoordinator().coordinate(readingItemAt: url, options: [.withoutChanges], error: &failure) { url in
@@ -210,6 +234,13 @@ import Foundation
     /// a lot of machinery for a person drilling puzzles alone.
     @discardableResult
     public func write(_ data: Data, to url: URL) -> Bool {
+        Self.write(data, to: url, isCloud: isCloud)
+    }
+
+    /// The same write, callable from anywhere. The coordinator is the point of this split: in
+    /// iCloud a write is a conversation with the sync daemon, and the main thread is no place
+    /// for a conversation that can take as long as a sync.
+    nonisolated static func write(_ data: Data, to url: URL, isCloud: Bool) -> Bool {
         guard isCloud else { return write(data, directlyTo: url) }
         var written = false
         var failure: NSError?
@@ -219,7 +250,7 @@ import Foundation
         return written
     }
 
-    private func write(_ data: Data, directlyTo url: URL) -> Bool {
+    nonisolated private static func write(_ data: Data, directlyTo url: URL) -> Bool {
         do {
             try data.write(to: url, options: .atomic)
             return true
