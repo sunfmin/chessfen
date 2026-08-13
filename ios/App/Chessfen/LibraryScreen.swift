@@ -25,6 +25,14 @@ struct LibraryScreen: View {
     @State private var photoItem: PhotosPickerItem?
     @State private var isRecognising = false
     @State private var failure: (title: String, message: String)?
+    /// The import sheet being shown, and the collection it is pinned to — nil when opened
+    /// from the library, where the collection is asked for instead.
+    @State private var importTarget: ImportTarget?
+
+    private struct ImportTarget: Identifiable {
+        let collection: String?
+        var id: String { collection ?? "library" }
+    }
     /// The collection being renamed, and the name being typed for it.
     @State private var renamingCollection: String?
     @State private var collectionDraft = ""
@@ -67,6 +75,9 @@ struct LibraryScreen: View {
                 }
             }
             .sheet(isPresented: $isAboutShowing) { AboutScreen() }
+            .sheet(item: $importTarget) { target in
+                ImportSheet(targetCollection: target.collection)
+            }
             .navigationDestination(for: Step.self) { step in
                 switch step {
                 case .collection(let name):
@@ -229,6 +240,21 @@ struct LibraryScreen: View {
                 HStack(spacing: 10) {
                     Image(systemName: "plus")
                     Text("从开局摆起").font(.subheadline.weight(.medium))
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(Palette.ink)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 13)
+                .background(Palette.chipRest, in: RoundedRectangle(cornerRadius: 14))
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                importTarget = ImportTarget(collection: nil)
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "link")
+                    Text("从链接导入").font(.subheadline.weight(.medium))
                     Spacer(minLength: 0)
                 }
                 .foregroundStyle(Palette.ink)
@@ -582,6 +608,7 @@ struct CollectionScreen: View {
 
     @State private var isRenaming = false
     @State private var draft = ""
+    @State private var isImporting = false
 
     private var entries: [GameLibrary.Entry] {
         library.collections.first { $0.name == name }?.entries ?? []
@@ -623,12 +650,25 @@ struct CollectionScreen: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
+                    isImporting = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("从链接导入")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
                     draft = name
                     isRenaming = true
                 } label: {
                     Image(systemName: "pencil")
                 }
             }
+        }
+        .sheet(isPresented: $isImporting) {
+            // Pinned to this collection: the whole point of the door is that more games
+            // land in here, not in a new collection (docs/adr/0014).
+            ImportSheet(targetCollection: name)
         }
         .alert("重命名作品集", isPresented: $isRenaming) {
             TextField("作品集名字", text: $draft)
