@@ -1,8 +1,6 @@
 import ChessfenKit
 import Testing
 
-@testable import Chessfen
-
 /// How long the engine gets over a move it plays for a colour it controls, and what happens when
 /// it holds both of them.
 ///

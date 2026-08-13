@@ -1,7 +1,6 @@
 import ChessfenKit
+import Foundation
 import Testing
-
-@testable import Chessfen
 
 /// What 让引擎走 does, and what filing a game stops the screen asking about. Neither is visible in a
 /// picture — a press is a moment and the screenshots are of states — so they are checked here.

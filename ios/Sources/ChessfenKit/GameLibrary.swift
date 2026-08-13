@@ -18,6 +18,13 @@ import Foundation
         /// rest, because it is a game that exists; it just cannot be opened for a moment.
         public var isDownloading = false
 
+        public init(url: URL, pgn: PGN?, modified: Date, isDownloading: Bool = false) {
+            self.url = url
+            self.pgn = pgn
+            self.modified = modified
+            self.isDownloading = isDownloading
+        }
+
         /// Whether this game came off a picture. Written into the PGN when it was saved, so
         /// it survives a relaunch and reads correctly in the list.
         public var origin: GameOrigin {

@@ -1,8 +1,6 @@
 import ChessfenKit
 import Synchronization
 
-@testable import Chessfen
-
 /// An engine that reports what it was told to report.
 ///
 /// The seam is the search and nothing above it (see `Engine`): a screen driven by this one runs
