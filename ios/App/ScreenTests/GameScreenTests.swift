@@ -173,8 +173,8 @@ struct GameScreenScreenshots {
         #expect(session.unconfirmedSquares.isEmpty, "no rings on a board somebody has kept")
         #expect(!rendered.says("拿不太准"), "and no question about the squares under them")
         #expect(!rendered.says("改棋子"))
-        // Everything else about the screen is unchanged: the engine still advises.
-        #expect(rendered.says("+0.38"))
+        // A record opens in practice, so the engine holds its opinion: no advice, no number.
+        #expect(!rendered.says("+0.38"))
     }
 
     /// The engine on the clock. It is thinking about its own move rather than advising, and the one

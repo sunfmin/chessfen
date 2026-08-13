@@ -65,6 +65,10 @@ public enum ThinkingTime: Hashable, Sendable {
     /// follow, and a move a minute is not something anyone sits in front of either.
     public static let selfPlay = ThinkingTime.fixed(seconds: 3)
 
+    /// What a saved record's engine opponent answers at: one second a move. The record is being
+    /// played through rather than played against, and a brisk answer keeps the person in the game.
+    public static let openedRecord = ThinkingTime.fixed(seconds: 1)
+
     /// The clocks offered on screen, in order. A short list of round numbers, because this is
     /// chosen with a thumb between moves rather than typed into a field.
     public static let offered: [ThinkingTime] = [

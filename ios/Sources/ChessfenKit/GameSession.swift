@@ -198,10 +198,11 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// finished game you already know. 下一步 is the first tap either way.
     ///
     /// The Controllers are not stored in PGN — nothing in the format has anywhere to put them — so
-    /// a reopened game starts with the side about to move in hand and, when there is an engine to
-    /// hand it to, the other side on the engine, and in practice: no arrow, no number, nobody
-    /// whispering an answer. Reading faces the play: the person who opens a record plays its
-    /// first move, and the engine answers it.
+    /// a reopened game starts with the side about to move in hand, the other side on the engine
+    /// answering a second at a time, and in practice: no arrow, no number, nobody whispering an
+    /// answer. Reading faces the play: the person who opens a record plays its first move, and
+    /// the engine answers it — as soon as it has finished loading, if the record got opened
+    /// first.
     ///
     /// Nil — refused, not failed — while the file is still on the way from iCloud. Opening it
     /// would give an empty board wearing the real game's file name, and the autosave after the
@@ -215,10 +216,9 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         guard !entry.isDownloading else { return nil }
         let session = GameSession(entry: entry, library: library)
         session.attach(engine: engine, library: library)
-        if engine != nil {
-            session.setController(.engine, for: session.game.startingSideToMove.opposite)
-            session.setPractising(true)
-        }
+        session.setController(.engine, for: session.game.startingSideToMove.opposite)
+        session.setPractising(true)
+        session.setThinkingTime(.openedRecord)
         return session
     }
 
@@ -269,7 +269,8 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         let game = pgn?.game ?? Game(startFEN: PGN.standardStartFEN)!
         self.init(
             game: game,
-            // The other side is handed to the engine by `opened`, once one is attached.
+            // The other side is handed to the engine by `opened`, which is also where the
+            // record is put into practice.
             controllers: [.white: .hand, .black: .hand],
             // A record opens facing the side about to move: reading begins where the play does.
             orientation: .facing(game.startingSideToMove),

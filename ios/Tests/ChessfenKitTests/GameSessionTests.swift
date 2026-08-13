@@ -95,6 +95,7 @@ func recordOpensWithEngineOpponent() throws {
     #expect(session.controller(for: .white) == .hand)
     #expect(session.controller(for: .black) == .engine)
     #expect(session.isPractising)
+    #expect(session.thinkingTime == .fixed(seconds: 1), "a brisk answer, one second a move")
 
     // Black moves first: the engine waits on White instead.
     let blackFirstGame = try #require(
@@ -111,10 +112,10 @@ func recordOpensWithEngineOpponent() throws {
     #expect(blackFirst.controller(for: .black) == .hand)
     #expect(blackFirst.controller(for: .white) == .engine)
 
-    // Without an engine there is nothing to answer with and nothing to hide: hand and hand,
-    // watching.
-    let handOnly = try #require(GameSession.opened(entry))
-    #expect(handOnly.controller(for: .white) == .hand)
-    #expect(handOnly.controller(for: .black) == .hand)
-    #expect(!handOnly.isPractising)
+    // The default is the record's own state, not something the engine's presence decides: a
+    // record opened before the engine has finished loading answers the moment it has.
+    let beforeEngineArrives = try #require(GameSession.opened(entry))
+    #expect(beforeEngineArrives.controller(for: .white) == .hand)
+    #expect(beforeEngineArrives.controller(for: .black) == .engine)
+    #expect(beforeEngineArrives.isPractising)
 }
