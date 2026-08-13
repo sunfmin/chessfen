@@ -95,17 +95,89 @@ public enum BoardGeometry {
             tops: stride(from: max(0, box.top - slack), to: min(grey.height, box.bottom + 1 + slack), by: coarse),
             width: grey.width,
             height: grey.height
+        ).rect
+        best = settled(integral, around: best, slack: coarse, in: grey)
+        if checkerScore(grey, best) >= minimumCheckerScore { return best }
+
+        // Nothing board-shaped fills the picture — so look for one that does not. Tried second
+        // and only on failure, because it is the more expensive search and because the window
+        // above is the sharper one whenever the board really is what was photographed.
+        let swept = sweep(integral, width: grey.width, height: grey.height)
+        let wide = settled(
+            integral, around: swept,
+            slack: max(coarse, rounded(Double(swept.size) * (sweepRatio - 1))), in: grey
         )
-        best = search(
-            integral,
-            sizes: stride(from: max(smallest, best.size - coarse), through: best.size + coarse, by: fine),
-            lefts: stride(from: max(0, best.left - coarse), through: best.left + coarse, by: fine),
-            tops: stride(from: max(0, best.top - coarse), through: best.top + coarse, by: fine),
-            width: grey.width,
-            height: grey.height
-        )
-        guard checkerScore(grey, best) >= minimumCheckerScore else {
+        guard checkerScore(grey, wide) >= minimumCheckerScore else {
             throw RecognitionError.boardNotFound
+        }
+        return wide
+    }
+
+    /// Walks a rectangle onto its local best, coarse then fine.
+    private static func settled(
+        _ integral: Grid<Double>, around rect: BoardRect, slack: Int, in grey: LumaImage
+    ) -> BoardRect {
+        let (coarse, fine) = searchSteps
+        func around(_ rect: BoardRect, _ reach: Int, _ step: Int) -> BoardRect {
+            search(
+                integral,
+                sizes: stride(
+                    from: max(8 * minimumCell, rect.size - reach), through: rect.size + reach,
+                    by: step
+                ),
+                lefts: stride(from: max(0, rect.left - reach), through: rect.left + reach, by: step),
+                tops: stride(from: max(0, rect.top - reach), through: rect.top + reach, by: step),
+                width: grey.width,
+                height: grey.height
+            ).rect
+        }
+        return around(around(rect, slack, coarse), coarse, fine)
+    }
+
+    /// Smallest board the whole-frame sweep looks for, as a fraction of the picture's shorter
+    /// side. A board smaller than this in a photograph has cells too few pixels across to read
+    /// anyway, so looking for one costs time and buys a reading nobody would trust.
+    static let sweepSmallest = 1.0 / 6
+
+    /// How much a board's side grows between rungs of the sweep's ladder.
+    ///
+    /// This is the number that decides whether the sweep can see a board at all. A side that is
+    /// wrong by ΔS puts the eighth grid line ΔS pixels out of place, so at three percent the
+    /// last line lands within a third of a cell of the truth — blurred, but still scoring far
+    /// above the page around it, and well inside what the pass afterwards walks back.
+    static let sweepRatio = 1.03
+
+    /// The best 8x8 grid anywhere in the picture, at any size.
+    ///
+    /// The window search is tied to the content box, and on a photograph of a page holding a
+    /// diagram, its neighbours, some text and the print showing through from the other side,
+    /// the content box is the whole page. A board taking up half of that is never a size that
+    /// search tries — the board was there and sharp and it was never looked for. This search is
+    /// tied to nothing: a ladder of sizes across the whole frame, each rung strided in
+    /// proportion to its own cell, so a rung costs about the same whatever size it is.
+    private static func sweep(
+        _ integral: Grid<Double>, width: Int, height: Int
+    ) -> BoardRect {
+        let span = min(width, height)
+        var best = BoardRect(left: 0, top: 0, size: 8 * minimumCell)
+        var bestScore = -1.0
+        var size = max(8 * minimumCell, rounded(Double(span) * sweepSmallest))
+        while size <= span {
+            // A third of a cell, which is the same tolerance the ladder's spacing is chosen for.
+            let step = max(1, size / 24)
+            let found = search(
+                integral,
+                sizes: [size],
+                lefts: stride(from: 0, through: width - size, by: step),
+                tops: stride(from: 0, through: height - size, by: step),
+                width: width,
+                height: height
+            )
+            if found.score > bestScore {
+                bestScore = found.score
+                best = found.rect
+            }
+            size = max(size + 1, rounded(Double(size) * sweepRatio))
         }
         return best
     }
@@ -250,7 +322,7 @@ public enum BoardGeometry {
         tops: some Sequence<Int>,
         width: Int,
         height: Int
-    ) -> BoardRect {
+    ) -> (rect: BoardRect, score: Double) {
         let leftCandidates = Array(lefts)
         let topCandidates = Array(tops)
         let sizeCandidates = Array(sizes)
@@ -276,7 +348,7 @@ public enum BoardGeometry {
                 }
             }
         }
-        return best
+        return (best, bestScore)
     }
 
     /// How cleanly the 64 Cell means fall into two alternating groups.

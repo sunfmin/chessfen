@@ -116,3 +116,71 @@ func boardPastedOntoAPageIsFound() throws {
     #expect(abs(result.rect.left - 75) <= 4, "left was \(result.rect.left)")
     #expect(abs(result.rect.top - 129) <= 4, "top was \(result.rect.top)")
 }
+
+/// Paints `patch` onto `page` with its top left corner at `x`, `y`, clipped to the page.
+private func paste(_ patch: RGBImage, onto page: inout [UInt8], width: Int, height: Int, x: Int, y: Int) {
+    for row in 0..<patch.height where y + row >= 0 && y + row < height {
+        for column in 0..<patch.width where x + column >= 0 && x + column < width {
+            let (red, green, blue) = patch.channels(column, row)
+            let base = ((y + row) * width + x + column) * 3
+            page[base] = UInt8(red)
+            page[base + 1] = UInt8(green)
+            page[base + 2] = UInt8(blue)
+        }
+    }
+}
+
+@Test("a diagram on a page of other diagrams and text is found")
+func aDiagramAmongOthersIsFound() throws {
+    // The page from the puzzle book that started this: the diagram to read sits in the middle,
+    // the one above it is cut off by the top of the frame, and there is print all round. The
+    // board is about half the page across.
+    //
+    // What makes it hard is not the neighbours themselves but what they do to the content box:
+    // print in the corners of the page makes that box the whole page, and the window search
+    // only ever tries boards between three quarters and one-and-a-bit times the box. A board
+    // half the page across is not in that window, so before the whole-frame sweep existed this
+    // page came back as "no board in this picture" with the board sitting sharp in the middle
+    // of it.
+    let fen = "r2q2k1/p1p2rpp/3b1p2/2nQ4/4p1PN/PPB1P2P/5P2/R4RK1 w - - 0 1"
+    // The page as the recogniser will hold it — a photograph is scaled to 1200 on its longest
+    // side before anything looks at it, so building it at that size keeps the coordinates
+    // asserted below the same ones the search works in.
+    let width = 900, height = 1200
+    var pixels = [UInt8](repeating: 246, count: width * height * 3)
+
+    let board = try #require(BoardRenderer.image(fen: fen, options: .init(size: 464)))
+    paste(board, onto: &pixels, width: width, height: height, x: 240, y: 300)
+
+    // The diagram above, with all but its last rank off the top of the frame.
+    let neighbour = try #require(
+        BoardRenderer.image(fen: PGN.standardStartFEN, options: .init(size: 464))
+    )
+    paste(neighbour, onto: &pixels, width: width, height: height, x: 240, y: -405)
+
+    // Print: headings, answer lines, and the marks down both margins. This is the part that
+    // matters — it is what stretches the content box to the edges of the page.
+    func ink(x: Range<Int>, y: Range<Int>) {
+        for row in y {
+            for column in x {
+                let base = (row * width + column) * 3
+                pixels[base] = 40
+                pixels[base + 1] = 40
+                pixels[base + 2] = 40
+            }
+        }
+    }
+    for band in [(90, 30), (840, 22), (900, 18), (1035, 18), (1125, 30)] {
+        ink(x: 225..<675, y: band.0..<(band.0 + band.1))
+    }
+    for margin in [37, 832] {
+        ink(x: margin..<(margin + 30), y: 420..<615)
+    }
+
+    let page = RGBImage(width: width, height: height, pixels: pixels)
+    let result = try Recognizer.recognise(page, castling: .none)
+    #expect(result.fen == fen)
+    #expect(abs(result.rect.left - 240) <= 4, "left was \(result.rect.left)")
+    #expect(abs(result.rect.top - 300) <= 4, "top was \(result.rect.top)")
+    #expect(abs(result.rect.size - 464) <= 6, "size was \(result.rect.size)")
+}

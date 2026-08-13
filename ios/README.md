@@ -41,9 +41,10 @@ clone that actually fetched LFS — `ls -l Resources/Nets` should show two files
 ```bash
 cd ios
 swift build
-swift test                                   # ~4 minutes; the engine and photograph
-                                             # tests are the slow ones
-swift test --filter EngineTests               # just the engine
+swift test -c release                        # ~4 seconds of tests after ~15s of compiling
+swift test                                   # the same tests, ~5 minutes: recognition is
+                                             # arithmetic, and -O0 arithmetic is 80x slower
+swift test -c release --filter EngineTests    # just the engine
 ```
 
 `chessfen-cli` is the same code with a shell around it, which is how a doubt gets settled
