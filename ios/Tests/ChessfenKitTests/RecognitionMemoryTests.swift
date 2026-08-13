@@ -140,3 +140,27 @@ func recognitionPeakIsBounded() async throws {
         )
     }
 }
+
+/// The exact photograph the phone was holding when the system killed it, fetched from this
+/// machine's own iCloud copy. The strongest check there is: the input that died before the
+/// fix must be read, bounded, by the pipeline after it.
+@Test("the photograph that killed the phone is read within a bounded footprint")
+func thePhonePhotoThatKilledTheAppIsBounded() async throws {
+    let url = URL(
+        filePath:
+            "/Users/sunfmin/Library/Mobile Documents/iCloud~com~sunfmin~chessfen/Documents/chessfen-photo-2026-08-13-080920.png"
+    )
+    let photo = try #require(RGBImage(contentsOf: url))
+    let baseline = footprint()
+    let peak = await peakFootprint {
+        _ = try? await Recognizer.recognise(photograph: photo)
+    }
+    print(
+        "[MEM] phone photo \(photo.width)x\(photo.height): "
+            + "baseline \(baseline / 1_048_576) MB, peak \(peak / 1_048_576) MB"
+    )
+    #expect(
+        peak - baseline < 1024 * 1_048_576,
+        "footprint spiked by \((peak - baseline) / 1_048_576) MB on the phone's own photograph"
+    )
+}
