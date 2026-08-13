@@ -625,13 +625,19 @@ struct GameScreen: View {
     }
 
     /// Everything the summary line says, in the order it says it.
+    ///
+    /// The engine's clock is in it whenever the engine is holding a Controller, because that is
+    /// when it decides something — how long the next move takes — and the chips that set it are
+    /// folded away for most of a game.
     private var setupSummary: String {
-        [
+        var said = [
             "白方 \(session.controller(for: .white).chinese)",
             "黑方 \(session.controller(for: .black).chinese)",
-            session.orientation == .whiteAtBottom ? "白在下" : "黑在下",
-            session.isPractising ? "自己练" : "看引擎",
-        ].joined(separator: " · ")
+        ]
+        if session.isEnginePlaying { said.append(session.thinkingTime.chineseSummary) }
+        said.append(session.orientation == .whiteAtBottom ? "白在下" : "黑在下")
+        said.append(session.isPractising ? "自己练" : "看引擎")
+        return said.joined(separator: " · ")
     }
 
     private var setupChips: some View {
@@ -653,6 +659,44 @@ struct GameScreen: View {
                     }
                     if colour == .white { Spacer(minLength: 2) }
                 }
+            }
+
+            // How long the engine gets over a move it plays for itself, and only while it is
+            // holding a Controller — on a game two hands are playing there is nothing on this
+            // clock. It is the only dial in the app: the engine is never handicapped, so time is
+            // the whole of how hard it is playing (docs/adr/0009).
+            //
+            // 跟着我 is Mirrored Time, and it stands down when the engine is playing itself:
+            // there is no player's last move to mirror, so the game names a clock instead.
+            if session.isEnginePlaying {
+                HStack(spacing: 10) {
+                    ChipCluster(
+                        title: "每步",
+                        options: ThinkingTime.offered.map {
+                            .init(
+                                value: $0, label: $0.chinese,
+                                isEnabled: $0 != .mirrored || !session.isSelfPlaying
+                            )
+                        },
+                        selection: session.thinkingTime
+                    ) { time in
+                        session.setThinkingTime(time)
+                    }
+                    Spacer(minLength: 2)
+                }
+            }
+
+            // What a game with nobody on the clock does, and how to stop it — which is the one
+            // thing about self-play that is not on the screen already. Stepping back is a stop
+            // because the engine only plays from the latest position, so browsing is where a
+            // machine game is paused and 回到最新 is where it carries on.
+            if session.isSelfPlaying {
+                // One line's worth, because it sits between two rows of chips and a caption that
+                // wraps there is a paragraph in the middle of a control panel.
+                Text("双方都是引擎，程序自己走下去；翻回上一步就停")
+                    .font(.caption2)
+                    .foregroundStyle(Palette.inkSoft)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             // Whether the engine talks, and which way up the board is. Those two say what the

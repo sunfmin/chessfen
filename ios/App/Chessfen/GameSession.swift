@@ -78,6 +78,12 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
     private(set) var isPractising = false
 
     private var controllers: [PieceColour: Controller]
+    /// The clock somebody has put the engine on, if anybody has. Nil means the game decides —
+    /// see `thinkingTime`, which is the one to read.
+    ///
+    /// Not stored, like the Controllers it goes with: PGN has nowhere to put it, and it is a way
+    /// of playing rather than something about the game.
+    private var chosenThinkingTime: ThinkingTime?
     private var tags: [PGN.Tag]
     private var searchTask: Task<Void, Never>?
 
@@ -165,6 +171,44 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
         controllers[colour] = controller
         // Changing who moves for the side already on the clock has to take effect now, not
         // next move — that is what the switch is for.
+        retune()
+    }
+
+    /// Whether the engine is holding either Controller, which is when its clock is worth showing.
+    var isEnginePlaying: Bool {
+        controller(for: .white) == .engine || controller(for: .black) == .engine
+    }
+
+    /// Both Controllers on the engine: the app playing itself, with nobody on the clock.
+    var isSelfPlaying: Bool {
+        controller(for: .white) == .engine && controller(for: .black) == .engine
+    }
+
+    /// How long the engine gets over a move it plays for a colour it controls.
+    ///
+    /// What somebody chose, or what the game calls for if nobody has: Mirrored Time against a
+    /// person, three seconds a move when the engine is playing itself.
+    ///
+    /// Self-play also overrules a standing choice of Mirrored Time, which is the one setting the
+    /// game is allowed to refuse. It is not a preference there so much as a question with no
+    /// answer — there is no player's last move to mirror — and a clock that quietly meant one
+    /// second for ever is worse than the app saying which clock it is actually using.
+    var thinkingTime: ThinkingTime {
+        guard let chosenThinkingTime else { return isSelfPlaying ? .selfPlay : .mirrored }
+        if chosenThinkingTime == .mirrored, isSelfPlaying { return .selfPlay }
+        return chosenThinkingTime
+    }
+
+    /// Puts the engine on a different clock, mid-move if that is when it is said.
+    ///
+    /// Now rather than next move, for the same reason changing a Controller is: a search that
+    /// carried on under the old clock would make the control a promise about the move after this
+    /// one, and the move being waited for is the one anybody reaches for this because of. The
+    /// running search starts again on the new clock rather than being trimmed to it — the time
+    /// asked for is the time it gets.
+    func setThinkingTime(_ time: ThinkingTime) {
+        guard thinkingTime != time else { return }
+        chosenThinkingTime = time
         retune()
     }
 
@@ -490,7 +534,10 @@ enum GameOrigin: String, Hashable, Sendable, Codable {
 
         if isEngineTurn {
             isThinking = true
-            let budget = MirroredTime.budget(mirroring: lastHumanThink)
+            // Mirrored Time is only the default, and only against a person: with both Controllers
+            // on the engine there is no last human move to mirror, and there is a named clock
+            // instead (`thinkingTime`).
+            let budget = thinkingTime.budget(mirroring: lastHumanThink)
             searchTask = Task { [weak self] in
                 var last: Analysis?
                 for await snapshot in engine.analyse(position, budget: budget) {

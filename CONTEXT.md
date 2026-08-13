@@ -144,10 +144,19 @@ engine gets: the same bargain as Mirrored Time, with a thumb in place of the clo
 on screen.
 _Avoid_: hint, auto-move, assist, take over
 
+**Thinking Time**:
+How long the engine gets over a move it plays for a colour it controls. Mirrored Time, or
+a named number of seconds every move. It is the only dial in the app — the engine is never
+handicapped, so how long it is left alone is the whole of how well it plays — and it is
+offered whenever the engine holds a Controller. Says nothing about the other two things
+the engine does: advice is unbounded, and an Asked Move takes as long as the button is held.
+_Avoid_: difficulty, level, skill, strength, Elo, time control, move time limit
+
 **Mirrored Time**:
-How long the engine thinks before moving a colour it controls: about as long as the
-player took over their own last move. The engine is never handicapped — it plays at full
-strength, and the only thing that shapes how well it plays is how long it is left alone.
+The Thinking Time that follows the player: about as long as they took over their own last
+move, which is the courtesy a human opponent extends. The default against a person, and no
+answer at all when the engine holds both Controllers — there is no last human move to
+mirror, so a game the app plays against itself names a clock instead (three seconds a move).
 _Avoid_: difficulty, level, skill, strength, Elo, time control
 
 **Rules Query**:

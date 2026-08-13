@@ -20,11 +20,18 @@ final class ScriptedEngine: Engine {
     /// The searches still running, so that `stop` can wind them up the way the real engine does —
     /// which is what letting go of 让引擎走 does.
     private let running = Mutex<[AsyncStream<Analysis>.Continuation]>([])
-    /// How many searches have been asked for. The real engine answers a second request by throwing
-    /// the first one away, which looks the same from a screen and not at all the same from a phone.
-    private let searches = Mutex(0)
+    /// Every search that has been asked for, and the clock it was given.
+    ///
+    /// How many there have been matters because the real engine answers a second request by
+    /// throwing the first one away, which looks the same from a screen and not at all the same
+    /// from a phone. What each was given matters because time is the only dial the app has: a
+    /// budget is the whole of how hard the engine was asked to play (docs/adr/0009).
+    private let asked = Mutex<[EngineService.Budget]>([])
 
-    var searchCount: Int { searches.withLock { $0 } }
+    /// Every search asked for so far, in order, each with the clock it was given.
+    var budgets: [EngineService.Budget] { asked.withLock { $0 } }
+
+    var searchCount: Int { budgets.count }
 
     init(_ snapshots: [Analysis], isEndless: Bool = false) {
         self.snapshots = snapshots
@@ -48,7 +55,7 @@ final class ScriptedEngine: Engine {
     }
 
     func analyse(_ game: Game, budget: EngineService.Budget) -> AsyncStream<Analysis> {
-        searches.withLock { $0 += 1 }
+        asked.withLock { $0.append(budget) }
         return AsyncStream { continuation in
             for snapshot in snapshots { continuation.yield(snapshot) }
             if isEndless {

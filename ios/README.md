@@ -93,10 +93,11 @@ xcodebuild test -project Chessfen.xcodeproj -scheme Chessfen \
 open out/game-in-play.png
 ```
 
-Nine pictures land in `ios/App/out`: a game under way, a board straight off a photograph, one
-filed into a collection, a reopened game, the engine on its own clock, a Variation offered
-where it branches, a mate, practice, and the whole screen at night. They are not in the
-repository — they are written to be looked at, and they are rewritten by every run.
+Ten pictures land in `ios/App/out`: a game under way, a board straight off a photograph, one
+filed into a collection, a reopened game, the engine on its own clock, the app playing itself,
+a Variation offered where it branches, a mate, practice, and the whole screen at night. They
+are not in the repository — they are written to be looked at, and they are rewritten by every
+run.
 
 The only thing faked is the search. `Engine` is a protocol the app's `EngineService` conforms
 to, so a test can hand a screen a scripted `Analysis` and everything above the search — the
@@ -134,7 +135,10 @@ search is unbounded, so what it recommends keeps changing as it deepens — that
 display of what an engine is doing, not a bug
 ([ADR 0009](../docs/adr/0009-one-engine-unbounded-analysis-mirrored-opponent-time.md)). When
 the engine is playing, it takes about as long as the player just took, and 马上走 cuts that
-short without changing which move it picks.
+short without changing which move it picks. Put both sides on the engine and it plays itself,
+three seconds a move — there is no player's clock to mirror then, so the clock is named, and
+每步 changes it mid-game for either kind of opponent. Time is the only dial: no skill level,
+no Elo.
 
 **Games are PGN files.** One per game, in Documents, with the photograph a recognised game came
 from kept beside it ([ADR 0010](../docs/adr/0010-pgn-files-are-the-storage-format.md)). There is

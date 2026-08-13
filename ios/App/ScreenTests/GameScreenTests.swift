@@ -92,7 +92,7 @@ struct GameScreenScreenshots {
         #expect(rendered.says("下一步"))
         #expect(rendered.says("让引擎走"), "one move from the engine, for whoever is on the clock")
         // Who plays each side, said in words while the game is under way.
-        #expect(rendered.says("白方 手动 · 黑方 引擎 · 白在下 · 看引擎"))
+        #expect(rendered.says("白方 手动 · 黑方 引擎 · 每步跟着我 · 白在下 · 看引擎"))
         #expect(
             !rendered.says("白先走"),
             "the setup chips should be folded away once there are moves"
@@ -194,11 +194,37 @@ struct GameScreenScreenshots {
         #expect(session.isThinking, "the engine's own turn starts the moment the screen appears")
         #expect(rendered.says("马上走"))
         #expect(rendered.says("+0.38"))
-        #expect(rendered.says("白方 引擎 · 黑方 手动 · 白在下 · 看引擎"))
+        #expect(rendered.says("白方 引擎 · 黑方 手动 · 每步跟着我 · 白在下 · 看引擎"))
         #expect(
             !session.canPlayBestMove,
             "and 让引擎走 stands down while the engine is already walking this one"
         )
+    }
+
+    /// Both Controllers on the engine: the app playing itself. There is no player's last move to
+    /// mirror, so the screen has to name the clock it is on — and say how to stop it.
+    @Test("with both sides on the engine the screen names the clock and says how to stop")
+    func selfPlay() async throws {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN))
+        let session = GameSession(
+            game: game,
+            controllers: [.white: .engine, .black: .engine],
+            origin: .fresh
+        )
+
+        let rendered = await ScreenImage.write("game-self-play") {
+            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
+        }
+
+        #expect(session.thinkingTime == .fixed(seconds: 3), "three seconds a move until told else")
+        #expect(rendered.says("白方 引擎 · 黑方 引擎 · 每步 3 秒 · 白在下 · 看引擎"))
+        // The clock, on chips, with the mirror standing down for want of anybody to mirror.
+        #expect(rendered.says("每步"))
+        #expect(rendered.says("3 秒"))
+        #expect(rendered.says("10 秒"))
+        #expect(rendered.says("跟着我"))
+        #expect(rendered.says("程序自己走下去；翻回上一步就停"), "what a game with nobody in it does")
+        #expect(rendered.says("马上走"), "with the way to stop waiting for the move on the clock")
     }
 
     /// The same game at night. Every colour on this screen has a dark half that nothing else looks

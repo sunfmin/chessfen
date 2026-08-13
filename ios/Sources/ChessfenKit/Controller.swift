@@ -41,6 +41,46 @@ public enum MirroredTime {
     }
 }
 
+/// How long the engine thinks over a move it plays for a colour it controls.
+///
+/// Time is the only dial in this app — the engine is never handicapped, so how long it is left
+/// alone is the whole of how well it plays (docs/adr/0009) — and this is that dial. Two kinds of
+/// answer, and which one is right depends on who is on the other side of the board.
+///
+/// It says nothing about the other two things the engine does. Advice is unbounded, because it is
+/// deepening under a player who is thinking; an Asked Move takes as long as the button is held.
+/// This is only for a move the engine plays because it is holding a Controller.
+public enum ThinkingTime: Hashable, Sendable {
+    /// About as long as the player took over their own last move: Mirrored Time, the courtesy a
+    /// human opponent extends. It needs a human to extend it to.
+    case mirrored
+    /// The same number of seconds every move, whoever is on the other side.
+    case fixed(seconds: Int)
+
+    /// What the engine plays itself at when nobody has said otherwise.
+    ///
+    /// Both Controllers on the engine leaves no last human move to mirror, so a clock has to be
+    /// named rather than derived. Three seconds, because a game the engine plays against itself is
+    /// watched rather than played: a move every half second is a wall of notation nobody can
+    /// follow, and a move a minute is not something anyone sits in front of either.
+    public static let selfPlay = ThinkingTime.fixed(seconds: 3)
+
+    /// The clocks offered on screen, in order. A short list of round numbers, because this is
+    /// chosen with a thumb between moves rather than typed into a field.
+    public static let offered: [ThinkingTime] = [
+        .mirrored, .fixed(seconds: 1), .fixed(seconds: 3), .fixed(seconds: 10),
+        .fixed(seconds: 30),
+    ]
+
+    /// What to give the engine, given how long the player took over their own last move.
+    public func budget(mirroring played: Duration?) -> EngineService.Budget {
+        switch self {
+        case .mirrored: MirroredTime.budget(mirroring: played)
+        case .fixed(let seconds): .time(.seconds(seconds))
+        }
+    }
+}
+
 /// What a Review has to say about one move, by how much worse the position got.
 ///
 /// Named from the mover's point of view: a Score is White-relative, so Black losing 200

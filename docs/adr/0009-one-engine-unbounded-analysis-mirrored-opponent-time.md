@@ -13,9 +13,10 @@ visibly change as depth climbs. Reproducibility is explicitly given up.
 Each colour has a **Controller** — the player's hands or the engine — switchable at any
 point in a Game, so hand-moving both sides, playing one, swapping, and engine-versus-engine
 all fall out of the same model. When the engine controls a colour it plays at **full
-strength**, limited only by **Mirrored Time**: about as long as the player took over their
-last move. No `UCI_LimitStrength`, no `UCI_Elo`, no `Skill Level` — there is no difficulty
-setting in this app.
+strength**, limited only by **Thinking Time**: by default **Mirrored Time**, about as long
+as the player took over their last move — and, when there is no player to mirror or somebody
+would rather name a number, a fixed number of seconds a move. No `UCI_LimitStrength`, no
+`UCI_Elo`, no `Skill Level` — there is no difficulty setting in this app, only a clock.
 
 ## Consequences
 
@@ -29,10 +30,23 @@ setting in this app.
 - A Review needs one uniform Depth across every move to make Scores comparable; during a
   game the per-move scores are whatever depth happened to be reached, so they are drawn
   as provisional (hollow, depth-labelled) and never fed into the Review's curve.
-- Mirrored Time is clamped to `[0.3s, 60s]` by default so a phone is not pinned at full
-  load while the player is away from it; the ceiling is a setting and can be removed.
-- With both Controllers set to the engine there is no human move to mirror, so the last
-  mirrored duration carries over (3s until one exists).
+- Mirrored Time is clamped to `[0.4s, 30s]` so a phone is not pinned at full load while the
+  player is away from it, and so a move tapped out as a reflex is not answered in 100 ms.
+- With both Controllers on the engine there is no human move to mirror, so Mirrored Time is
+  not an answer there and a clock is **named** instead: **three seconds a move**. Long
+  enough that a machine game can be followed as it is played, short enough to sit in front
+  of. The choice between the mirror and a named clock is offered whenever the engine holds
+  either Controller, because time is the only dial this app has — somebody asking for a
+  stronger opponent is asking for a longer clock, and there is nothing else to give them.
+  It is a way of playing rather than a fact about the game, so like the Controllers it is
+  not written to PGN and a reopened game starts on the default.
+- Changing the clock takes effect on the move being thought about now, not the next one:
+  the running search is started again on the new clock rather than trimmed to it. The move
+  being waited for is the one anybody reaches for the control because of.
+- The engine only plays from the **latest** position, so browsing back is where a
+  self-playing game pauses and 回到最新 is where it carries on. That falls out of the model
+  rather than being a stop button, and it is the answer to "how do I stop it" along with
+  putting a colour back on a hand.
 - Search must stop when the app leaves the foreground, and the gate that enforces it sits in
   the engine rather than in the screens — a screen can forget, and one that did would leave a
   phone thinking in a pocket. What a search wanting to start while the app is away does depends

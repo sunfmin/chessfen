@@ -63,6 +63,24 @@ extension Controller {
     var chinese: String { self == .hand ? "手动" : "引擎" }
 }
 
+extension ThinkingTime {
+    /// On a chip, under a row whose title already says what the number is about.
+    var chinese: String {
+        switch self {
+        case .mirrored: "跟着我"
+        case .fixed(let seconds): "\(seconds) 秒"
+        }
+    }
+
+    /// In the line that states the whole setup, where it has to stand on its own.
+    var chineseSummary: String {
+        switch self {
+        case .mirrored: "每步跟着我"
+        case .fixed(let seconds): "每步 \(seconds) 秒"
+        }
+    }
+}
+
 extension Game {
     /// How the game stands, in one line.
     var chineseStanding: String {

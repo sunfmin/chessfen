@@ -126,6 +126,20 @@ func mirroredTimeIsBounded() {
     #expect(MirroredTime.budget(mirroring: .seconds(600)) == .time(MirroredTime.longest))
 }
 
+@Test("a named clock is the same every move, and ignores what the player took")
+func aFixedThinkingTimeIgnoresTheMirror() {
+    let three = ThinkingTime.fixed(seconds: 3)
+    #expect(three.budget(mirroring: nil) == .time(.seconds(3)))
+    #expect(three.budget(mirroring: .seconds(40)) == .time(.seconds(3)))
+    // And the mirror is still the mirror, bounds and all, when that is what was chosen.
+    #expect(ThinkingTime.mirrored.budget(mirroring: .seconds(4)) == .time(.seconds(4)))
+    #expect(ThinkingTime.mirrored.budget(mirroring: nil) == .time(MirroredTime.opening))
+    // What the engine plays itself at, and it is one of the clocks that can be picked.
+    #expect(ThinkingTime.selfPlay == .fixed(seconds: 3))
+    #expect(ThinkingTime.offered.contains(.selfPlay))
+    #expect(ThinkingTime.offered.first == .mirrored)
+}
+
 @Test("a move is graded from the point of view of whoever played it")
 func moveQualityIsRelativeToTheMover() {
     // White's score fell by two pawns: White's mistake.
