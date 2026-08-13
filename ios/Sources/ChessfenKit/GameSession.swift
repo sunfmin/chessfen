@@ -257,12 +257,15 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         return next
     }
 
-    /// Reopens a saved game, at the position it began in.
+    /// Reopens a saved game, at the position it began in, facing the side about to move.
     private convenience init(entry: GameLibrary.Entry, library: GameLibrary? = nil) {
         let pgn = entry.pgn
+        let game = pgn?.game ?? Game(startFEN: PGN.standardStartFEN)!
         self.init(
-            game: pgn?.game ?? Game(startFEN: PGN.standardStartFEN)!,
+            game: game,
             controllers: [.white: .hand, .black: .hand],
+            // A record opens facing the side about to move: reading begins where the play does.
+            orientation: game.startingSideToMove == .white ? .whiteAtBottom : .blackAtBottom,
             origin: entry.origin,
             picture: entry.origin == .recognised ? library?.picture(for: entry.url) : nil,
             url: entry.url,
