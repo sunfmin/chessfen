@@ -4,6 +4,21 @@ import Testing
 
 /// What a saved record opens facing: the side about to move, whoever that is.
 
+/// An engine that says nothing. Enough for `opened` to hand the other side over to one.
+private final class SilentEngine: Engine, @unchecked Sendable {
+    var isPaused = false
+    func analyse(_ game: Game, budget: SearchBudget) -> AsyncStream<Analysis> {
+        AsyncStream { _ in }
+    }
+    func pause() {}
+    func resume() {}
+    func clear() async {}
+    func evaluate(_ game: Game, budget: SearchBudget) async -> Score? { nil }
+    func review(
+        _ game: Game, depth: Int, onPly: (@Sendable (Int, Score?) -> Void)?
+    ) async -> [Score?] { [] }
+}
+
 @MainActor @Test("a saved record opens facing the side to move")
 func savedRecordFacesSideToMove() throws {
     // Black to move at the start: the board must turn around for it.
@@ -25,4 +40,78 @@ func savedRecordFacesSideToMove() throws {
         modified: Date(timeIntervalSince1970: 1_786_000_100)
     )
     #expect(try #require(GameSession.opened(standardEntry)).orientation == .whiteAtBottom)
+}
+
+@MainActor @Test("上一局 and 下一局 face the game they open, not the one before")
+func seriesNavigationFacesEachRecord() throws {
+    let standard = try #require(Game(startFEN: PGN.standardStartFEN))
+    let whiteFirst = GameLibrary.Entry(
+        url: URL(filePath: "/games/chessfen-white-first.pgn"),
+        pgn: PGN(game: standard, tags: []),
+        modified: Date(timeIntervalSince1970: 1_786_000_200)
+    )
+    let blackFirst = GameLibrary.Entry(
+        url: URL(filePath: "/games/chessfen-black-first.pgn"),
+        pgn: PGN(
+            game: try #require(Game(startFEN: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1")),
+            tags: []
+        ),
+        modified: Date(timeIntervalSince1970: 1_786_000_300)
+    )
+
+    let session = try #require(GameSession.opened(whiteFirst))
+    #expect(session.orientation == .whiteAtBottom)
+    // A turn around the board is a fact about the game being opened, not a way of working
+    // that carries over from the one before.
+    #expect(try #require(session.next(blackFirst)).orientation == .blackAtBottom)
+    #expect(try #require(session.next(whiteFirst)).orientation == .whiteAtBottom)
+}
+
+@MainActor @Test("handing the first move over turns the board round with it")
+func restartTurnsTheBoard() throws {
+    let standard = try #require(Game(startFEN: PGN.standardStartFEN))
+    let session = GameSession.fresh(standard)
+
+    #expect(session.canStart(withSideToMove: .black))
+    session.restart(withSideToMove: .black)
+    #expect(session.startingSideToMove == .black)
+    #expect(session.orientation == .blackAtBottom)
+
+    session.restart(withSideToMove: .white)
+    #expect(session.orientation == .whiteAtBottom)
+}
+
+@MainActor @Test("a record opens with the side to move in hand and the engine answering")
+func recordOpensWithEngineOpponent() throws {
+    let standard = try #require(Game(startFEN: PGN.standardStartFEN))
+    let entry = GameLibrary.Entry(
+        url: URL(filePath: "/games/chessfen-engine-opponent.pgn"),
+        pgn: PGN(game: standard, tags: []),
+        modified: Date(timeIntervalSince1970: 1_786_000_400)
+    )
+
+    // White moves first: the person's side, with the engine on the answer.
+    let session = try #require(GameSession.opened(entry, engine: SilentEngine()))
+    #expect(session.controller(for: .white) == .hand)
+    #expect(session.controller(for: .black) == .engine)
+
+    // Black moves first: the engine waits on White instead.
+    let blackFirstGame = try #require(
+        Game(startFEN: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1")
+    )
+    let blackFirst = try #require(GameSession.opened(
+        GameLibrary.Entry(
+            url: URL(filePath: "/games/chessfen-engine-opponent-black.pgn"),
+            pgn: PGN(game: blackFirstGame, tags: []),
+            modified: Date(timeIntervalSince1970: 1_786_000_500)
+        ),
+        engine: SilentEngine()
+    ))
+    #expect(blackFirst.controller(for: .black) == .hand)
+    #expect(blackFirst.controller(for: .white) == .engine)
+
+    // Without an engine there is nothing to answer with: both sides stay in hand.
+    let handOnly = try #require(GameSession.opened(entry))
+    #expect(handOnly.controller(for: .white) == .hand)
+    #expect(handOnly.controller(for: .black) == .hand)
 }

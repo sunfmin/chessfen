@@ -198,8 +198,10 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// finished game you already know. 下一步 is the first tap either way.
     ///
     /// The Controllers are not stored in PGN — nothing in the format has anywhere to put them — so
-    /// a reopened game starts with both sides by hand, which is the reading that cannot surprise
-    /// anyone by moving on its own.
+    /// a reopened game starts with the side about to move in hand and, when there is an engine to
+    /// hand it to, the other side on the engine. Reading faces the play: the person who opens a
+    /// record plays its first move and the engine answers it, so the game never starts moving on
+    /// its own and the arrow is already there for the first move.
     ///
     /// Nil — refused, not failed — while the file is still on the way from iCloud. Opening it
     /// would give an empty board wearing the real game's file name, and the autosave after the
@@ -213,6 +215,9 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         guard !entry.isDownloading else { return nil }
         let session = GameSession(entry: entry, library: library)
         session.attach(engine: engine, library: library)
+        if engine != nil {
+            session.setController(.engine, for: session.game.startingSideToMove.opposite)
+        }
         return session
     }
 
@@ -241,14 +246,14 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         return session
     }
 
-    /// The next saved game in a collection, opened the way this one is being worked: which way up
-    /// the board is, whether the engine is advising, who plays each side, and the clock somebody
-    /// put the engine on. Those are ways of working rather than facts about a game, and having to
-    /// set them again for every position is exactly the friction that makes a set of fifty not get
-    /// done. Nil while the next file is still on the way (see `opened`).
+    /// The next saved game in a collection, opened the way this one is being worked: whether the
+    /// engine is advising, who plays each side, and the clock somebody put the engine on. Those
+    /// are ways of working rather than facts about a game, and having to set them again for every
+    /// position is exactly the friction that makes a set of fifty not get done. Which way up the
+    /// board is is a fact about the game being opened, though — each record faces its own side to
+    /// move, not the last one's. Nil while the next file is still on the way (see `opened`).
     public func next(_ entry: GameLibrary.Entry) -> GameSession? {
         guard let next = Self.opened(entry, engine: engine, library: library) else { return nil }
-        next.orientation = orientation
         next.setPractising(isPractising)
         for colour in [PieceColour.white, .black] {
             next.setController(controller(for: colour), for: colour)
@@ -263,9 +268,10 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         let game = pgn?.game ?? Game(startFEN: PGN.standardStartFEN)!
         self.init(
             game: game,
+            // The other side is handed to the engine by `opened`, once one is attached.
             controllers: [.white: .hand, .black: .hand],
             // A record opens facing the side about to move: reading begins where the play does.
-            orientation: game.startingSideToMove == .white ? .whiteAtBottom : .blackAtBottom,
+            orientation: .facing(game.startingSideToMove),
             origin: entry.origin,
             picture: entry.origin == .recognised ? library?.picture(for: entry.url) : nil,
             url: entry.url,
@@ -650,6 +656,8 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         if !game.plies.isEmpty { url = nil }
         game = fresh
         cursor = 0
+        // The move has been handed to `colour`; the board turns so they face the person playing.
+        orientation = .facing(colour)
         analysis = nil
         isThinking = false
         lastHumanThink = nil
