@@ -24,7 +24,7 @@ struct LibraryScreen: View {
     @State private var isAboutShowing = false
     @State private var photoItem: PhotosPickerItem?
     @State private var isRecognising = false
-    @State private var failure: String?
+    @State private var failure: (title: String, message: String)?
     /// The collection being renamed, and the name being typed for it.
     @State private var renamingCollection: String?
     @State private var collectionDraft = ""
@@ -86,13 +86,12 @@ struct LibraryScreen: View {
         .fullScreenCover(isPresented: $isCameraOpen) {
             BoardCameraScreen { picked in
                 guard let image = BoardImageLoader.image(from: picked) else {
-                    failure = "这张照片打不开。"
+                    failure = BoardIntake.Intake.unreadableAlert
                     return
                 }
-                // Kept before recognition rather than after: a picture the app dies reading
-                // must still exist, or the crash takes the evidence with it.
-                library.keepPhotograph(image)
-                recognise(image)
+                // The camera's is the only copy of this picture; the other ways in have
+                // their original elsewhere already.
+                recognise(.image(image), keepingPhotograph: true)
             }
             .ignoresSafeArea()
         }
@@ -101,13 +100,11 @@ struct LibraryScreen: View {
             guard let item else { return }
             photoItem = nil
             Task {
-                guard let data = try? await item.loadTransferable(type: Data.self),
-                    let image = BoardImageLoader.image(from: data)
-                else {
-                    failure = "这张图片打不开。"
+                guard let data = try? await item.loadTransferable(type: Data.self) else {
+                    failure = BoardIntake.Intake.unreadableAlert
                     return
                 }
-                recognise(image)
+                recognise(.data(data))
             }
         }
         .fileImporter(
@@ -117,20 +114,19 @@ struct LibraryScreen: View {
         ) { result in
             switch result {
             case .success(let urls):
-                guard let url = urls.first, let image = BoardImageLoader.image(fromFileAt: url)
-                else {
-                    failure = "这个文件打不开。"
+                guard let url = urls.first else {
+                    failure = BoardIntake.Intake.unreadableAlert
                     return
                 }
-                recognise(image)
+                recognise(.file(url))
             case .failure(let error):
-                failure = error.localizedDescription
+                failure = ("没能拿到图片", error.localizedDescription)
             }
         }
-        .alert("没认出棋盘", isPresented: .constant(failure != nil)) {
+        .alert(failure?.title ?? "", isPresented: .constant(failure != nil)) {
             Button("好") { failure = nil }
         } message: {
-            Text(failure ?? "")
+            Text(failure?.message ?? "")
         }
         .alert("重命名作品集", isPresented: .constant(renamingCollection != nil)) {
             TextField("作品集名字", text: $collectionDraft)
@@ -350,64 +346,53 @@ struct LibraryScreen: View {
 
     private func paste() {
         guard let image = BoardImageLoader.fromClipboard() else {
-            failure = "剪贴板里没有图片。截个图再回来试试。"
+            failure = ("剪贴板里没有图片", "截个图再回来试试。")
             return
         }
-        recognise(image)
+        recognise(.image(image))
     }
 
     /// Reads the picture and goes straight to the game (docs/adr/0011). The squares recognition
     /// was unsure of stay ringed on the board there, and 改棋子 is one tap away — so the common
     /// case costs no taps at all and the rare one costs one.
-    private func recognise(_ image: RGBImage) {
+    private func recognise(_ source: BoardIntake.Source, keepingPhotograph: Bool = false) {
         isRecognising = true
         Task {
-            let recognition = await Task.detached(priority: .userInitiated) {
-                try? await Recognizer.recognise(photograph: image)
-            }.value
+            let intake: BoardIntake.Intake
+            if keepingPhotograph {
+                intake = await BoardIntake.read(source, keepingPhotograph: { image in
+                    library.keepPhotograph(image)
+                })
+            } else {
+                intake = await BoardIntake.read(source)
+            }
             isRecognising = false
 
-            // No board in the picture at all — the only thing this message is true about.
-            guard let recognition, let draft = PositionDraft(fen: recognition.fen) else {
-                failure = "这张图里没找到棋盘。把棋盘拍满一点，或者换个正面的角度。"
-                return
-            }
-            let shaky = Set(recognition.shaky.map(\.square))
-            // The board, cut out of the picture and nothing else. Kept this way rather than as the
-            // whole frame because it is the form the editor can lay under the board square for
-            // square, and because it needs no rect carried alongside it to be usable — the crop is
-            // the alignment, so it survives being written to disk and read back after a relaunch.
-            let picture = recognition.boardPicture
-
-            // A legal reading opens as a game, which is the whole point of 0011. An illegal one
-            // is *not* a failed recognition: the board was found and read with a mistake in it,
-            // most often a king read as something else, and one square is all that stands between
-            // it and a playable position. That is what the editor and the ringed Shaky Squares
-            // are for, so it opens there — rather than being thrown away behind a message
-            // blaming the photograph, which is what it used to do.
-            guard let game = Game(startFEN: recognition.fen) else {
+            switch intake {
+            case .played(let game, let shaky, let orientation, let picture):
+                let session = GameSession.recognised(
+                    game,
+                    orientation: orientation,
+                    picture: picture,
+                    shaky: shaky,
+                    engine: engine.service,
+                    library: library
+                )
+                path.append(.game(session))
+            case .needsEditing(let draft, let shaky, let orientation, let picture):
                 path.append(
                     .confirm(
                         PositionProposal(
                             draft: draft,
                             shaky: shaky,
-                            orientation: recognition.orientation,
+                            orientation: orientation,
                             picture: picture
                         )
                     )
                 )
-                return
+            case .noBoard, .unreadable:
+                failure = intake.alert
             }
-
-            let session = GameSession.recognised(
-                game,
-                orientation: recognition.orientation,
-                picture: picture,
-                shaky: shaky,
-                engine: engine.service,
-                library: library
-            )
-            path.append(.game(session))
         }
     }
 

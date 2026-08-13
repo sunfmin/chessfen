@@ -75,7 +75,10 @@ case "recognize", "recognise":
     guard arguments.count >= 2 else {
         fail("usage: chessfen-cli recognise <image> [--straight]")
     }
-    guard let image = RGBImage(contentsOf: URL(filePath: arguments[1])) else {
+    // Decoded the way the app decodes it: down to a thumbnail, with the photograph's EXIF
+    // rotation baked in. A reading made of the full-size, sideways original would bear no
+    // relation to what the app sees.
+    guard let image = BoardIntake.decode(.file(URL(filePath: arguments[1]))) else {
         fail("could not read \(arguments[1])")
     }
     // The photograph door by default, because that is the one the app uses. `--straight`
