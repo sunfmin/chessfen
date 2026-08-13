@@ -199,9 +199,9 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     ///
     /// The Controllers are not stored in PGN — nothing in the format has anywhere to put them — so
     /// a reopened game starts with the side about to move in hand and, when there is an engine to
-    /// hand it to, the other side on the engine. Reading faces the play: the person who opens a
-    /// record plays its first move and the engine answers it, so the game never starts moving on
-    /// its own and the arrow is already there for the first move.
+    /// hand it to, the other side on the engine, and in practice: no arrow, no number, nobody
+    /// whispering an answer. Reading faces the play: the person who opens a record plays its
+    /// first move, and the engine answers it.
     ///
     /// Nil — refused, not failed — while the file is still on the way from iCloud. Opening it
     /// would give an empty board wearing the real game's file name, and the autosave after the
@@ -217,6 +217,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         session.attach(engine: engine, library: library)
         if engine != nil {
             session.setController(.engine, for: session.game.startingSideToMove.opposite)
+            session.setPractising(true)
         }
         return session
     }

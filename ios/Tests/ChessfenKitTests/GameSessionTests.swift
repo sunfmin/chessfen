@@ -81,7 +81,7 @@ func restartTurnsTheBoard() throws {
     #expect(session.orientation == .whiteAtBottom)
 }
 
-@MainActor @Test("a record opens with the side to move in hand and the engine answering")
+@MainActor @Test("a record opens in practice, the side to move in hand and the engine answering")
 func recordOpensWithEngineOpponent() throws {
     let standard = try #require(Game(startFEN: PGN.standardStartFEN))
     let entry = GameLibrary.Entry(
@@ -90,10 +90,11 @@ func recordOpensWithEngineOpponent() throws {
         modified: Date(timeIntervalSince1970: 1_786_000_400)
     )
 
-    // White moves first: the person's side, with the engine on the answer.
+    // White moves first: the person's side, with the engine on the answer and no advice shown.
     let session = try #require(GameSession.opened(entry, engine: SilentEngine()))
     #expect(session.controller(for: .white) == .hand)
     #expect(session.controller(for: .black) == .engine)
+    #expect(session.isPractising)
 
     // Black moves first: the engine waits on White instead.
     let blackFirstGame = try #require(
@@ -110,8 +111,10 @@ func recordOpensWithEngineOpponent() throws {
     #expect(blackFirst.controller(for: .black) == .hand)
     #expect(blackFirst.controller(for: .white) == .engine)
 
-    // Without an engine there is nothing to answer with: both sides stay in hand.
+    // Without an engine there is nothing to answer with and nothing to hide: hand and hand,
+    // watching.
     let handOnly = try #require(GameSession.opened(entry))
     #expect(handOnly.controller(for: .white) == .hand)
     #expect(handOnly.controller(for: .black) == .hand)
+    #expect(!handOnly.isPractising)
 }
