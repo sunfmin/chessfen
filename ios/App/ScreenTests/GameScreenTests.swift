@@ -75,8 +75,9 @@ struct GameScreenScreenshots {
             screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
         }
 
-        // Whose move it is, and what the engine says about it — the two things at the top.
-        #expect(rendered.says("白方走棋"))
+        // Whose move it is, said in that side's own bar, and what the engine says about it.
+        #expect(rendered.says("白方"))
+        #expect(rendered.says("该走了"))
         #expect(rendered.says("+0.38"), "the deeper snapshot should have replaced the shallow one")
         #expect(rendered.says("搜索深度 26"))
         // Three Lines, in the engine's own numerals, deepest search first.
@@ -84,16 +85,20 @@ struct GameScreenScreenshots {
         #expect(rendered.says("O-O d6 d4 Bb6"))
         #expect(rendered.count(of: "+0.") >= 3)
         // The record, and the whole walk through it.
-        #expect(rendered.says("Nf6"), "the notation should carry the game")
-        #expect(rendered.says("最初"))
+        #expect(rendered.says("第 8 步 Nf6"), "the record should carry the game, move by move")
+        #expect(rendered.says("开局"))
         #expect(rendered.says("上一步"))
         #expect(rendered.says("下一步"))
-        #expect(rendered.says("让引擎走"), "one move from the engine, for whoever is on the clock")
-        // Who plays each side, said in words while the game is under way.
-        #expect(rendered.says("白方 手动 · 黑方 引擎 · 每步跟着我 · 白在下 · 看引擎"))
+        #expect(rendered.says("让引擎走"), "one move from the engine, in the bar of the side to move")
+        // Who plays each side, on that side's own bar, without anybody having to open anything.
+        #expect(rendered.says("白方"))
+        #expect(rendered.says("手动"))
+        #expect(rendered.says("黑方"))
+        #expect(rendered.says("引擎"))
+        #expect(rendered.says("跟着我"), "and the engine's clock, where the engine is playing")
         #expect(
-            !rendered.says("白先走"),
-            "the setup chips should be folded away once there are moves"
+            !rendered.says("谁走"),
+            "but the chips that change them stay folded once there are moves"
         )
         // And the Score reached the game itself, which is what a Review will overwrite later.
         #expect(session.game.plies.last?.evaluation == .centipawns(38))
@@ -116,13 +121,12 @@ struct GameScreenScreenshots {
         #expect(rendered.says("拿不太准"), "the shaky squares should be counted, not hidden")
         #expect(rendered.says("改棋子"))
         #expect(rendered.says("从这里开始走"))
-        // Nothing is played yet, so every setup question is still a question: the chips are out.
-        #expect(rendered.says("白先走"))
-        #expect(rendered.says("黑先走"))
-        #expect(rendered.says("翻转棋盘"))
+        // Nothing is played yet, so the side to move has its own questions open.
+        #expect(rendered.says("谁走"))
         #expect(rendered.says("手动"))
-        // Nothing to walk through yet, but the engine can be asked to open.
-        #expect(!rendered.says("上一步"))
+        #expect(rendered.says("先走的是白方"))
+        #expect(rendered.says("翻转棋盘"))
+        // Nothing to walk through yet, and the engine can be asked to open.
         #expect(rendered.says("让引擎走"))
     }
 
@@ -144,7 +148,9 @@ struct GameScreenScreenshots {
         #expect(session.cursor == 0, "a reopened game opens at the position it began in")
         #expect(rendered.says("在看第 0/8 步"))
         #expect(rendered.says("回到最新"))
-        #expect(rendered.says("1. e4 e5"), "the moves are all there to be walked through")
+        #expect(rendered.says("第 1 步 e4"), "the moves are all there to be walked through")
+        #expect(rendered.says("第 2 步 e5"))
+        #expect(rendered.says("开局"), "including the position it began in")
     }
 
     /// A board just read off a photograph and then filed into a collection: the same reading, with
@@ -193,7 +199,10 @@ struct GameScreenScreenshots {
         #expect(session.isThinking, "the engine's own turn starts the moment the screen appears")
         #expect(rendered.says("马上走"))
         #expect(rendered.says("+0.38"))
-        #expect(rendered.says("白方 引擎 · 黑方 手动 · 每步跟着我 · 白在下 · 看引擎"))
+        #expect(rendered.says("白方"))
+        #expect(rendered.says("引擎"))
+        #expect(rendered.says("跟着我"))
+        #expect(rendered.says("手动"), "and the side a person is holding says so too")
         #expect(
             !session.canPlayBestMove,
             "and 让引擎走 stands down while the engine is already walking this one"
@@ -214,7 +223,9 @@ struct GameScreenScreenshots {
         }
 
         #expect(session.thinkingTime == .fixed(seconds: 3), "three seconds a move until told else")
-        #expect(rendered.says("白方 引擎 · 黑方 引擎 · 每步 3 秒 · 白在下 · 看引擎"))
+        #expect(rendered.says("白方"))
+        #expect(rendered.says("黑方"))
+        #expect(rendered.says("引擎"))
         // The clock, on chips, with the mirror standing down for want of anybody to mirror.
         #expect(rendered.says("每步"))
         #expect(rendered.says("3 秒"))
@@ -237,7 +248,8 @@ struct GameScreenScreenshots {
             screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
         }
 
-        #expect(rendered.says("白方走棋"))
+        #expect(rendered.says("白方"))
+        #expect(rendered.says("该走了"))
         #expect(rendered.says("+0.38"))
         #expect(rendered.says("让引擎走"))
     }
@@ -262,7 +274,7 @@ struct GameScreenScreenshots {
         #expect(session.variationsHere.count == 1, "the abandoned line is kept, not dropped")
         #expect(rendered.says("c3 Nf6"), "and offered in the notation the game is written in")
         #expect(rendered.says("在看第 6/7 步"))
-        #expect(rendered.says("d3"), "with the move that replaced it in the record")
+        #expect(rendered.says("第 7 步 d3"), "with the move that replaced it in the record")
     }
 
     /// A finished game. The engine has nothing to search and so says nothing, and the screen has to
@@ -288,7 +300,8 @@ struct GameScreenScreenshots {
         #expect(!rendered.says("未知"), "a finished game is not an unknown one")
         // There is nothing left to play, so the one button that plays a move is out.
         #expect(!session.canPlayBestMove)
-        #expect(rendered.says("Qxf7#"), "the record ends where the game did")
+        #expect(rendered.says("第 7 步 Qxf7#"), "the record ends where the game did")
+        #expect(!rendered.says("该走了"), "and nobody is on the clock in a game that is over")
     }
 
     /// Practice: the engine plays on but says nothing, so the screen has to account for the

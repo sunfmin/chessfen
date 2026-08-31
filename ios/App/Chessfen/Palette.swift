@@ -113,6 +113,22 @@ struct Chip: View {
     }
 }
 
+/// One colour, as the thing itself.
+///
+/// A disc of the piece colour beside the word does in a glance what 白方 does in two characters,
+/// and it is what ties a bar to its own half of the board.
+struct Swatch: View {
+    let colour: PieceColour
+    var size: CGFloat = 14
+
+    var body: some View {
+        Circle()
+            .fill(colour == .white ? Palette.barWhite : Palette.barBlack)
+            .frame(width: size, height: size)
+            .overlay(Circle().stroke(Palette.walnut.opacity(0.45), lineWidth: 0.8))
+    }
+}
+
 /// A label and its chips, hugging its content so two of them fit on one line. Kept on screen
 /// rather than tucked into a menu, because what these say — which way up the board is, who
 /// started, who is playing each side — are facts about the game in front of you, not settings.
@@ -150,43 +166,15 @@ struct ChipCluster<Value: Hashable>: View {
     }
 }
 
-/// A transport button: to the beginning, back a move, on a move, take one off.
-///
-/// `corners` is what lets three of them be built into one control. Where the eye is looking is a
-/// single idea with three ways to say it, so the three read as one segmented block and only the
-/// outer edges are rounded; taking a move off is a different kind of act and sits apart.
-struct TransportButton: View {
-    let label: String
-    let symbol: String
-    var trailingSymbol = false
-    var corners = RectangleCornerRadii.every(11)
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                if !trailingSymbol { Image(systemName: symbol).font(.caption) }
-                Text(label)
-                if trailingSymbol { Image(systemName: symbol).font(.caption) }
-            }
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(Palette.ink)
-            .frame(maxWidth: .infinity)
-            // Twelve, so the button is the 44 points a thumb is entitled to. It is the control
-            // used most on this screen and it used to be the smallest thing on it.
-            .padding(.vertical, 12)
-            .background(Palette.chipRest, in: UnevenRoundedRectangle(cornerRadii: corners))
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 /// A button whose work happens while it is held down: pressing starts it, letting go finishes it.
 ///
 /// The only one in the app, and it belongs to the engine. How long it is held is how long the engine
 /// thinks (Mirrored Time, docs/adr/0009 — it is never handicapped, and time is the only dial), so
 /// the control has to *be* the dial rather than a switch beside one. It fills as the search deepens,
 /// which is the same gauge the header draws, under the thumb that is filling it.
+///
+/// Sized to sit in the bar of the side on the clock rather than to span the screen: it plays a move
+/// for one colour, so it stands on that colour's side of the board.
 struct HoldButton: View {
     let label: String
     let symbol: String
@@ -203,27 +191,27 @@ struct HoldButton: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: symbol).font(.caption)
+            Image(systemName: symbol).font(.system(size: 10))
             Text(label)
         }
-        .font(.subheadline.weight(.medium))
-        .foregroundStyle(isHeld ? Palette.analysis : Palette.ink)
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(isHeld ? Palette.parchment : Palette.ink)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 6)
         .background {
             ZStack(alignment: .leading) {
                 Palette.chipRest
                 GeometryReader { proxy in
-                    Palette.analysis.opacity(0.3)
+                    Palette.analysis
                         .frame(width: proxy.size.width * (isHeld ? min(max(fill, 0), 1) : 0))
                         .animation(.easeOut(duration: 0.3), value: fill)
                         .animation(.easeOut(duration: 0.2), value: isHeld)
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 11))
+            .clipShape(Capsule())
         }
         .opacity(isEnabled ? 1 : 0.4)
-        .contentShape(RoundedRectangle(cornerRadius: 11))
+        .contentShape(Capsule())
         // A drag of no distance, which is a press: `onEnded` arrives wherever the finger lifts, so
         // sliding off the button still plays the move rather than leaving a search running.
         .gesture(
@@ -238,35 +226,6 @@ struct HoldButton: View {
                 }
         )
     }
-}
-
-extension RectangleCornerRadii {
-    /// The same radius on all four corners.
-    static func every(_ radius: CGFloat) -> Self {
-        .init(
-            topLeading: radius, bottomLeading: radius,
-            bottomTrailing: radius, topTrailing: radius
-        )
-    }
-
-    /// Rounded on the leading edge only — the left end of a segmented block.
-    static func leading(_ radius: CGFloat, joined: CGFloat = 3) -> Self {
-        .init(
-            topLeading: radius, bottomLeading: radius,
-            bottomTrailing: joined, topTrailing: joined
-        )
-    }
-
-    /// Rounded on the trailing edge only — the right end of one.
-    static func trailing(_ radius: CGFloat, joined: CGFloat = 3) -> Self {
-        .init(
-            topLeading: joined, bottomLeading: joined,
-            bottomTrailing: radius, topTrailing: radius
-        )
-    }
-
-    /// Barely rounded on every corner — the middle of one.
-    static func joined(_ radius: CGFloat = 3) -> Self { every(radius) }
 }
 
 // ------------------------------------------------------------------- numbers
