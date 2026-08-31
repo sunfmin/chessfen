@@ -27,10 +27,14 @@ struct EngineClock {
     ]
 
     private func session(
-        _ engine: ScriptedEngine, controllers: [PieceColour: Controller]
+        _ engine: ScriptedEngine, controllers: [PieceColour: Controller], opinion: Bool = false
     ) throws -> GameSession {
         let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
         let session = GameSession.fresh(game, controllers: controllers)
+        // A Game starts with the engine's opinion off (docs/adr/0015), so the tests about what
+        // the *advisory* search is asked for turn it on, the way a person would. Said before the
+        // engine is attached, so it is one search that starts and not two.
+        if opinion { session.setPractising(false) }
         session.attach(engine: engine, library: nil)
         // What the screen does in `onAppear`, and what makes the engine start.
         session.retune()
@@ -129,7 +133,9 @@ struct EngineClock {
     @Test("stepping back stops the engine playing itself, and coming back carries on")
     func steppingBackStopsSelfPlay() async throws {
         let engine = ScriptedEngine(Self.searching)
-        let session = try session(engine, controllers: [.white: .engine, .black: .engine])
+        let session = try session(
+            engine, controllers: [.white: .engine, .black: .engine], opinion: true
+        )
         await hop()
         #expect(session.game.plies.count == 9)
 
@@ -150,12 +156,32 @@ struct EngineClock {
     @Test("a move the engine plays for itself is one line; advice is three")
     func movePickingAsksForOneLine() async throws {
         let engine = ScriptedEngine(Self.searching)
-        let session = try session(engine, controllers: [.white: .engine, .black: .engine])
+        let session = try session(
+            engine, controllers: [.white: .engine, .black: .engine], opinion: true
+        )
         await hop()
         #expect(engine.lines.allSatisfy { $0 == 1 }, "a move only has to be one move")
 
         session.step(by: -1)
         await hop()
         #expect(engine.lines.last == 3, "what a player reads is the panel's candidates")
+    }
+
+    /// And with the opinion where a Game leaves it — off — that advisory search is not run at
+    /// all. Not hidden: never started, so a phone does not deepen a search nobody is allowed to
+    /// see the result of (docs/adr/0015).
+    @Test("with the engine's opinion off, browsing starts no search at all")
+    func silenceStartsNothing() async throws {
+        let engine = ScriptedEngine(Self.searching)
+        let session = try session(engine, controllers: [.white: .engine, .black: .engine])
+        await hop()
+        let playedItself = engine.searchCount
+
+        session.step(by: -1)
+        await hop()
+
+        #expect(session.isPractising, "which is where a Game starts")
+        #expect(engine.searchCount == playedItself, "nothing new was asked of the engine")
+        #expect(session.analysis == nil, "and there is no number on the screen")
     }
 }

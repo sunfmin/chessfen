@@ -84,20 +84,27 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     public var picture: RGBImage?
     public var shaky: Set<Square>
 
-    /// Whether the engine keeps its opinion to itself. This is the practice switch: no advisory
-    /// search runs, no Score is drawn, and nothing the engine thinks is written into the plies —
-    /// so a game played this way carries no marks, and 复盘 is where it finally meets the engine
-    /// at one uniform Depth (docs/adr/0009). Playing a whole game with the engine looking over
-    /// your shoulder and playing one out yourself are different exercises, and only the second
-    /// one tells you what you would have done.
+    /// Whether the engine keeps its opinion to itself: no advisory search runs, no Score is
+    /// drawn, and nothing the engine thinks is written into the plies — so a game played this way
+    /// carries no marks, and a Review is where it finally meets the engine at one uniform Depth
+    /// (docs/adr/0009).
+    ///
+    /// **True is where every Game starts** (docs/adr/0015). An answer on screen is an answer the
+    /// eye cannot decline to read, so no amount of self-discipline makes a visible evaluation
+    /// compatible with learning to evaluate; showing what the engine thinks is therefore
+    /// something a person does, once, on purpose. Playing a whole game with the engine looking
+    /// over your shoulder and playing one out yourself are different exercises, and only the
+    /// second one tells you what you would have done.
     ///
     /// It does not silence the engine as an *opponent*: a bounded search for the engine's own
     /// move is not advice, and playing a side without being told what it thinks of your last
     /// move is exactly the exercise.
     ///
-    /// Not stored. PGN has nowhere to put it, and like the Controllers it is a way of playing
-    /// rather than something about the game, so a reopened game starts with the engine talking.
-    public private(set) var isPractising = false
+    /// Not stored, and not carried from one Game to the next either. PGN has nowhere to put it,
+    /// and — unlike who is playing which colour — it is not a way of working that should be set
+    /// up once for a session of fifty positions: it is the one thing standing between a player
+    /// and the answer, so it has to be found off every time rather than wherever it was left.
+    public private(set) var isPractising = true
 
     private var controllers: [PieceColour: Controller]
     /// The clock somebody has put the engine on, if anybody has. Nil means the game decides —
@@ -217,7 +224,6 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         let session = GameSession(entry: entry, library: library)
         session.attach(engine: engine, library: library)
         session.setController(.engine, for: session.game.startingSideToMove.opposite)
-        session.setPractising(true)
         session.setThinkingTime(.openedRecord)
         return session
     }
@@ -247,15 +253,19 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         return session
     }
 
-    /// The next saved game in a collection, opened the way this one is being worked: whether the
-    /// engine is advising, who plays each side, and the clock somebody put the engine on. Those
-    /// are ways of working rather than facts about a game, and having to set them again for every
-    /// position is exactly the friction that makes a set of fifty not get done. Which way up the
-    /// board is is a fact about the game being opened, though — each record faces its own side to
-    /// move, not the last one's. Nil while the next file is still on the way (see `opened`).
+    /// The next saved game in a collection, opened the way this one is being worked: who plays
+    /// each side, and the clock somebody put the engine on. Those are ways of working rather than
+    /// facts about a game, and having to set them again for every position is exactly the friction
+    /// that makes a set of fifty not get done. Which way up the board is is a fact about the game
+    /// being opened, though — each record faces its own side to move, not the last one's. Nil
+    /// while the next file is still on the way (see `opened`).
+    ///
+    /// The one thing that does **not** carry over is the engine's opinion. Working through fifty
+    /// positions with it left on is fifty positions read off a screen instead of fifty positions
+    /// thought about, and that is precisely the set this app exists to make worth doing — so each
+    /// one opens silent and turning it on is a fresh decision (docs/adr/0015).
     public func next(_ entry: GameLibrary.Entry) -> GameSession? {
         guard let next = Self.opened(entry, engine: engine, library: library) else { return nil }
-        next.setPractising(isPractising)
         for colour in [PieceColour.white, .black] {
             next.setController(controller(for: colour), for: colour)
         }
@@ -269,8 +279,8 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         let game = pgn?.game ?? Game(startFEN: PGN.standardStartFEN)!
         self.init(
             game: game,
-            // The other side is handed to the engine by `opened`, which is also where the
-            // record is put into practice.
+            // The other side is handed to the engine by `opened`. Practice is not set here or
+            // there: it is where every Game starts.
             controllers: [.white: .hand, .black: .hand],
             // A record opens facing the side about to move: reading begins where the play does.
             orientation: .facing(game.startingSideToMove),

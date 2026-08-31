@@ -91,8 +91,10 @@ struct AskedMove {
     @Test("a tap plays the move the board was already recommending")
     func tapPlaysTheArrow() async throws {
         let session = try session(ScriptedEngine(Self.searching, isEndless: true))
-        // A standing Analysis, arrived at the way the screen gets one: the engine advising while it
-        // is the player's move.
+        // A standing Analysis, arrived at the way the screen gets one: somebody has turned the
+        // engine's opinion on — a Game starts without it — and it is advising while it is the
+        // player's move.
+        session.setPractising(false)
         session.retune()
         await hop()
         #expect(session.analysis?.bestMove == "d2d4", "the arrow on the board")

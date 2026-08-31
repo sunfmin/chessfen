@@ -119,3 +119,70 @@ func recordOpensWithEngineOpponent() throws {
     #expect(beforeEngineArrives.controller(for: .black) == .engine)
     #expect(beforeEngineArrives.isPractising)
 }
+
+// ------------------------------------------------------------------- the one switch
+
+/// Every door into a Game opens with the engine silent (docs/adr/0015). An answer on screen is an
+/// answer the eye cannot decline to read, so it is not enough for practice to be *available*: it
+/// has to be where a Game starts, whichever way the Game got here.
+@MainActor @Test("every way into a Game starts with the engine's opinion off")
+func everyGameStartsSilent() throws {
+    let standard = try #require(Game(startFEN: PGN.standardStartFEN))
+    let read = try #require(
+        Game(startFEN: "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2P2N2/PP1P1PPP/RNBQK2R w KQkq - 0 5")
+    )
+
+    #expect(GameSession.fresh(standard).isPractising)
+    #expect(GameSession.recognised(read, shaky: [Square("c6")!]).isPractising)
+    #expect(
+        GameSession.corrected(
+            read,
+            controllers: [.white: .hand, .black: .engine],
+            orientation: .whiteAtBottom,
+            origin: .recognised,
+            picture: nil,
+            shaky: [],
+            engine: nil,
+            library: nil
+        ).isPractising
+    )
+
+    let entry = GameLibrary.Entry(
+        url: URL(filePath: "/games/chessfen-silent-1.pgn"),
+        pgn: PGN(game: standard, tags: []),
+        modified: Date(timeIntervalSince1970: 1_786_000_600)
+    )
+    #expect(try #require(GameSession.opened(entry)).isPractising)
+}
+
+/// And it is never found where it was left. Who plays which colour and the engine's clock are ways
+/// of working, set up once for a set of fifty; the engine's opinion is the one thing standing
+/// between a player and the answer, so the next position asks the question again.
+@MainActor @Test("the next game in a collection does not inherit the engine's opinion")
+func theSwitchDoesNotTravel() throws {
+    let standard = try #require(Game(startFEN: PGN.standardStartFEN))
+    let first = try #require(GameSession.opened(
+        GameLibrary.Entry(
+            url: URL(filePath: "/games/chessfen-silent-2.pgn"),
+            pgn: PGN(game: standard, tags: []),
+            modified: Date(timeIntervalSince1970: 1_786_000_700)
+        )
+    ))
+    first.setPractising(false)
+    first.setThinkingTime(.fixed(seconds: 5))
+    first.setController(.engine, for: .white)
+    #expect(!first.isPractising)
+
+    let second = try #require(first.next(
+        GameLibrary.Entry(
+            url: URL(filePath: "/games/chessfen-silent-3.pgn"),
+            pgn: PGN(game: standard, tags: []),
+            modified: Date(timeIntervalSince1970: 1_786_000_800)
+        )
+    ))
+
+    #expect(second.isPractising, "the answer is not waiting for you in the next position")
+    // The ways of working still carry, which is the distinction being drawn.
+    #expect(second.thinkingTime == .fixed(seconds: 5))
+    #expect(second.controller(for: .white) == .engine)
+}

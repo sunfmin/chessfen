@@ -68,7 +68,11 @@ struct GameScreen: View {
                 // No bar while practising. Empty, it sits exactly half white and reads as a
                 // considered 0.00 — the most misleading thing this screen could show someone who
                 // has asked not to be told.
-                if !session.isPractising {
+                //
+                // A finished game is the exception, and not a leak: what the bar carries then is
+                // the result, and who won is a fact about the game rather than the engine's
+                // opinion of it. Practice hides what the engine thinks, never what happened.
+                if !session.isPractising || finish != nil {
                     EvalBar(
                         score: session.analysis?.best?.score,
                         orientation: session.orientation,
@@ -239,7 +243,17 @@ struct GameScreen: View {
             }
             Spacer(minLength: 4)
             SearchMeter(analysis: session.analysis)
-            if session.isPractising {
+            if let finish {
+                // The number people have been watching, resolved: a finished game has no Score
+                // to show, and what belongs in its place is the one it ended on.
+                //
+                // Before the practice chip, and not after it: a result is not an opinion, so
+                // there is nothing here for practice to withhold. What it would withhold is the
+                // one number in the game that was never the engine's to give.
+                Text(finish.scoreline)
+                    .font(.clock(30))
+                    .foregroundStyle(Palette.ink)
+            } else if session.isPractising {
                 // Where the number lives, so its absence is accounted for rather than just an
                 // empty corner someone reads as a broken engine.
                 HStack(spacing: 5) {
@@ -247,12 +261,6 @@ struct GameScreen: View {
                     Text("练习").font(.footnote.weight(.semibold))
                 }
                 .foregroundStyle(Palette.inkSoft)
-            } else if let finish {
-                // The number people have been watching, resolved: a finished game has no Score
-                // to show, and what belongs in its place is the one it ended on.
-                Text(finish.scoreline)
-                    .font(.clock(30))
-                    .foregroundStyle(Palette.ink)
             } else {
                 Text(session.analysis?.best?.score.displayText ?? "—")
                     .font(.clock(30))
@@ -767,6 +775,35 @@ struct GameScreen: View {
 
     // ------------------------------------------------------------------ the footer
 
+    /// The one switch: whether the engine's opinion is on this screen at all.
+    ///
+    /// A switch rather than a chip, because a chip has to choose between naming the state it is
+    /// in and naming the act of pressing it, and this control cannot afford to be read either way
+    /// round. It starts off on every Game and it belongs to the Game in front of you — the thing
+    /// standing between a player and the answer is not allowed to be found wherever it was last
+    /// left (docs/adr/0015).
+    private var engineOpinion: some View {
+        Toggle(
+            isOn: Binding(
+                get: { !session.isPractising },
+                set: { session.setPractising(!$0) }
+            )
+        ) {
+            HStack(spacing: 5) {
+                Image(systemName: session.isPractising ? "eye.slash" : "eye").font(.caption2)
+                Text("引擎意见").font(.footnote)
+            }
+            .foregroundStyle(session.isPractising ? Palette.inkSoft : Palette.ink)
+        }
+        .toggleStyle(.switch)
+        .controlSize(.mini)
+        .fixedSize()
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Palette.chipRest, in: Capsule())
+        .disabled(!engine.isReady && session.isPractising)
+    }
+
     /// The three things that belong to the game rather than to either colour: whether the engine
     /// talks at all, which way up the board is, and who started.
     ///
@@ -776,18 +813,7 @@ struct GameScreen: View {
     /// three moves later is the normal way to find out.
     private var footer: some View {
         HStack(spacing: 9) {
-            Button { session.setPractising(!session.isPractising) } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: session.isPractising ? "eye.slash" : "eye").font(.caption2)
-                    Text(session.isPractising ? "自己练" : "看引擎").font(.footnote)
-                }
-                .foregroundStyle(session.isPractising ? Palette.inkSoft : Palette.ink)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(Palette.chipRest, in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .disabled(!engine.isReady && session.isPractising)
+            engineOpinion
 
             flip
 

@@ -63,13 +63,15 @@ struct GameScreenScreenshots {
         ),
     ]
 
-    /// A game under way against the engine, with the engine talking.
+    /// A game under way against the engine, with the engine talking — which is to say somebody
+    /// has reached down and turned its opinion on, because that is not where a Game starts.
     @Test("the game screen shows the position, what the engine makes of it, and the moves")
     func gameInPlay() async throws {
         let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
         let session = GameSession.fresh(
             game, controllers: [.white: .hand, .black: .engine]
         )
+        session.setPractising(false)
 
         let rendered = await ScreenImage.write("game-in-play") {
             screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
@@ -195,6 +197,8 @@ struct GameScreenScreenshots {
         let session = GameSession.fresh(
             game, controllers: [.white: .engine, .black: .hand]
         )
+        // The number this test is about is the engine's opinion, so it is turned on.
+        session.setPractising(false)
 
         let rendered = await ScreenImage.write("game-engine-thinking") {
             screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
@@ -247,6 +251,7 @@ struct GameScreenScreenshots {
         let session = GameSession.fresh(
             game, controllers: [.white: .hand, .black: .engine]
         )
+        session.setPractising(false)
 
         let rendered = await ScreenImage.write("game-in-play-dark", style: .dark) {
             screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
@@ -297,6 +302,10 @@ struct GameScreenScreenshots {
         }
 
         #expect(rendered.says("白方将杀"))
+        #expect(
+            session.isPractising,
+            "the engine was never turned on here — the result is not its opinion"
+        )
         #expect(rendered.says("白方胜"), "the bar reads the result rather than sitting half and half")
         #expect(rendered.says("1-0"), "and the number the screen has been showing resolves into it")
         #expect(rendered.says("复盘"), "with the one thing left to do said where the lines were")
@@ -309,21 +318,53 @@ struct GameScreenScreenshots {
     }
 
     /// Practice: the engine plays on but says nothing, so the screen has to account for the
-    /// number it is not showing.
+    /// number it is not showing. Nothing is switched here — this is a Game as it opens.
     @Test("practice leaves the engine's opinion off the screen and says why")
     func practising() async throws {
         let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
         let session = GameSession.fresh(game)
-        session.setPractising(true)
 
         let rendered = await ScreenImage.write("game-practising") {
             screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
         }
 
+        #expect(session.isPractising, "which is where a Game starts (docs/adr/0015)")
         #expect(rendered.says("练习"))
         #expect(rendered.says("复盘"), "practice points at the one place the engine does talk")
         #expect(!rendered.says("+0.38"), "no Score anywhere while practising")
         #expect(session.analysis == nil)
+    }
+
+    /// The same game, the same engine, the same moves played into it — and nothing whispered.
+    /// This is the screenshot the default is answerable to: a person reading it should not be able
+    /// to work out what the engine thinks of the position, and should be in no doubt that the app
+    /// is working.
+    @Test("a game in play says nothing about the position until it is asked to")
+    func gameInPlaySaysNothing() async throws {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
+        let session = GameSession.fresh(game, controllers: [.white: .hand, .black: .engine])
+
+        let rendered = await ScreenImage.write("game-in-play-silent") {
+            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
+        }
+
+        // Not one number, not one line, not one of the engine's candidates.
+        #expect(!rendered.says("+0.38"))
+        #expect(!rendered.says("+0.24"))
+        #expect(!rendered.says("+0."), "and no Score in any of the places one goes")
+        #expect(!rendered.says("d4 exd4 cxd4 Bb6"))
+        #expect(!rendered.says("O-O d6 d4 Bb6"))
+        #expect(!rendered.says("d3 d6 O-O a6"))
+        #expect(session.analysis == nil, "nothing reached the screen to be drawn")
+
+        // And the screen accounts for the silence rather than wearing the face of a broken engine.
+        #expect(rendered.says("练习"))
+        #expect(rendered.says("引擎意见"), "with the one switch that ends it, named")
+        // The game itself is entirely unaffected: the moves, the clock, the engine as an opponent.
+        #expect(rendered.says("第 8 步 Nf6"))
+        #expect(rendered.says("该走了"))
+        #expect(rendered.says("让引擎走"))
+        #expect(rendered.says("引擎"), "which still plays Black")
     }
 
     // ------------------------------------------------------------------- glue
