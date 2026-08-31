@@ -100,10 +100,19 @@ struct GameScreenScreenshots {
         #expect(rendered.says("白方"))
         #expect(rendered.says("该走了"))
         #expect(rendered.says("+0.38"), "the deeper snapshot should have replaced the shallow one")
-        #expect(rendered.says("搜索深度 26"))
-        // Three Lines, in the engine's own numerals, deepest search first.
-        #expect(rendered.says("d4 exd4 cxd4 Bb6"))
-        #expect(rendered.says("O-O d6 d4 Bb6"))
+        #expect(rendered.says("优势条"), "said once, at the end of the bar that draws it")
+        #expect(
+            !rendered.says("搜索深度"),
+            "and not how fast the phone is going while it says it — that was a row of plumbing"
+        )
+        // The move it would play, named beside the arrow the board draws — one move, because a
+        // line of six is a language most people playing this have not learnt.
+        #expect(rendered.says("建议 d4"))
+        #expect(!rendered.says("d4 exd4 cxd4"), "and not the whole line it is the head of")
+        // The other candidates, the same way: the move and what it is worth.
+        #expect(rendered.says("其它选择"))
+        #expect(rendered.says("O-O"))
+        #expect(!rendered.says("O-O d6 d4"))
         #expect(rendered.count(of: "+0.") >= 3)
         // The record, and the whole walk through it.
         #expect(rendered.says("第 8 步 Nf6"), "the record should carry the game, move by move")
@@ -171,7 +180,8 @@ struct GameScreenScreenshots {
         }
 
         #expect(session.cursor == 0, "a reopened game opens at the position it began in")
-        #expect(rendered.says("在看第 0/8 步"))
+        // Where the eye is is the record's own job — the filled card. What a browsing game needs
+        // in words is the way back to the present, and that is beside the arrows that left it.
         #expect(rendered.says("回到最新"))
         #expect(rendered.says("第 1 步 e4"), "the moves are all there to be walked through")
         #expect(rendered.says("第 2 步 e5"))
@@ -301,7 +311,7 @@ struct GameScreenScreenshots {
 
         #expect(session.variationsHere.count == 1, "the abandoned line is kept, not dropped")
         #expect(rendered.says("c3 Nf6"), "and offered in the notation the game is written in")
-        #expect(rendered.says("在看第 6/7 步"))
+        #expect(rendered.says("回到最新"), "and the way back to the present, beside the arrows")
         #expect(rendered.says("第 7 步 d3"), "with the move that replaced it in the record")
     }
 
@@ -419,7 +429,7 @@ struct GameScreenScreenshots {
         #expect(rendered.says("你会走哪一步"))
         #expect(rendered.says("直接在棋盘上走一步"))
         #expect(!rendered.says("说不清"), "the reason is asked for after a move, not before one")
-        #expect(rendered.says("在看第 6/8 步"), "and the record says where the eye is")
+        #expect(rendered.says("第 7 步 c3"), "and the record says where the eye is")
         // The answer is not on the screen: no Score, no candidate lines, no arrow to copy.
         #expect(!rendered.says("+0."))
         #expect(!rendered.says("d4 exd4 cxd4 Bb6"))
@@ -656,14 +666,75 @@ struct GameScreenScreenshots {
         #expect(rendered.says("第 4 回合 白方 c3"), "the move the eye is on")
         #expect(rendered.says("漏着"), "what the pass made of it")
         #expect(rendered.says("-4.20"), "and its Score")
-        #expect(rendered.says("按深度 18 算的"), "named, because a Score without one compares to nothing")
+        #expect(rendered.says("深度 18"), "named, because a Score without one compares to nothing")
+        #expect(
+            !rendered.says("按深度 18 算的"),
+            "but as two words beside the number, not a sentence on a row of its own"
+        )
         #expect(rendered.says("这局最贵的三步"), "with the worst moves offered as the questions they are")
-        #expect(rendered.says("重算"))
         // And no separate destination for any of it.
         #expect(!rendered.says("复盘"))
     }
 
+    /// The curve behind the moves: one strip, the record still the record, the shape of the game
+    /// underneath it.
+    @Test("the curve is the ground the record stands on, not a second record")
+    func theCurveIsAGround() async throws {
+        let session = try Self.reviewed()
+
+        let rendered = await ScreenImage.write("game-report") {
+            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
+        }
+
+        #expect(rendered.says("第 7 步 c3"), "the moves read exactly as they did")
+        #expect(rendered.says("第 8 步 Nf6"))
+        #expect(rendered.says("开局"), "including the way back to the start")
+        #expect(rendered.says("分数曲线"), "and the curve is behind them")
+        #expect(rendered.says("第 4 回合 白方 c3"), "what a curve cannot say is said under it")
+        #expect(rendered.says("深度 18"))
+    }
+
+    @Test("a practising board has no curve behind its record, and nor has an unscored game")
+    func theCurveIsTheEnginesVoice() async throws {
+        let practising = try Self.reviewed()
+        practising.setPractising(true)
+        let quiet = await ScreenImage.write("game-record-practising") {
+            screen(practising, engine: ScriptedEngine(Self.searching, isEndless: true))
+        }
+        #expect(!quiet.says("分数曲线"), "a curve is a Score, and practice is not being told one")
+        #expect(quiet.says("第 7 步 c3"), "the record itself is unchanged by any of this")
+
+        let unscored = GameSession.fresh(
+            try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
+        )
+        unscored.setPractising(false)
+        let blank = await ScreenImage.write("game-record-unscored") {
+            screen(unscored, engine: ScriptedEngine(Self.searching, isEndless: true))
+        }
+        #expect(!blank.says("分数曲线"), "nothing to draw one out of yet")
+        #expect(blank.says("这局还没打过分"))
+    }
+
     // ------------------------------------------------------------------- glue
+
+    /// The Italian eight plies in, with a pass already over it and the switch on — the state both
+    /// pictures of the record are read in.
+    @MainActor
+    private static func reviewed() throws -> GameSession {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: italian))
+        let session = GameSession.fresh(game)
+        session.applyReview(
+            [
+                .centipawns(30), .centipawns(25), .centipawns(35), .centipawns(30),
+                .centipawns(40), .centipawns(35), .centipawns(-420), .centipawns(-410),
+            ],
+            startEvaluation: .centipawns(20),
+            depth: 18
+        )
+        session.jump(toPly: 7)
+        session.setPractising(false)
+        return session
+    }
 
     /// The screen as the app pushes it: inside a navigation stack, with the engine and the library
     /// in the environment. The engine is the only thing that is not the app's own.

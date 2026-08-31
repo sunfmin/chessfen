@@ -235,54 +235,16 @@ struct HoldButton: View {
 
 // ------------------------------------------------------------------- numbers
 
-/// How far the engine has got, and how fast it is going.
+/// How far a search has to run before another ply stops being news.
 ///
-/// The gauge is the signature of the screen. An engine's opinion is not finished — it deepens for
-/// as long as you let it and changes its mind as it goes (docs/adr/0009) — and a filling hairline
-/// says that, where a static "深度 23" label cannot. The speed is here because it is the honest
-/// measure of what this phone is doing: a few million positions a second, in your hand, offline.
-struct SearchMeter: View {
-    let analysis: Analysis?
-
-    /// Full depth as far as this display is concerned. Searches run deeper, and the gauge simply
-    /// sits full when they do — past this point another ply is not news. Shared with the hold
-    /// button, so a search reads as equally far along wherever it is drawn.
+/// There used to be a meter on the game screen wearing this number — a speed, a depth, and a
+/// filling hairline. It said what the phone was doing rather than what the position was, and on a
+/// screen with one board and a report to fit under it that is a row somebody else needed. The
+/// number stays, because the hold button still draws how far its own search has got.
+enum SearchDepth {
+    /// Full depth as far as a gauge is concerned. Searches run deeper, and a gauge simply sits
+    /// full when they do — past this point another ply is not news.
     static let deepEnough = 34.0
-
-    var body: some View {
-        HStack(spacing: 7) {
-            if let analysis, analysis.depth > 0 {
-                Text(Self.speed(analysis.nodesPerSecond))
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(Palette.inkSoft)
-                Text("深 \(analysis.depth)/\(analysis.selectiveDepth)")
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(Palette.inkSoft)
-                gauge
-            }
-            // Nothing at all when no search has reported: an empty track is a gauge reading zero,
-            // and there is no search for it to be reading zero about — over a finished game it is
-            // just a grey line left on the page.
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("搜索深度 \(analysis?.depth ?? 0)")
-    }
-
-    private var gauge: some View {
-        let filled = min(Double(analysis?.depth ?? 0) / Self.deepEnough, 1)
-        return ZStack(alignment: .leading) {
-            Capsule().fill(Palette.hairline)
-            Capsule().fill(Palette.analysis).frame(width: 52 * filled)
-        }
-        .frame(width: 52, height: 2.5)
-        .animation(.easeOut(duration: 0.35), value: filled)
-    }
-
-    private static func speed(_ nodesPerSecond: UInt64) -> String {
-        nodesPerSecond >= 1_000_000
-            ? String(format: "%.1fM", Double(nodesPerSecond) / 1_000_000)
-            : "\(nodesPerSecond / 1000)k"
-    }
 }
 
 /// Who is ahead, as a length. Laid along the bottom edge of the board rather than beside it:

@@ -63,25 +63,9 @@ struct GameScreen: View {
         GeometryReader { proxy in
             let side = Self.boardSide(in: proxy.size)
             VStack(spacing: 0) {
-                header
                 playerBar(topColour)
                 board.frame(width: side, height: side)
-                // No bar while practising. Empty, it sits exactly half white and reads as a
-                // considered 0.00 — the most misleading thing this screen could show someone who
-                // has asked not to be told.
-                //
-                // A finished game is the exception, and not a leak: what the bar carries then is
-                // the result, and who won is a fact about the game rather than the engine's
-                // opinion of it. Practice hides what the engine thinks, never what happened.
-                if !session.isPractising || finish != nil {
-                    EvalBar(
-                        score: session.analysis?.best?.score,
-                        orientation: session.orientation,
-                        finish: finish
-                    )
-                    .frame(width: side)
-                    .padding(.vertical, 5)
-                }
+                standing.frame(width: side).padding(.vertical, 6)
                 playerBar(bottomColour)
                 record
                 // What there is to read rather than to press: where this game sits in its
@@ -89,14 +73,14 @@ struct GameScreen: View {
                 // behind the one it is offering, and the lines that were played and left behind.
                 //
                 // A page at least as tall as its window, so the reading can take the slack a big
-                // phone has left over rather than leaving a hole above the footer — and taller
+                // phone has left over rather than leaving a hole at the bottom — and taller
                 // than the window when there is more to say than fits, which is when it becomes
                 // a scroll again.
                 ScrollView {
                     VStack(spacing: 0) {
                         study
-                        layers
                         report
+                        layers
                         questions
                         series
                         corrections
@@ -108,6 +92,10 @@ struct GameScreen: View {
                     .frame(minHeight: readHeight, alignment: .top)
                 }
                 .scrollBounceBehavior(.basedOnSize)
+                // No bar down the side. The window under the record is short, and a scroll bar in
+                // it is a second thing moving next to the one being read; the fade below says the
+                // same thing more quietly.
+                .scrollIndicators(.hidden)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { readHeight = $0 }
                 // Faded off at the bottom, and only when there is more page than window — a line
                 // cut in half by the edge reads as a mistake, and the same line fading out reads
@@ -124,22 +112,27 @@ struct GameScreen: View {
                         }
                     }
                 }
-                // The three things that belong to the game rather than to either colour.
-                footer
             }
             .frame(maxWidth: .infinity)
         }
         .background(Palette.parchment)
-        .navigationTitle("对局")
+        // No title. The screen is a board; a word saying "game" over the top of one is a row of a
+        // phone spent on something nobody was in any doubt about. What stands in the title's place
+        // is the one switch, which used to have a strip of its own under the reading — so the
+        // report got that strip, and the switch is more findable than it was, not less.
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Palette.parchment, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .tint(Palette.analysis)
         .toolbar {
+            ToolbarItem(placement: .principal) { engineOpinion }
+            ToolbarItem(placement: .topBarTrailing) { flip }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     // No 复盘 here any more. It was a destination; it is a switch now, in the
-                    // footer, and the report it turns on appears on this board (docs/adr/0015).
+                    // navigation bar, and the report it turns on appears on this board
+                    // (docs/adr/0015).
                     //
                     // Here rather than under the board, where it used to be the widest button on
                     // the screen. Taking a move off is not how a game is read — the record goes
@@ -158,6 +151,19 @@ struct GameScreen: View {
                     } label: {
                         Label("改棋子", systemImage: "hand.point.up.left")
                     }
+                    // Time is the only dial (docs/adr/0009), and here it is spent per ply: a
+                    // deeper pass is a better opinion and a longer wait, and nothing else changes.
+                    // It used to be a 重算 menu on a row of its own under the report, next to a
+                    // sentence naming the depth. The depth is said once now, beside the score it
+                    // produced, and changing it is here with the other things done rarely.
+                    Menu {
+                        ForEach([10, 14, 18, 22], id: \.self) { depth in
+                            Button("深度 \(depth)") { session.startReview(depth: depth) }
+                        }
+                    } label: {
+                        Label("重新打分", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(session.reviewPass?.isRunning == true || !engine.isReady)
                     Toggle(isOn: $isSoundOn) {
                         Label("音效", systemImage: isSoundOn ? "speaker.wave.2" : "speaker.slash")
                     }
@@ -166,9 +172,27 @@ struct GameScreen: View {
                             Label("导出 PGN", systemImage: "square.and.arrow.up")
                         }
                     }
+                    // 先走 throws a game away, and it stays on offer for as long as the game lasts,
+                    // because whose move it was is a field no photograph could settle and finding
+                    // out it was guessed wrong three moves later is the normal way to find out.
+                    // What it does is said where it is about to matter, rather than in a chip
+                    // standing under the board for the rest of the game.
+                    Section("换先走方会重开一局，走过的这局留在记录里") {
+                        Button("白先走") {
+                            selected = nil
+                            session.restart(withSideToMove: .white)
+                        }
+                        .disabled(!session.canStart(withSideToMove: .white))
+                        Button("黑先走") {
+                            selected = nil
+                            session.restart(withSideToMove: .black)
+                        }
+                        .disabled(!session.canStart(withSideToMove: .black))
+                    }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
+                .accessibilityLabel("更多，先走的是\(session.startingSideToMove.chinese)")
             }
         }
         .onAppear {
@@ -220,64 +244,66 @@ struct GameScreen: View {
         }
     }
 
-    // ------------------------------------------------------------------ the top line
+    // ------------------------------------------------------------------ the standing
 
-    /// The number, how it was arrived at, and where in the game the eye is.
+    /// Who is ahead, said once, along the foot of the board.
     ///
-    /// Whose move it is used to be said here; it is said in the bars now, beside the pieces it is
-    /// about. What is left is the one thing that belongs to no colour — the engine's opinion of the
-    /// position as a whole — and the one place a browsing game can be brought back to the present.
-    private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            if !session.isAtLatest {
-                Button {
-                    selected = nil
-                    session.jumpToLatest()
-                } label: {
-                    Text("在看第 \(session.cursor)/\(session.game.plies.count) 步 · 回到最新")
-                        .font(.caption)
-                        .foregroundStyle(Palette.analysis)
-                }
-                .buttonStyle(.plain)
-            } else if viewed.isOver {
-                // Who won is not a fact about one side, so it is said here rather than in a bar —
-                // and the bars have nothing to say anyway, with nobody left on the clock.
+    /// It used to be said twice: a number in a line above the board and a bar below it, with the
+    /// engine's speed and depth between them. Two pictures of one fact cost a row each on a phone,
+    /// and the row they cost came out of the report — which is the part of this screen anybody
+    /// learns anything from. So the number moved down to the end of its own bar, and the speed and
+    /// depth went altogether: they said what the phone was doing, never what the position was.
+    ///
+    /// Always here, whatever the switch is doing, so the board does not walk up the screen when
+    /// the engine is asked to be quiet. What changes is what stands in it: a bar and a number when
+    /// there is an opinion, the word 练习 when there is deliberately none.
+    ///
+    /// A finished game keeps its bar, and that is not a leak: what it carries then is the result,
+    /// and who won is a fact about the game rather than the engine's opinion of it. Practice hides
+    /// what the engine thinks, never what happened.
+    private var standing: some View {
+        HStack(spacing: 10) {
+            if viewed.isOver {
+                // Who won is not a fact about one side, so it is said here rather than in a bar.
                 Text(viewed.chineseTurn)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Palette.ink)
-            } else if engine.unavailableReason != nil {
-                Text("没有引擎").font(.caption).foregroundStyle(Palette.alarm)
-            }
-            Spacer(minLength: 4)
-            SearchMeter(analysis: session.analysis)
-            if let finish {
-                // The number people have been watching, resolved: a finished game has no Score
-                // to show, and what belongs in its place is the one it ended on.
-                //
-                // Before the practice chip, and not after it: a result is not an opinion, so
-                // there is nothing here for practice to withhold. What it would withhold is the
-                // one number in the game that was never the engine's to give.
-                Text(finish.scoreline)
-                    .font(.clock(30))
-                    .foregroundStyle(Palette.ink)
             } else if session.isPractising {
-                // Where the number lives, so its absence is accounted for rather than just an
-                // empty corner someone reads as a broken engine.
+                // Where the number lives, so its absence is accounted for rather than read as an
+                // engine that has died.
                 HStack(spacing: 5) {
-                    Image(systemName: "eye.slash").font(.caption)
+                    Image(systemName: "eye.slash").font(.caption2)
                     Text("练习").font(.footnote.weight(.semibold))
                 }
                 .foregroundStyle(Palette.inkSoft)
+            } else if engine.unavailableReason != nil {
+                Text("没有引擎").font(.caption).foregroundStyle(Palette.alarm)
+            }
+
+            if !session.isPractising || finish != nil {
+                EvalBar(
+                    score: session.analysis?.best?.score,
+                    orientation: session.orientation,
+                    finish: finish
+                )
             } else {
+                Spacer(minLength: 0)
+            }
+
+            if let finish {
+                // The number people have been watching, resolved: a finished game has no Score to
+                // show, and what belongs in its place is the one it ended on.
+                Text(finish.scoreline)
+                    .font(.clock(22))
+                    .foregroundStyle(Palette.ink)
+            } else if !session.isPractising {
                 Text(session.analysis?.best?.score.displayText ?? "—")
-                    .font(.clock(30))
+                    .font(.clock(22))
                     .foregroundStyle(session.analysis == nil ? Palette.inkSoft : Palette.analysis)
                     .contentTransition(.numericText())
             }
         }
-        .frame(height: 36)
-        .padding(.horizontal, 16)
-        .padding(.bottom, 4)
+        .frame(height: 26)
     }
 
     // ------------------------------------------------------------------ the two sides
@@ -314,6 +340,7 @@ struct GameScreen: View {
                     if viewed.state.inCheck {
                         Text("被将").font(.caption.weight(.semibold)).foregroundStyle(Palette.alarm)
                     }
+                    advice(for: colour)
                 }
                 Spacer(minLength: 4)
                 if live { action }
@@ -321,7 +348,6 @@ struct GameScreen: View {
             }
             .frame(height: 30)
 
-            line(for: colour)
             if unfolded == colour { chips(for: colour) }
         }
         .padding(.leading, 13)
@@ -364,7 +390,7 @@ struct GameScreen: View {
                 label: "让引擎走",
                 symbol: "cpu",
                 isHeld: isAsking,
-                fill: Double(session.searchProgress?.depth ?? 0) / SearchMeter.deepEnough,
+                fill: Double(session.searchProgress?.depth ?? 0) / SearchDepth.deepEnough,
                 onPress: {
                     selected = nil
                     isAsking = true
@@ -380,61 +406,50 @@ struct GameScreen: View {
         }
     }
 
-    /// One line under each side's name, and the space is spent whether or not there is anything
-    /// to put in it.
+    /// The engine's answer, in the row that already exists, for the side on the clock.
     ///
-    /// What goes in it belongs to whoever is on the clock — the engine's answer, or, while 让引擎走
-    /// is held, what that thumb has bought: how long the engine has had and how deep it has got.
-    /// That side changes every single move. If the line came and went with it, the bar above the
-    /// board would grow and shrink every move and the board would walk up and down the screen with
-    /// it — so the far side's line is simply empty. A still board is worth the twenty points.
+    /// **One move, not a line.** It used to be six of them — `d4 exd4 cxd4 Bb6 e5 d5` — which is a
+    /// sentence in a language most people playing this have not learnt, spelling out a future
+    /// nobody is obliged to walk into. What is useful is the move it would play now, which the
+    /// board is already drawing as a teal arrow; this names the arrow. The number lives in the
+    /// header, where it is one big figure instead of two small ones.
     ///
-    /// Fixed height for the same reason within the line: the engine's answer changes several times
-    /// a second as the search deepens, and a bar that resized with it would be unreadable.
-    private func line(for colour: PieceColour) -> some View {
-        Group {
-            if !isOnClock(colour) {
-                Color.clear
-            } else if isAsking {
-                Text(askedReadout)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(Palette.analysis)
-                    .lineLimit(1)
-            } else if session.isPractising {
-                Text("练习中，引擎不给意见").font(.caption).foregroundStyle(Palette.inkSoft)
-            } else if let best = session.analysis?.best {
-                HStack(alignment: .firstTextBaseline, spacing: 9) {
-                    ScoreCell(score: best.score, prominent: true)
-                    Text(best.san.prefix(6).joined(separator: " "))
-                        .font(.notation)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .foregroundStyle(Palette.ink)
-                    Spacer(minLength: 0)
-                }
-            } else if let reason = engine.unavailableReason {
-                Text(reason).font(.caption).foregroundStyle(Palette.alarm).lineLimit(1)
-            } else {
-                Text("引擎在算").font(.caption).foregroundStyle(Palette.inkSoft)
-            }
+    /// A row of its own is what this cost before, in both bars, whether or not either had anything
+    /// to say — fifty points of a phone, to keep the board from walking when the clock changed
+    /// sides. In the row it needs no height of its own, and the board stands just as still.
+    @ViewBuilder private func advice(for colour: PieceColour) -> some View {
+        if isAsking {
+            Text(askedReadout)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(Palette.analysis)
+                .lineLimit(1)
+        } else if session.isPractising {
+            // Nothing. The header already wears 练习 with an eye struck through it, and a bar that
+            // says "no opinion" every move is an opinion about how much you are missing.
+            EmptyView()
+        } else if let best = session.analysis?.best?.san.first {
+            Text("\(session.controller(for: colour) == .engine ? "会走" : "建议") \(best)")
+                .font(.caption)
+                .foregroundStyle(Palette.analysis)
+                .lineLimit(1)
+                // The recommendation changes several times a second as the search deepens, and
+                // that is the point (docs/adr/0009) — so it must not animate while it does.
+                .animation(.none, value: session.analysis?.depth)
+        } else if let reason = engine.unavailableReason {
+            Text(reason).font(.caption).foregroundStyle(Palette.alarm).lineLimit(1)
+        } else {
+            Text("在算").font(.caption).foregroundStyle(Palette.inkSoft)
         }
-        .frame(height: 19)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        // The recommendation keeps changing as the search deepens, and that is the point
-        // (docs/adr/0009) — so it must not make the bar jump while it does.
-        .animation(.none, value: session.analysis?.depth)
     }
 
-    /// What a thumb on 让引擎走 is being told: what the engine has spent, how deep it has got, and
-    /// how to finish. Before the first snapshot lands there is nothing to report but the bargain.
+    /// What a thumb on 让引擎走 is being told: how long the engine has had and how deep it has got.
+    /// Before the first snapshot lands there is nothing to report but the bargain. How to finish is
+    /// not said here — it is the button under the thumb, and it says it itself.
     private var askedReadout: String {
         guard let progress = session.searchProgress, progress.depth > 0 else {
-            return "按住越久，算得越深 · 松手就走"
+            return "按住越久算得越深"
         }
-        return String(
-            format: "想了 %.1f 秒 · 深 %d/%d · 松手就走",
-            progress.seconds, progress.depth, progress.selectiveDepth
-        )
+        return String(format: "%.1f 秒 · 深 %d", progress.seconds, progress.depth)
     }
 
     private func unfoldButton(_ colour: PieceColour) -> some View {
@@ -488,50 +503,91 @@ struct GameScreen: View {
 
     // ------------------------------------------------------------------ the record
 
-    /// The moves, as one line you push sideways.
+    /// The moves, as one line you push sideways, over the shape of the game.
     ///
     /// A game is read a move at a time, so it is ruled a move at a time: one card per move number
     /// with both halves in it, the way a scoresheet is. Tapping a half is how you go back to it —
     /// which is browsing and not undoing, so the game is untouched and every move is still there.
     /// The arrows walk it a ply at a time for the times when the eye is following rather than
     /// looking something up.
+    ///
+    /// Behind the cards, when there is a Review to draw one from, is the curve — as a ground and
+    /// not as a second control. It used to be 110 points of the reading below, which on a phone is
+    /// most of the window a question has to fit in; here it costs nothing, because the strip was
+    /// already saying where in the game the eye is and the curve says the same thing in a shape.
+    /// It scrolls with the cards, and spans exactly what they span, so the dip under a card is the
+    /// dip that card's move caused. A chart behind moves it does not describe would be worse than
+    /// no chart — and the correspondence is only as exact as the cards are even, which is why this
+    /// is a ground and the numbers are said in words underneath.
     private var record: some View {
         HStack(spacing: 6) {
             arrow("chevron.left", label: "上一步", enabled: session.cursor > 0) { walk(-1) }
-
-            ScrollViewReader { scroller in
-                ScrollView(.horizontal) {
-                    HStack(spacing: 6) {
-                        openingCell
-                        ForEach(moveCards) { card in
-                            HStack(spacing: 6) {
-                                Text("\(card.number)")
-                                    .font(.caption2.monospacedDigit())
-                                    .foregroundStyle(Palette.inkSoft)
-                                    .frame(minWidth: 13, alignment: .trailing)
-                                if let white = card.white { half(white) }
-                                if let black = card.black { half(black) }
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 6)
-                            .background(Palette.chipRest, in: RoundedRectangle(cornerRadius: 9))
-                        }
-                    }
-                    .padding(.horizontal, 2)
-                }
-                .scrollIndicators(.hidden)
-                // Where the eye is, kept in the middle of the strip as it moves — a record that
-                // has scrolled off the position on the board is a record of somebody else's game.
-                .onChange(of: session.cursor, initial: true) { _, now in
-                    withAnimation(.snappy(duration: 0.2)) { scroller.scrollTo(now, anchor: .center) }
+            moveStrip
+            arrow("chevron.right", label: "下一步", enabled: !session.isAtLatest) { walk(1) }
+            // The way back to the present, beside the arrows that walked away from it. It used to
+            // be a sentence above the board — "在看第 7/8 步 · 回到最新" — which spent a row saying
+            // where the eye was, and where the eye is is what this whole strip is drawing.
+            if !session.isAtLatest {
+                arrow("forward.end.fill", label: "回到最新", enabled: true) {
+                    selected = nil
+                    session.jumpToLatest()
                 }
             }
-
-            arrow("chevron.right", label: "下一步", enabled: !session.isAtLatest) { walk(1) }
         }
         .frame(height: 42)
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
+    }
+
+    /// Whether there is a curve to draw at all: one is made of Scores, and Scores are the engine's
+    /// opinion — which practice is the state of not being given (docs/adr/0015). So a practising
+    /// board has a plain strip, and so does a game nobody has scored.
+    private var canShowCurve: Bool {
+        !session.isPractising && session.game.isReviewed
+    }
+
+    /// The curve as a ground. It marks no cursor of its own — the card on the cursor is already
+    /// filled, and a second mark is a second answer.
+    private var curveGround: some View {
+        EvalCurve(
+            plies: session.game.plies.count,
+            score: { session.game.reviewScore(atPly: $0) }
+        )
+        .accessibilityLabel("分数曲线")
+        .accessibilityValue("第 \(session.cursor) 步")
+    }
+
+    private var moveStrip: some View {
+        ScrollViewReader { scroller in
+            ScrollView(.horizontal) {
+                HStack(spacing: 6) {
+                    openingCell
+                    ForEach(moveCards) { card in
+                        HStack(spacing: 6) {
+                            Text("\(card.number)")
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(Palette.inkSoft)
+                                .frame(minWidth: 13, alignment: .trailing)
+                            if let white = card.white { half(white) }
+                            if let black = card.black { half(black) }
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .background(Palette.chipRest, in: RoundedRectangle(cornerRadius: 9))
+                    }
+                }
+                .padding(.horizontal, 2)
+                .background {
+                    if canShowCurve { curveGround }
+                }
+            }
+            .scrollIndicators(.hidden)
+            // Where the eye is, kept in the middle of the strip as it moves — a record that
+            // has scrolled off the position on the board is a record of somebody else's game.
+            .onChange(of: session.cursor, initial: true) { _, now in
+                withAnimation(.snappy(duration: 0.2)) { scroller.scrollTo(now, anchor: .center) }
+            }
+        }
     }
 
     /// The position the game began in, at the head of its own record. It is a place in the game
@@ -619,19 +675,26 @@ struct GameScreen: View {
             .padding(.horizontal, 16)
             .padding(.top, 10)
         } else if let guess = session.guess {
+            // Four rows and no more. The window under the record is short — shorter than this
+            // question used to be — and a question a person has to scroll to finish answering is
+            // one they answer badly. So the verbs are one row, and the two buttons ride beside
+            // the line that says what the claim reads as.
             VStack(alignment: .leading, spacing: 8) {
                 Text("你走 \(guess.san)。为什么？").font(.subheadline.weight(.medium))
                 verbs
-                Text(reason)
-                    .font(.caption)
-                    .foregroundStyle(
-                        session.declaredIntent == nil ? Palette.inkSoft : Palette.analysis
-                    )
                 HStack(spacing: 9) {
+                    Text(reason)
+                        .font(.caption)
+                        .foregroundStyle(
+                            session.declaredIntent == nil ? Palette.inkSoft : Palette.analysis
+                        )
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button("收回") { session.withdrawGuess() }.buttonStyle(.bordered)
                     Button("就是这步") { session.commitGuess() }
                         .buttonStyle(.borderedProminent)
                         .disabled(!session.canCommitGuess)
-                    Button("收回") { session.withdrawGuess() }.buttonStyle(.bordered)
                 }
                 if !engine.isReady {
                     Text("引擎还没准备好，没法给这步打分。")
@@ -657,37 +720,40 @@ struct GameScreen: View {
         }
     }
 
-    /// The eight answers to 为什么, in one row each way up. Seven verbs that can be told false and
-    /// 说不清, which is a declaration and not a refusal to make one — so it sits with the others
-    /// and looks like them (docs/adr/0018).
+    /// The eight answers to 为什么, in one row. Seven verbs that can be told false and 说不清,
+    /// which is a declaration and not a refusal to make one — so it sits with the others, in the
+    /// same row and the same shape (docs/adr/0018).
+    ///
+    /// One row and not two, because the room under the record is measured in tens of points: the
+    /// eight of them are the question, and a question whose second half is below the fold is one
+    /// half of a question.
     private var verbs: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                ForEach(Intent.Verb.allCases, id: \.self) { verb in
-                    Button {
-                        session.choose(session.declaringVerb == verb ? nil : verb)
-                    } label: {
-                        Text(verb.label)
-                            .font(.subheadline)
-                            .frame(minWidth: 28)
-                            .padding(.vertical, 7)
-                            .foregroundStyle(
-                                session.declaringVerb == verb ? Palette.parchment : Palette.ink
-                            )
-                            .background(
-                                session.declaringVerb == verb ? Palette.analysis : Palette.chipRest,
-                                in: Capsule()
-                            )
-                    }
-                    .buttonStyle(.plain)
+        HStack(spacing: 5) {
+            ForEach(Intent.Verb.allCases, id: \.self) { verb in
+                Button {
+                    session.choose(session.declaringVerb == verb ? nil : verb)
+                } label: {
+                    Text(verb.label)
+                        .font(.subheadline)
+                        .frame(minWidth: 30)
+                        .padding(.vertical, 7)
+                        .foregroundStyle(
+                            session.declaringVerb == verb ? Palette.parchment : Palette.ink
+                        )
+                        .background(
+                            session.declaringVerb == verb ? Palette.analysis : Palette.chipRest,
+                            in: Capsule()
+                        )
                 }
+                .buttonStyle(.plain)
             }
             Button {
                 session.declareUnclear()
             } label: {
                 Text(Intent.unclearLabel)
                     .font(.footnote)
-                    .padding(.horizontal, 12)
+                    .lineLimit(1)
+                    .padding(.horizontal, 9)
                     .padding(.vertical, 7)
                     .foregroundStyle(
                         session.declaredIntent == .unclear ? Palette.parchment : Palette.inkSoft
@@ -835,16 +901,25 @@ struct GameScreen: View {
                     ForEach(worst, id: \.ply) { ranked in
                         Button { jump(toQuestion: ranked) } label: {
                             HStack(spacing: 5) {
-                                Text("第 \(session.game.moveNumber(ofPly: ranked.ply)) 回合")
-                                    .font(.caption)
-                                Text(ranked.mover.chinese).font(.caption)
-                                if !session.isPractising {
-                                    Text(ranked.san).font(.notation)
+                                let number = session.game.moveNumber(ofPly: ranked.ply)
+                                if session.isPractising {
+                                    // No move to name, so the turn has to be named in words.
+                                    Text("第 \(number) 回合").font(.caption)
+                                    Text(ranked.mover.chinese).font(.caption)
+                                } else {
+                                    // The way a game is written down: "4." is White's fourth move
+                                    // and "4…" is Black's answer to it. Three of these have to
+                                    // stand side by side on a phone, where "第 4 回合 白方 c3 ??"
+                                    // wrapped inside its own chip — and anybody reading a score
+                                    // sheet has to know this notation anyway.
+                                    Text("\(number)\(ranked.mover == .white ? "." : "…") \(ranked.san)")
+                                        .font(.notation)
                                     if let quality = ranked.quality, quality != .fine {
                                         Text(quality.mark).font(.caption2.bold())
                                     }
                                 }
                             }
+                            .lineLimit(1)
                             .foregroundStyle(
                                 session.cursor == ranked.ply - 1 ? Palette.analysis : Palette.ink
                             )
@@ -933,17 +1008,10 @@ struct GameScreen: View {
                     }
                 }
                 if session.game.isReviewed {
-                    EvalCurve(
-                        plies: session.game.plies.count,
-                        score: { session.game.reviewScore(atPly: $0) },
-                        selected: Binding(
-                            get: { session.cursor },
-                            set: { selected = nil; session.jump(toPly: $0) }
-                        )
-                    )
-                    .frame(height: 110)
+                    // No curve here: it is in the record, which is the other picture of the same
+                    // thing and already on screen. What is left is what the curve cannot say —
+                    // which move the eye is on, what the pass made of it, and at what Depth.
                     plyReport
-                    depthRow
                 } else if let reason = engine.unavailableReason {
                     Text(reason).font(.caption).foregroundStyle(Palette.alarm)
                 } else if session.reviewPass == nil, !session.game.plies.isEmpty {
@@ -979,26 +1047,14 @@ struct GameScreen: View {
             } else {
                 Text("起始局面").font(.subheadline.weight(.medium))
             }
-            Spacer(minLength: 0)
-            ScoreCell(score: session.game.reviewScore(atPly: ply), prominent: true)
-        }
-    }
-
-    private var depthRow: some View {
-        HStack(spacing: 9) {
-            Text("按深度 \(session.game.reviewDepth ?? GameSession.reviewDepth) 算的")
-                .font(.caption)
+            // Named, because a Score without a depth compares to nothing — but said as two words
+            // beside the number it qualifies rather than as a sentence on a row of its own. The
+            // way to change it is in the ⋯ menu, with the other things done once a game.
+            Text("深度 \(session.game.reviewDepth ?? GameSession.reviewDepth)")
+                .font(.caption2)
                 .foregroundStyle(Palette.inkSoft)
             Spacer(minLength: 0)
-            Menu("重算") {
-                // Time is the only dial (docs/adr/0009), and here it is spent per ply: a deeper
-                // pass is a better opinion and a longer wait, and nothing else changes.
-                ForEach([10, 14, 18, 22], id: \.self) { depth in
-                    Button("深度 \(depth)") { session.startReview(depth: depth) }
-                }
-            }
-            .font(.caption)
-            .disabled(session.reviewPass?.isRunning == true || !engine.isReady)
+            ScoreCell(score: session.game.reviewScore(atPly: ply), prominent: true)
         }
     }
 
@@ -1096,18 +1152,24 @@ struct GameScreen: View {
     /// appearing cannot change the size of the board.
     @ViewBuilder private var alternatives: some View {
         let rest = Array((session.analysis?.lines ?? []).dropFirst().prefix(2))
+            .compactMap { line in line.san.first.map { (san: $0, score: line.score) } }
         if !session.isPractising, !rest.isEmpty {
-            VStack(alignment: .leading, spacing: 5) {
-                ForEach(Array(rest.enumerated()), id: \.offset) { _, line in
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        ScoreCell(score: line.score).frame(width: 52, alignment: .leading)
-                        Text(line.san.prefix(8).joined(separator: " "))
-                            .font(.notation)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .foregroundStyle(Palette.inkSoft)
+            // The moves, not the lines. Eight plies of notation per candidate is three sentences
+            // of a language a club player reads and nobody else does, and it was two rows of a
+            // window that has about four. What somebody can actually use is "these were the other
+            // moves worth a look, and this is what each is worth".
+            HStack(spacing: 8) {
+                Text("其它选择").eyebrow()
+                ForEach(Array(rest.enumerated()), id: \.offset) { _, candidate in
+                    HStack(spacing: 5) {
+                        Text(candidate.san).font(.notation).foregroundStyle(Palette.ink)
+                        ScoreCell(score: candidate.score)
                     }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(Palette.chipRest, in: Capsule())
                 }
+                Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
@@ -1166,7 +1228,7 @@ struct GameScreen: View {
                         : "这局走完了。曲线和每一步的得失都在下面。"
                 )
             } else if session.isPractising {
-                Text("练习中，引擎不给意见。想看它怎么说，打开下面的「引擎意见」。")
+                Text("练习中，引擎不给意见。想看它怎么说，打开上面的「引擎意见」。")
             }
             // What a game with nobody on the clock does, and how to stop it — which is the one
             // thing about self-play that is not on the screen already. Stepping back is a stop
@@ -1183,7 +1245,7 @@ struct GameScreen: View {
         .padding(.top, 10)
     }
 
-    // ------------------------------------------------------------------ the footer
+    // ------------------------------------------------------------------ the bar at the top
 
     /// The one switch: whether the engine's opinion is on this screen at all.
     ///
@@ -1192,6 +1254,10 @@ struct GameScreen: View {
     /// round. It starts off on every Game and it belongs to the Game in front of you — the thing
     /// standing between a player and the answer is not allowed to be found wherever it was last
     /// left (docs/adr/0015).
+    ///
+    /// In the title's place, because it had a strip of its own under the reading and the reading
+    /// needed the strip more. A word saying "game" over a board was worth less than three lines of
+    /// what the engine found, and the switch is more findable in the bar than it was down there.
     private var engineOpinion: some View {
         Toggle(
             isOn: Binding(
@@ -1208,59 +1274,11 @@ struct GameScreen: View {
         .toggleStyle(.switch)
         .controlSize(.mini)
         .fixedSize()
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Palette.chipRest, in: Capsule())
+        // Named here rather than left to the screen's tint: a toolbar item is outside the view
+        // that carries it, and what it inherited instead was the system green — a colour with no
+        // voice in this app, worn by the one control that says whose voice you are hearing.
+        .tint(Palette.analysis)
         .disabled(!engine.isReady && session.isPractising)
-    }
-
-    /// The three things that belong to the game rather than to either colour: whether the engine
-    /// talks at all, which way up the board is, and who started.
-    ///
-    /// 先走 is a menu and not a pair of chips, because it is the one control on this screen that
-    /// throws a game away — and it stays on offer for as long as the game lasts, because whose
-    /// move it was is a field no photograph could settle, and finding out it was guessed wrong
-    /// three moves later is the normal way to find out.
-    private var footer: some View {
-        HStack(spacing: 9) {
-            engineOpinion
-
-            flip
-
-            Spacer(minLength: 0)
-
-            Menu {
-                // Said where it is about to matter rather than in a line under the board that is
-                // read once and then stands there for the rest of the game.
-                Section("换先走方会重开一局，走过的这局留在记录里") {
-                    Button("白先走") {
-                        selected = nil
-                        session.restart(withSideToMove: .white)
-                    }
-                    .disabled(!session.canStart(withSideToMove: .white))
-                    Button("黑先走") {
-                        selected = nil
-                        session.restart(withSideToMove: .black)
-                    }
-                    .disabled(!session.canStart(withSideToMove: .black))
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Text("先走 \(session.startingSideToMove.chinese)").font(.footnote)
-                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 9))
-                }
-                .foregroundStyle(Palette.ink)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(Palette.chipRest, in: Capsule())
-            }
-            .accessibilityLabel("先走的是\(session.startingSideToMove.chinese)")
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 2)
-        .background(Palette.raised)
-        .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 0.5) }
     }
 
     /// Turns the board round — and with it, which side's controls are above and which below. The
@@ -1272,14 +1290,8 @@ struct GameScreen: View {
                     session.orientation == .whiteAtBottom ? .blackAtBottom : .whiteAtBottom
             }
         } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "arrow.up.arrow.down").font(.caption2)
-                Text("翻转").font(.footnote)
-            }
-            .foregroundStyle(Palette.ink)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(Palette.chipRest, in: Capsule())
+            Image(systemName: "arrow.up.arrow.down")
+                .foregroundStyle(Palette.ink)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("翻转棋盘")
