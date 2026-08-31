@@ -274,6 +274,18 @@ public struct Game: Hashable, Sendable {
         ply.isMultiple(of: 2) ? startingSideToMove.opposite : startingSideToMove
     }
 
+    /// The move number the `ply`th move is written under, counting plies from one.
+    ///
+    /// Not `(ply + 1) / 2`: that is only right for a Game that began at move one with White
+    /// to move, and a Game recognised from a picture usually began neither. PGN's numbering
+    /// hangs off `startingSideToMove` and `startingFullmoveNumber`, and this is the one place
+    /// it is worked out.
+    public func moveNumber(ofPly ply: Int) -> Int {
+        startingSideToMove == .white
+            ? startingFullmoveNumber + (ply - 1) / 2
+            : startingFullmoveNumber + ply / 2
+    }
+
     /// What a Review made of the move at `ply`, counting from one. Nil when the Game has not
     /// been reviewed, or when either side of the comparison is missing.
     public func quality(atPly ply: Int) -> MoveQuality? {
