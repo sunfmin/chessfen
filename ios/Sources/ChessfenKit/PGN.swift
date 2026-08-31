@@ -119,8 +119,18 @@ public struct PGN: Hashable, Sendable {
             // One or the other, never both: which slot a file's Scores landed in was decided
             // once by whether it carried a Review Depth, so writing either back out under
             // the same tag is what makes the round trip exact.
+            var comment: [String] = []
             if let evaluation = ply.evaluation ?? ply.importedEvaluation {
-                written.append("{[%eval \(evaluation.pgnText)]}")
+                comment.append("[%eval \(evaluation.pgnText)]")
+            }
+            // The player's own words about the move, in the same braced convention as the
+            // engine's (docs/adr/0018). One comment carrying both rather than two, which is how
+            // every other tool that writes these writes them.
+            if let intent = ply.intent {
+                comment.append("[%int \(intent.pgnText)]")
+            }
+            if !comment.isEmpty {
+                written.append("{" + comment.joined(separator: " ") + "}")
             }
             for variation in ply.variations {
                 // A Variation stands in for this move, so it is numbered as this move.
@@ -238,6 +248,11 @@ public struct PGN: Hashable, Sendable {
                 frames[last].game.setEvaluation(
                     score, atPly: frames[last].game.plies.count - 1, reviewed: isReviewed
                 )
+            case .intent(let intent):
+                guard !frames[last].dead else { continue }
+                // An Intent belongs to a move, so one standing before the first move has
+                // nothing to belong to — `setIntent` says so by refusing ply 0.
+                frames[last].game.setIntent(intent, atPly: frames[last].game.plies.count)
             case .variationStart:
                 // A Variation is an alternative to the move just read, so it starts from the
                 // position that move was played in.
@@ -281,6 +296,7 @@ private struct Scanner {
     enum MovetextToken {
         case move(String)
         case evaluation(Score)
+        case intent(Intent)
         case variationStart
         case variationEnd
     }
@@ -322,7 +338,11 @@ private struct Scanner {
                 advance()
                 let comment = read(while: { $0 != "}" })
                 advance()
+                // Everything else in a comment is dropped, which is what it was before there was
+                // anything to keep: an unknown `[%…]`, a malformed one, or somebody's prose all
+                // read the same way to a file that must still open.
                 if let score = Self.evaluation(in: comment) { tokens.append(.evaluation(score)) }
+                if let intent = Self.intent(in: comment) { tokens.append(.intent(intent)) }
             case ";":
                 _ = read(while: { !$0.isNewline })
             case "(":
@@ -351,10 +371,21 @@ private struct Scanner {
     }
 
     private static func evaluation(in comment: String) -> Score? {
-        guard let start = comment.range(of: "[%eval ") else { return nil }
+        Self.body(of: "eval", in: comment).flatMap { Score(pgnText: $0) }
+    }
+
+    private static func intent(in comment: String) -> Intent? {
+        Self.body(of: "int", in: comment).flatMap { Intent(pgnText: $0) }
+    }
+
+    /// What is between `[%name ` and the next `]`, trimmed. Nil when the token is not there at
+    /// all, or is there with nothing in it.
+    private static func body(of name: String, in comment: String) -> String? {
+        guard let start = comment.range(of: "[%\(name) ") else { return nil }
         let rest = comment[start.upperBound...]
         guard let end = rest.firstIndex(of: "]") else { return nil }
-        return Score(pgnText: String(rest[..<end]).trimmingCharacters(in: .whitespaces))
+        let body = String(rest[..<end]).trimmingCharacters(in: .whitespaces)
+        return body.isEmpty ? nil : body
     }
 
     private func peek(offset: Int = 0) -> Character? {

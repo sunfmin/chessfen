@@ -32,19 +32,40 @@ public struct Game: Hashable, Sendable {
         /// move in here rather than into the bin; PGN has written them in brackets since 1994
         /// and this is the same thing.
         public var variations: [[Ply]] = []
+        /// What the player said this move was *for*, if they were asked (docs/adr/0018).
+        ///
+        /// Written by the player and by nobody else — no engine can produce one, which is the
+        /// reason it is worth storing. Nil means nobody was asked; `.unclear` means somebody was
+        /// asked and had no reason, and the difference between those two is the whole diagnosis.
+        public var intent: Intent?
 
         public init(
             uci: String,
             san: String,
             evaluation: Score? = nil,
             importedEvaluation: Score? = nil,
-            variations: [[Ply]] = []
+            variations: [[Ply]] = [],
+            intent: Intent? = nil
         ) {
             self.uci = uci
             self.san = san
             self.evaluation = evaluation
             self.importedEvaluation = importedEvaluation
             self.variations = variations
+            self.intent = intent
+        }
+
+        /// Takes over everything that is *said about* a move rather than being the move.
+        ///
+        /// Replaying a line recomputes `uci` and `san` and loses all of this, so anything that
+        /// replays — `rewound(to:)`, promoting a Variation — puts it back through here. One list
+        /// in one place, because the way this goes wrong is a field being added and only two of
+        /// the three call sites remembering it.
+        mutating func takeAnnotations(from other: Self) {
+            evaluation = other.evaluation
+            importedEvaluation = other.importedEvaluation
+            variations = other.variations
+            intent = other.intent
         }
     }
 
@@ -199,15 +220,13 @@ public struct Game: Hashable, Sendable {
         for step in chosen {
             guard rebuilt.apply(uci: step.uci) else { return false }
         }
-        // Replay dropped the evaluations and the nested variations, so they go back on.
+        // Replay dropped everything that was said *about* these moves, so it goes back on.
         // The Review Depth carries across untouched: it says what Depth the Scores that
         // exist were computed at, and a promoted line's plies either carry Scores from the
         // same pass or carry none — in which case `reviewScore` is nil and nothing about
         // them is judged. A ply with no Score is never a mistake.
         for (offset, step) in chosen.enumerated() {
-            rebuilt.plies[ply + offset].evaluation = step.evaluation
-            rebuilt.plies[ply + offset].importedEvaluation = step.importedEvaluation
-            rebuilt.plies[ply + offset].variations = step.variations
+            rebuilt.plies[ply + offset].takeAnnotations(from: step)
         }
         self = rebuilt
         return true
@@ -227,8 +246,8 @@ public struct Game: Hashable, Sendable {
     /// The Game as it stood after `ply` moves, for stepping through a Review.
     ///
     /// Replaying is what recomputes the Position, but it would also throw away what replaying
-    /// cannot know — the Scores a Review recorded and the Variations that hang off the moves
-    /// — so those are carried across afterwards.
+    /// cannot know — the Scores a Review recorded, the Variations that hang off the moves, and
+    /// what the player said each one was for — so those are carried across afterwards.
     public func rewound(to ply: Int) -> Game? {
         guard (0...plies.count).contains(ply) else { return nil }
         guard var game = Game(startFEN: startFEN) else { return nil }
@@ -236,9 +255,7 @@ public struct Game: Hashable, Sendable {
             guard game.apply(uci: played.uci) else { return nil }
         }
         for index in 0..<ply {
-            game.plies[index].evaluation = plies[index].evaluation
-            game.plies[index].importedEvaluation = plies[index].importedEvaluation
-            game.plies[index].variations = plies[index].variations
+            game.plies[index].takeAnnotations(from: plies[index])
         }
         game.reviewDepth = reviewDepth
         game.startEvaluation = startEvaluation
@@ -310,6 +327,24 @@ public struct Game: Hashable, Sendable {
         } else {
             plies[ply].importedEvaluation = score
         }
+    }
+
+    /// Declares what the move at `ply` was for, counting from one — or takes the declaration
+    /// back, with nil.
+    ///
+    /// Counting from one rather than from zero, unlike the two setters above, because an Intent
+    /// belongs to a move somebody played: there is no Intent for the position a Game started
+    /// from, so there is no ply 0 to address.
+    @discardableResult
+    public mutating func setIntent(_ intent: Intent?, atPly ply: Int) -> Bool {
+        guard plies.indices.contains(ply - 1) else { return false }
+        plies[ply - 1].intent = intent
+        return true
+    }
+
+    /// What the player said the move at `ply` was for, counting from one.
+    public func intent(atPly ply: Int) -> Intent? {
+        plies.indices.contains(ply - 1) ? plies[ply - 1].intent : nil
     }
 
     /// Set from the file's `[ReviewDepth]` tag as it is read, so the tag has exactly one home.
