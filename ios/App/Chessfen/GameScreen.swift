@@ -93,6 +93,9 @@ struct GameScreen: View {
                 // a scroll again.
                 ScrollView {
                     VStack(spacing: 0) {
+                        study
+                        report
+                        questions
                         series
                         corrections
                         notes
@@ -133,11 +136,9 @@ struct GameScreen: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button {
-                        path.append(.review(session))
-                    } label: {
-                        Label("复盘", systemImage: "chart.line.uptrend.xyaxis")
-                    }
+                    // No 复盘 here any more. It was a destination; it is a switch now, in the
+                    // footer, and the report it turns on appears on this board (docs/adr/0015).
+                    //
                     // Here rather than under the board, where it used to be the widest button on
                     // the screen. Taking a move off is not how a game is read — the record goes
                     // back through it without touching it, and playing something else from where
@@ -205,7 +206,11 @@ struct GameScreen: View {
         ) {
             ForEach(promotion?.moves ?? [], id: \.uci) { move in
                 Button(move.promotion?.chinese ?? move.uci) {
-                    session.play(move)
+                    if session.isStudying {
+                        session.offer(move)
+                    } else {
+                        session.play(move)
+                    }
                     promotion = nil
                 }
             }
@@ -592,6 +597,261 @@ struct GameScreen: View {
 
     // ------------------------------------------------------------------ the reading
 
+    // ------------------------------------------------------------------ the study
+
+    /// The question, the answer, and what the answer was worth — all on the board that asked it.
+    ///
+    /// Browsing back to a past Ply with the engine silent *is* the Drill: there is no mode to
+    /// enter and no screen to go to, so this is what appears under the board when the two things
+    /// a person has already said — the switch is off, the eye is in the past — add up to a
+    /// question (docs/adr/0015).
+    @ViewBuilder private var study: some View {
+        if let reveal = session.reveal {
+            revealed(reveal)
+        } else if session.isRevealing {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("正在算这一步…").font(.footnote).foregroundStyle(Palette.inkSoft)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+        } else if let guess = session.guess {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("你走 \(guess.san)。").font(.subheadline.weight(.medium))
+                HStack(spacing: 9) {
+                    Button("就是这步") { session.commitGuess() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!engine.isReady)
+                    Button("收回") { session.withdrawGuess() }.buttonStyle(.bordered)
+                }
+                if !engine.isReady {
+                    Text("引擎还没准备好，没法给这步打分。")
+                        .font(.caption)
+                        .foregroundStyle(Palette.alarm)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+        } else if session.isStudying {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("轮到\(viewed.state.sideToMove.chinese)走。你会走哪一步？")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Palette.ink)
+                Text("直接在棋盘上走一步。走完才会告诉你结果。")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+        }
+    }
+
+    /// Three moves side by side, never one number. "Your move" against "the engine's" against
+    /// "what was actually played" — because being level with the engine, matching what you did
+    /// last time, and finding the move are three different pieces of news.
+    private func revealed(_ reveal: Reveal) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(verdict(reveal))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(reveal.counts == false ? Palette.alarm : Palette.ink)
+
+            VStack(alignment: .leading, spacing: 4) {
+                revealRow("你走", reveal.guess, reveal.guessScore, prominent: true)
+                if !reveal.isSameAsBest {
+                    revealRow("引擎", reveal.best ?? "—", reveal.bestScore)
+                }
+                if !reveal.isSameAsPlayed {
+                    revealRow("实战", reveal.played, reveal.playedScore)
+                }
+            }
+
+            HStack(spacing: 9) {
+                if !reveal.isSameAsPlayed {
+                    Button("保留这步") { session.keepGuess() }.buttonStyle(.bordered)
+                }
+                Button("再来一次") { session.withdrawGuess() }.buttonStyle(.bordered)
+                if let next = nextQuestion {
+                    Button("下一题") { jump(toQuestion: next) }.buttonStyle(.bordered)
+                }
+            }
+            Text("三步都按深度 \(reveal.depth) 算，所以彼此可以比。")
+                .font(.caption)
+                .foregroundStyle(Palette.inkSoft)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+    }
+
+    private func revealRow(
+        _ title: String, _ san: String, _ score: Score?, prominent: Bool = false
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(title).font(.caption).foregroundStyle(Palette.inkSoft).frame(width: 30, alignment: .leading)
+            Text(san).font(.notation).foregroundStyle(Palette.ink)
+            Spacer(minLength: 0)
+            ScoreCell(score: score, prominent: prominent)
+        }
+    }
+
+    private func verdict(_ reveal: Reveal) -> String {
+        guard let lost = reveal.lost, let quality = reveal.quality else {
+            return "引擎没给出意见，只能跟实战比。"
+        }
+        let gap = String(format: "%.2f", Double(abs(lost)) / 100)
+        if reveal.isSameAsBest { return "就是引擎的第一选择。" }
+        if lost <= 0 { return "比引擎的还好 \(gap)。" }
+        return quality == .fine ? "过关：跟引擎差 \(gap)。" : "\(quality.label)：比引擎差 \(gap)。"
+    }
+
+    /// The Game's worst moves, as the questions they are (docs/adr/0017).
+    ///
+    /// Numbers and colours only while the engine is silent: the label 漏着 beside a move is the
+    /// answer to the question about to be asked, so a list that carried it would give the game
+    /// away before the board did.
+    @ViewBuilder private var questions: some View {
+        if let worst = session.worstMoves(3), !worst.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(session.isPractising ? "最该看的三步" : "这局最贵的三步")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
+                HStack(spacing: 8) {
+                    ForEach(worst, id: \.ply) { ranked in
+                        Button { jump(toQuestion: ranked) } label: {
+                            HStack(spacing: 5) {
+                                Text("第 \(session.game.moveNumber(ofPly: ranked.ply)) 回合")
+                                    .font(.caption)
+                                Text(ranked.mover.chinese).font(.caption)
+                                if !session.isPractising {
+                                    Text(ranked.san).font(.notation)
+                                    if let quality = ranked.quality, quality != .fine {
+                                        Text(quality.mark).font(.caption2.bold())
+                                    }
+                                }
+                            }
+                            .foregroundStyle(
+                                session.cursor == ranked.ply - 1 ? Palette.analysis : Palette.ink
+                            )
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Palette.chipRest, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+        }
+    }
+
+    /// The next worst move that is not the one already on screen, so 下一题 walks the three in
+    /// order rather than re-asking the one just answered.
+    private var nextQuestion: Criticality? {
+        guard let worst = session.worstMoves(3) else { return nil }
+        return worst.first { $0.ply - 1 != session.cursor }
+    }
+
+    private func jump(toQuestion ranked: Criticality) {
+        selected = nil
+        // To the position the move was played *from*: the question is what to play here, so the
+        // move itself has to still be ahead of the cursor.
+        session.jump(toPly: ranked.ply - 1)
+    }
+
+    // ------------------------------------------------------------------ the report
+
+    /// What the engine has to say about the whole game, on the same screen it was played on.
+    ///
+    /// This is 复盘. It used to be a screen you went to; it is what the switch turns on
+    /// (docs/adr/0015), and a Game that has never had a uniform-depth pass gets one here —
+    /// turning the switch on is the only moment that can start one (docs/adr/0016).
+    @ViewBuilder private var report: some View {
+        if !session.isPractising {
+            VStack(alignment: .leading, spacing: 10) {
+                if let pass = session.reviewPass, pass.isRunning {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("正在用深度 \(pass.depth) 重算：\(pass.completed)/\(max(pass.total, 1))")
+                            .font(.footnote)
+                            .foregroundStyle(Palette.inkSoft)
+                    }
+                }
+                if session.game.isReviewed {
+                    EvalCurve(
+                        plies: session.game.plies.count,
+                        score: { session.game.reviewScore(atPly: $0) },
+                        selected: Binding(
+                            get: { session.cursor },
+                            set: { selected = nil; session.jump(toPly: $0) }
+                        )
+                    )
+                    .frame(height: 110)
+                    plyReport
+                    depthRow
+                } else if let reason = engine.unavailableReason {
+                    Text(reason).font(.caption).foregroundStyle(Palette.alarm)
+                } else if session.reviewPass == nil, !session.game.plies.isEmpty {
+                    HStack(spacing: 9) {
+                        Text("这局还没打过分。").font(.footnote).foregroundStyle(Palette.inkSoft)
+                        Button("打分") { session.startReview() }.buttonStyle(.bordered)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+        }
+    }
+
+    /// The move the eye is on, what the pass made of it, and its Score.
+    @ViewBuilder private var plyReport: some View {
+        let ply = session.cursor
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            if ply > 0, let played = session.game.plies[safe: ply - 1] {
+                Text("第 \(session.game.moveNumber(ofPly: ply)) 回合 \(session.game.mover(ofPly: ply).chinese) \(played.san)")
+                    .font(.subheadline.weight(.medium))
+                if let quality = session.game.quality(atPly: ply), quality != .fine {
+                    Text(quality.label)
+                        .font(.footnote.bold())
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            (quality == .blunder ? Palette.alarm : Color.orange).opacity(0.2),
+                            in: Capsule()
+                        )
+                }
+            } else {
+                Text("起始局面").font(.subheadline.weight(.medium))
+            }
+            Spacer(minLength: 0)
+            ScoreCell(score: session.game.reviewScore(atPly: ply), prominent: true)
+        }
+    }
+
+    private var depthRow: some View {
+        HStack(spacing: 9) {
+            Text("按深度 \(session.game.reviewDepth ?? GameSession.reviewDepth) 算的")
+                .font(.caption)
+                .foregroundStyle(Palette.inkSoft)
+            Spacer(minLength: 0)
+            Menu("重算") {
+                // Time is the only dial (docs/adr/0009), and here it is spent per ply: a deeper
+                // pass is a better opinion and a longer wait, and nothing else changes.
+                ForEach([10, 14, 18, 22], id: \.self) { depth in
+                    Button("深度 \(depth)") { session.startReview(depth: depth) }
+                }
+            }
+            .font(.caption)
+            .disabled(session.reviewPass?.isRunning == true || !engine.isReady)
+        }
+    }
+
     /// Where this game sits in its collection, and the way to the next one.
     ///
     /// Working through a set is the reason collections exist, and going back to the library between
@@ -752,11 +1012,11 @@ struct GameScreen: View {
                 // The result is at the top and on the bar; what is left to say is what to do next.
                 Text(
                     session.isPractising
-                        ? "这局走完了。去「复盘」，引擎会把每一步重新打一遍分。"
-                        : "这局走完了。去「复盘」看每一步的得失。"
+                        ? "这局走完了。打开「引擎意见」，它会把每一步重新打一遍分。"
+                        : "这局走完了。曲线和每一步的得失都在下面。"
                 )
             } else if session.isPractising {
-                Text("练习中，引擎不给意见。走完用「复盘」跟它对一遍。")
+                Text("练习中，引擎不给意见。想看它怎么说，打开下面的「引擎意见」。")
             }
             // What a game with nobody on the clock does, and how to stop it — which is the one
             // thing about self-play that is not on the screen already. Stepping back is a stop
@@ -940,7 +1200,14 @@ struct GameScreen: View {
                 return
             }
             if let move = moves.first {
-                session.play(move)
+                // The one difference a Drill makes to the board: while a past Ply is being
+                // studied a move is *offered* — visible, uncommitted, and yours to take back —
+                // rather than played into the game (docs/adr/0015).
+                if session.isStudying {
+                    session.offer(move)
+                } else {
+                    session.play(move)
+                }
                 self.selected = nil
                 return
             }

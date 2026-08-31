@@ -3,14 +3,16 @@ import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Where the app goes next. A game and a review are pushed by identity, because the session they
-/// show is a live object rather than a value that can be recreated.
+/// Where the app goes next. A game is pushed by identity, because the session it shows is a live
+/// object rather than a value that can be recreated.
+///
+/// There is no review here. A Review is not a place: it is what the engine's opinion switched on
+/// looks like, on the same board the game is played on (docs/adr/0015).
 enum Step: Hashable {
     /// One collection, addressed by its name — which is also all a collection is.
     case collection(String)
     case confirm(PositionProposal)
     case game(GameSession)
-    case review(GameSession)
 }
 
 /// A typed name, or nil for one that was only spaces — which is how a name is taken back off.
@@ -92,8 +94,6 @@ struct LibraryScreen: View {
                     ConfirmPositionScreen(proposal: proposal, path: $path)
                 case .game(let session):
                     GameScreen(session: session, path: $path)
-                case .review(let session):
-                    ReviewScreen(session: session)
                 }
             }
             .overlay {

@@ -32,9 +32,17 @@ final class ScriptedEngine: Engine {
 
     var searchCount: Int { budgets.count }
 
-    init(_ snapshots: [Analysis], isEndless: Bool = false) {
+    /// An opinion per position, keyed by FEN, for the searches that are *about* particular
+    /// positions rather than about deepening: a study asks three questions of three positions and
+    /// has to get three answers.
+    private let byPosition: [String: Analysis]
+
+    init(
+        _ snapshots: [Analysis], isEndless: Bool = false, byPosition: [String: Analysis] = [:]
+    ) {
         self.snapshots = snapshots
         self.isEndless = isEndless
+        self.byPosition = byPosition
     }
 
     var isPaused: Bool { paused.withLock { $0 } }
@@ -45,8 +53,10 @@ final class ScriptedEngine: Engine {
     func analyse(_ game: Game, budget: SearchBudget, lines: Int) -> AsyncStream<Analysis> {
         asked.withLock { $0.append(budget) }
         askedLines.withLock { $0.append(lines) }
+        let scripted = byPosition[game.state.fen].map { [$0] } ?? snapshots
+        let isEndless = byPosition[game.state.fen] == nil && self.isEndless
         return AsyncStream { continuation in
-            for snapshot in snapshots { continuation.yield(snapshot) }
+            for snapshot in scripted { continuation.yield(snapshot) }
             // An endless search never finishes on its own: it ends when the stream goes away,
             // which is the one way the real engine ends one too.
             if !isEndless { continuation.finish() }
@@ -54,7 +64,7 @@ final class ScriptedEngine: Engine {
     }
 
     func evaluate(_ game: Game, budget: SearchBudget) async -> Score? {
-        snapshots.last?.best?.score
+        byPosition[game.state.fen]?.best?.score ?? snapshots.last?.best?.score
     }
 
     /// One Score per ply, walked down the script so a curve has something to be a curve about.

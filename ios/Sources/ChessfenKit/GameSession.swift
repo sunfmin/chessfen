@@ -50,12 +50,32 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// latest. Browsing back does not change the Game — but playing from there does, and what
     /// used to follow becomes a Variation.
     public private(set) var cursor: Int {
-        didSet { storedViewed = nil }
+        didSet {
+            storedViewed = nil
+            // The cursor *is* the question a Drill asks, so moving it takes the answer off the
+            // board with it. One home for that, rather than four places that each remember.
+            guess = nil
+            reveal = nil
+            revealTask?.cancel()
+            revealTask = nil
+            isRevealing = false
+        }
     }
     /// The Game rebuilt where the cursor stands, kept until either the Game or the cursor
     /// moves — the whole point of `viewed` being a stored value instead of a derivation
     /// (see `viewed` itself).
     @ObservationIgnored private var storedViewed: Game?
+    /// The move offered at the Ply being studied, on the board and not yet in the Game.
+    public private(set) var guess: Guess?
+    /// What committing it showed. Nil until something has been committed, and cleared by
+    /// anything that changes the question.
+    public private(set) var reveal: Reveal?
+    /// True while the searches behind a reveal are running.
+    public private(set) var isRevealing = false
+    /// The uniform-depth pass over the whole Game, while there is one running or just finished.
+    public private(set) var reviewPass: ReviewPass?
+    private var revealTask: Task<Void, Never>?
+    private var reviewTask: Task<Void, Never>?
     /// The Analysis of the position being looked at, replaced each time the engine reports a
     /// deeper one, and cleared the moment anything makes it stale.
     public private(set) var analysis: Analysis?
@@ -353,6 +373,13 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         guard isPractising != practising else { return }
         isPractising = practising
         analysis = nil
+        // A Drill is what the board is while the opinion is off, so turning it on ends any
+        // question in progress rather than leaving an unmarked answer under a curve.
+        withdrawGuess()
+        // The one moment a Game can acquire a Review. 复盘 is not a place any more; it is the
+        // name of what this switch turns on, and a Game that has never had a uniform pass gets
+        // one here (docs/adr/0015).
+        if !practising, !game.isReviewed { startReview() }
         retune()
     }
 
@@ -417,7 +444,10 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// the one Rules probe per change that ADR-0003 is about; the reads after it are free.
     public var viewed: Game {
         if let storedViewed { return storedViewed }
-        let rebuilt = game.rewound(to: cursor) ?? game
+        var rebuilt = game.rewound(to: cursor) ?? game
+        // A held Guess is shown on the board. A move you cannot see is not a move you can weigh,
+        // and the position after it is the thing being asked about.
+        if let guess { rebuilt.apply(guess.move) }
         storedViewed = rebuilt
         return rebuilt
     }
@@ -460,6 +490,17 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         retune()
     }
 
+    /// Straight to a named Ply — how a Game's worst moves are walked through in turn
+    /// (docs/adr/0017). Zero is the position the Game began in.
+    public func jump(toPly ply: Int) {
+        let wanted = min(max(0, ply), game.plies.count)
+        guard wanted != cursor else { return }
+        cursor = wanted
+        analysis = nil
+        Sounds.current.play(.move)
+        retune()
+    }
+
     /// Carries on down one of the lines that was left behind here.
     public func enterVariation(_ index: Int) {
         guard game.promoteVariation(index, atPly: cursor) else { return }
@@ -479,6 +520,9 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// well as the present: playing from an earlier position is how a branch is made.
     public var isHandTurn: Bool {
         guard !viewed.isOver else { return false }
+        // An answer is on the board and has not been committed or taken back. Until it is, the
+        // board is not accepting anything else: a Drill with two answers on it has none.
+        if guess != nil { return false }
         if !isAtLatest { return true }
         return controller(for: viewed.state.sideToMove) == .hand
     }
@@ -536,6 +580,210 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         analysis = nil
         save()
         retune()
+    }
+
+    // ------------------------------------------------------------------ a study
+
+    /// Whether the one board is a Drill rather than a game right now: the engine's opinion is off
+    /// and the Ply being looked at is a past one, so there is a move that was played from here and
+    /// it has not been given away (docs/adr/0015).
+    ///
+    /// Not a mode and not a screen. It is a reading of the two things a person has already
+    /// said — the switch, and where they are looking.
+    public var isStudying: Bool {
+        isPractising && !isAtLatest && !viewed.isOver
+    }
+
+    /// The Depth a study is settled at: the Game's own Review Depth when it has one, so a Drill's
+    /// numbers and the file's numbers are the same numbers, and a default when it does not.
+    public var studyDepth: Int { game.reviewDepth ?? Self.reviewDepth }
+
+    public static let reviewDepth = 14
+
+    /// Offers a move at the Ply being studied — on the board, not in the Game.
+    ///
+    /// The move is not played. Nothing is written, nothing is saved, and the Game is untouched: a
+    /// Drill's answer has to be visible before it is marked, and taking it back has to cost
+    /// nothing, or the honest first guess never gets made.
+    public func offer(_ move: Move) {
+        guard isStudying, guess == nil, reveal == nil else { return }
+        let position = viewed
+        guard position.state.move(matching: move.uci) != nil else {
+            Sounds.current.play(.refused)
+            return
+        }
+        guess = Guess(ply: cursor + 1, move: move, san: SAN.text(for: move, in: position.state))
+        storedViewed = nil
+        Sounds.current.play(.move)
+    }
+
+    /// Takes the offered move back off the board, and any reveal with it.
+    public func withdrawGuess() {
+        guard guess != nil || reveal != nil else { return }
+        revealTask?.cancel()
+        revealTask = nil
+        isRevealing = false
+        guess = nil
+        reveal = nil
+        storedViewed = nil
+    }
+
+    /// Marks the offered move: your move, the engine's, and the one that was played, all at one
+    /// Depth.
+    ///
+    /// Three searches rather than one, and all three at the same Depth, because the comparison is
+    /// the whole product. A guess weighed against a deeper opinion of the alternative is a guess
+    /// marked wrong by arithmetic (docs/adr/0016).
+    public func commitGuess() {
+        guard let guess, let engine, !isRevealing, reveal == nil else { return }
+        guard let before = game.rewound(to: guess.ply - 1),
+            let guessed = try? applied(guess.move, to: before),
+            game.plies.indices.contains(guess.ply - 1)
+        else { return }
+
+        let playedSAN = game.plies[guess.ply - 1].san
+        let playedPosition = game.rewound(to: guess.ply)
+        let mover = game.mover(ofPly: guess.ply)
+        let depth = studyDepth
+        let recorded = game.reviewScore(atPly: guess.ply)
+        let ply = guess.ply
+        let offered = guess.san
+
+        isRevealing = true
+        revealTask?.cancel()
+        revealTask = Task { [weak self] in
+            // At one Depth and from nothing already known: the game screen has been analysing
+            // these same positions unbounded, and a search that inherits that is not at the Depth
+            // it says it is.
+            await engine.clear()
+
+            var best: Line?
+            for await snapshot in engine.analyse(before, budget: .depth(depth), lines: 1) {
+                if Task.isCancelled { return }
+                best = snapshot.best ?? best
+            }
+            let guessScore = await engine.evaluate(guessed, budget: .depth(depth))
+            // The move that was played needs no search when it *is* the guess, and none when the
+            // file already holds it at this very Depth.
+            let playedScore: Score?
+            if offered == playedSAN {
+                playedScore = guessScore
+            } else if let recorded, depth == self?.game.reviewDepth {
+                playedScore = recorded
+            } else if let playedPosition {
+                playedScore = await engine.evaluate(playedPosition, budget: .depth(depth))
+            } else {
+                playedScore = nil
+            }
+
+            guard let self, !Task.isCancelled else { return }
+            reveal = Reveal(
+                ply: ply,
+                mover: mover,
+                depth: depth,
+                guess: offered,
+                guessScore: guessScore,
+                played: playedSAN,
+                playedScore: playedScore,
+                best: best?.san.first,
+                bestScore: best?.score
+            )
+            isRevealing = false
+            revealTask = nil
+        }
+    }
+
+    /// Keeps the offered move: it goes into the Game from here, and the line it replaced is kept
+    /// beside it as a Variation — which is what playing from a past position has always done.
+    ///
+    /// The way a Drill turns into analysis. A guess worth keeping is a line worth having, and the
+    /// alternative — a study that can only ever be thrown away — is how somebody's best idea of
+    /// the session gets lost.
+    public func keepGuess() {
+        guard let guess else { return }
+        let move = guess.move
+        withdrawGuess()
+        play(move)
+    }
+
+    /// A Game's worst moves as a list of questions, worst first — nil for a Game no Review has
+    /// been over, which is a refusal and not an empty list (docs/adr/0017).
+    public func worstMoves(_ count: Int = 3) -> [Criticality]? {
+        game.worstMoves(count)
+    }
+
+    private func applied(_ move: Move, to game: Game) throws -> Game {
+        var next = game
+        guard next.apply(move) else { throw StudyRefusal.illegalMove }
+        return next
+    }
+
+    private enum StudyRefusal: Error { case illegalMove }
+
+    // ------------------------------------------------------------------ the pass
+
+    /// Re-scores every ply at one Depth, so the Scores in the file can be compared with each
+    /// other and the Game can be ranked (docs/adr/0016, 0017).
+    ///
+    /// Started by turning the engine's opinion on, and by nothing else. There is no other door,
+    /// which is what makes the switch answerable for it: a Game the player has never let the
+    /// engine talk about has no marks in it at all.
+    public func startReview(depth: Int? = nil) {
+        guard let engine, !game.plies.isEmpty, reviewPass?.isRunning != true else { return }
+        let depth = depth ?? Self.reviewDepth
+        let reviewed = game
+        reviewTask?.cancel()
+        reviewPass = ReviewPass(
+            depth: depth, completed: 0, total: reviewed.plies.count, isRunning: true
+        )
+        reviewTask = Task { [weak self] in
+            await engine.clear()
+            var baseline: Score?
+            if let start = reviewed.rewound(to: 0) {
+                baseline = await engine.evaluate(start, budget: .depth(depth))
+            }
+            if Task.isCancelled { return }
+            let scores = await engine.review(reviewed, depth: depth) { index, _ in
+                Task { @MainActor in self?.notePassReached(index) }
+            }
+            guard let self, !Task.isCancelled else { return }
+            // Only written if the Game is still the one that was reviewed. A move or a branch
+            // played while the pass ran makes these Scores a report on a game that no longer
+            // exists, and one place to notice that is better than five mutators each
+            // remembering to cancel.
+            guard game.plies.count >= reviewed.plies.count,
+                game.plies.prefix(reviewed.plies.count).map(\.uci) == reviewed.plies.map(\.uci)
+            else {
+                reviewPass = nil
+                return
+            }
+            applyReview(scores, startEvaluation: baseline, depth: depth)
+            if var pass = reviewPass {
+                pass.completed = scores.count
+                pass.isRunning = false
+                reviewPass = pass
+            }
+        }
+    }
+
+    /// Stops a pass without writing anything.
+    ///
+    /// Half a pass is not half a Review: its Scores would sit in the file beside nothing, at a
+    /// Depth the rest of the game was never searched to. Cancelling therefore leaves the Game
+    /// exactly as unreviewed as it was.
+    public func stopReview() {
+        reviewTask?.cancel()
+        reviewTask = nil
+        if reviewPass?.isRunning == true { reviewPass = nil }
+    }
+
+    /// Read into a local and written back whole. `reviewPass?.completed = max(reviewPass?…)`
+    /// reads the property inside its own modification, which is an exclusivity violation and
+    /// traps at runtime rather than merely reading badly.
+    private func notePassReached(_ index: Int) {
+        guard var pass = reviewPass, pass.isRunning else { return }
+        pass.completed = max(pass.completed, index + 1)
+        reviewPass = pass
     }
 
     // -------------------------------------------------------- one move, asked for
@@ -777,6 +1025,12 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         searchTask?.cancel()
         searchTask = nil
         isThinking = false
+        // A pass that outlived the screen would come back having written Scores nobody watched
+        // arrive, at a Depth chosen by a screen that has gone.
+        stopReview()
+        revealTask?.cancel()
+        revealTask = nil
+        isRevealing = false
     }
 
     private func record(_ snapshot: Analysis) {

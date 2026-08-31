@@ -15,6 +15,25 @@ struct GameScreenScreenshots {
     /// which is what a screenshot is for.
     private static let italian = ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5", "c2c3", "g8f6"]
 
+    /// One position's worth of opinion: a Score, and optionally the move the engine would play.
+    /// What a study needs, as against a search that deepens.
+    static func opinion(_ score: Score, best: (uci: String, san: String)? = nil) -> Analysis {
+        Analysis(
+            depth: 14,
+            selectiveDepth: 18,
+            lines: [
+                Line(
+                    score: score,
+                    uciMoves: best.map { [$0.uci] } ?? [],
+                    san: best.map { [$0.san] } ?? []
+                )
+            ],
+            nodes: 4_000_000,
+            nodesPerSecond: 2_000_000,
+            timeMilliseconds: 2_000
+        )
+    }
+
     /// Two Depths of the same search, because that is how one arrives: the screen is shown the
     /// shallow one and then made to replace it, exactly as it would be in someone's hand.
     private static let searching = [
@@ -308,7 +327,10 @@ struct GameScreenScreenshots {
         )
         #expect(rendered.says("白方胜"), "the bar reads the result rather than sitting half and half")
         #expect(rendered.says("1-0"), "and the number the screen has been showing resolves into it")
-        #expect(rendered.says("复盘"), "with the one thing left to do said where the lines were")
+        #expect(
+            rendered.says("引擎意见"),
+            "with the one thing left to do said where the lines were — a switch, not a place"
+        )
         #expect(!rendered.says("和棋"))
         #expect(!rendered.says("未知"), "a finished game is not an unknown one")
         // There is nothing left to play, so the one button that plays a move is out.
@@ -330,7 +352,10 @@ struct GameScreenScreenshots {
 
         #expect(session.isPractising, "which is where a Game starts (docs/adr/0015)")
         #expect(rendered.says("练习"))
-        #expect(rendered.says("复盘"), "practice points at the one place the engine does talk")
+        #expect(
+            rendered.says("引擎意见"),
+            "practice points at the one switch that makes the engine talk"
+        )
         #expect(!rendered.says("+0.38"), "no Score anywhere while practising")
         #expect(session.analysis == nil)
     }
@@ -365,6 +390,120 @@ struct GameScreenScreenshots {
         #expect(rendered.says("该走了"))
         #expect(rendered.says("让引擎走"))
         #expect(rendered.says("引擎"), "which still plays Black")
+    }
+
+    // ------------------------------------------------------------------- the study
+
+    /// The searches behind a reveal run in tasks of their own, so their answers are known a hop
+    /// later — which is as true of the screen as it is of this test.
+    private func hop() async {
+        for _ in 0..<20 {
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
+    /// Browsing back with the engine silent: the one board is a question now. No number anywhere,
+    /// and the screen says what it wants instead of looking like a game that has lost its turn.
+    @Test("a past position with the engine silent asks what you would play")
+    func studyBeforeTheGuess() async throws {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
+        let session = GameSession.fresh(game)
+        session.jump(toPly: 6)
+
+        let rendered = await ScreenImage.write("game-study-asking") {
+            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
+        }
+
+        #expect(session.isStudying)
+        #expect(rendered.says("你会走哪一步"))
+        #expect(rendered.says("直接在棋盘上走一步"))
+        #expect(rendered.says("在看第 6/8 步"), "and the record says where the eye is")
+        // The answer is not on the screen: no Score, no candidate lines, no arrow to copy.
+        #expect(!rendered.says("+0."))
+        #expect(!rendered.says("d4 exd4 cxd4 Bb6"))
+        #expect(session.analysis == nil)
+    }
+
+    /// Committing a guess: your move, the engine's, and the one actually played, at one Depth.
+    @Test("committing a guess shows it against the engine's move and the one that was played")
+    func studyAfterTheReveal() async throws {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
+        let asked = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Array(Self.italian.prefix(6))))
+        let guessed = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Array(Self.italian.prefix(6)) + ["d2d4"]))
+        let played = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Array(Self.italian.prefix(7))))
+        let engine = ScriptedEngine(
+            Self.searching,
+            isEndless: true,
+            byPosition: [
+                asked.state.fen: Self.opinion(.centipawns(45), best: ("e1g1", "O-O")),
+                guessed.state.fen: Self.opinion(.centipawns(20)),
+                played.state.fen: Self.opinion(.centipawns(38)),
+            ]
+        )
+
+        let session = GameSession.fresh(game)
+        session.attach(engine: engine, library: nil)
+        session.jump(toPly: 6)
+        let d4 = try #require(session.viewed.state.move(matching: "d2d4"))
+        session.offer(d4)
+        session.commitGuess()
+        await hop()
+
+        let rendered = await ScreenImage.write("game-study-revealed") {
+            screen(session, engine: engine)
+        }
+
+        let reveal = try #require(session.reveal)
+        #expect(reveal.lost == 25)
+        #expect(reveal.counts == true)
+        // Three moves, three numbers, and no combined score anywhere.
+        #expect(rendered.says("你走"))
+        #expect(rendered.says("d4"))
+        #expect(rendered.says("引擎"))
+        #expect(rendered.says("O-O"))
+        #expect(rendered.says("实战"))
+        #expect(rendered.says("c3"))
+        #expect(rendered.says("过关"), "and what it was worth, in words")
+        #expect(rendered.says("深度 14"), "with the Depth all three were computed at named")
+        #expect(rendered.says("保留这步"), "a guess worth keeping can be kept")
+        // The guess is on the board and not in the game: the record still ends where it did.
+        #expect(session.game.plies.map(\.san).last == "Nf6")
+        #expect(rendered.says("第 8 步 Nf6"))
+    }
+
+    /// The switch on: this is 复盘, on the board the game was played on.
+    @Test("turning the engine's opinion on puts the whole game's report on the same screen")
+    func reportWithTheSwitchOn() async throws {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
+        let session = GameSession.fresh(game)
+        // A pass that has already run: the curve, the labels and the Depth are what it left.
+        session.applyReview(
+            [
+                .centipawns(30), .centipawns(25), .centipawns(35), .centipawns(30),
+                .centipawns(40), .centipawns(35), .centipawns(-420), .centipawns(-410),
+            ],
+            startEvaluation: .centipawns(20),
+            depth: 18
+        )
+        session.jump(toPly: 7)
+        session.setPractising(false)
+
+        let rendered = await ScreenImage.write("game-report") {
+            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
+        }
+
+        #expect(!session.isPractising)
+        #expect(session.reviewPass == nil, "a Game that already has a pass is not made to sit through another")
+        #expect(rendered.says("优势条"), "the bar is back, because the opinion is on")
+        #expect(rendered.says("第 4 回合 白方 c3"), "the move the eye is on")
+        #expect(rendered.says("漏着"), "what the pass made of it")
+        #expect(rendered.says("-4.20"), "and its Score")
+        #expect(rendered.says("按深度 18 算的"), "named, because a Score without one compares to nothing")
+        #expect(rendered.says("这局最贵的三步"), "with the worst moves offered as the questions they are")
+        #expect(rendered.says("重算"))
+        // And no separate destination for any of it.
+        #expect(!rendered.says("复盘"))
     }
 
     // ------------------------------------------------------------------- glue

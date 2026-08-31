@@ -185,6 +185,20 @@ the engine's opinion is off and the Ply being looked at is a past one (docs/adr/
 考一遍 on screen.
 _Avoid_: puzzle, quiz, test, exercise, training — and not Review
 
+**Guess**:
+A move offered at a past Ply and not yet committed — on the board, visible, and still yours to
+take back. The middle of a Drill: a move already played is an answer already marked, and there
+has to be a moment between the two or the honest first attempt never gets made. Kept nowhere;
+a Guess that turns out to be worth having is kept as a Variation instead.
+_Avoid_: attempt, try, answer, candidate, move
+
+**Reveal**:
+What committing a Guess shows: your move, the engine's, and the one actually played, each with
+a Score, all three at one Depth. Three facts side by side and never a combined number — finding
+the engine's move, finding a move as good as it, and finding what you played last time are
+different pieces of news.
+_Avoid_: result, score, grade, feedback, verdict
+
 **Intent**:
 What the player says a move was *for*: one verb and one target Square, declared by whoever
 played the Ply. That shape is the whole point — a verb with a target can be drawn on the
