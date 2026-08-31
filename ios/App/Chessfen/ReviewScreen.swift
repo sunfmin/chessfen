@@ -138,8 +138,27 @@ struct ReviewScreen: View {
                     )
             }
             Spacer()
-            ScoreCell(score: run.score(atPly: ply), prominent: true)
+            // Until this Review reaches this ply there may still be a number for it — the one
+            // that arrived inside an imported game. It is shown, and it is shown as *theirs*:
+            // somebody else's engine at a Depth nobody wrote down, which is why nothing here
+            // is allowed to judge a move by it (docs/adr/0016).
+            if let mine = run.score(atPly: ply) {
+                ScoreCell(score: mine, prominent: true)
+            } else if let theirs = importedScore {
+                HStack(spacing: 4) {
+                    Text("导入").font(.caption2).foregroundStyle(Palette.inkSoft)
+                    ScoreCell(score: theirs)
+                }
+            } else {
+                ScoreCell(score: nil, prominent: true)
+            }
         }
+    }
+
+    /// The Score that came in with the file for the ply being looked at, if any.
+    private var importedScore: Score? {
+        guard ply > 0 else { return nil }
+        return game.plies[safe: ply - 1]?.importedEvaluation
     }
 
     private var stepper: some View {
@@ -197,9 +216,10 @@ struct ReviewScreen: View {
         task = Task {
             await run.start(service: service, game: game, depth: depth)
             guard !Task.isCancelled else { return }
-            // A Review's Scores replace the real-time ones in the saved game, because they
-            // are the comparable set (docs/adr/0009).
-            session.applyReview(run.scores)
+            // The Depth and the starting position's Score travel with the Scores: without
+            // them nothing read back from the file can be compared with anything, and the
+            // first move cannot be judged at all (docs/adr/0016).
+            session.applyReview(run.scores, startEvaluation: run.baseline, depth: depth)
         }
     }
 

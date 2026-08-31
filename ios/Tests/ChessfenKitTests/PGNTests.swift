@@ -8,9 +8,11 @@ func pgnRoundTripsAStandardGame() throws {
     var game = try #require(
         Game(startFEN: start, uciMoves: ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"])
     )
-    game.setEvaluation(.centipawns(31), atPly: 0)
-    game.setEvaluation(.centipawns(-12), atPly: 1)
-    game.setEvaluation(.mate(in: 5), atPly: 4)
+    game.applyReview(
+        [.centipawns(31), .centipawns(-12), nil, nil, .mate(in: 5)],
+        startEvaluation: .centipawns(20),
+        depth: 18
+    )
 
     let written = PGN(game: game, tags: [.init("White", "Felix"), .init("Black", "Stockfish 18")])
     let read = try PGN(parsing: written.text)
@@ -19,6 +21,11 @@ func pgnRoundTripsAStandardGame() throws {
     #expect(read.game.uciMoves == game.uciMoves)
     #expect(read.game.plies.map(\.san) == game.plies.map(\.san))
     #expect(read.game.plies.map(\.evaluation) == game.plies.map(\.evaluation))
+    // The Depth and the starting Score are as much a part of a Review as its per-ply Scores:
+    // without them nothing read back from a file can be compared with anything.
+    #expect(read.game.reviewDepth == 18)
+    #expect(read.game.startEvaluation == .centipawns(20))
+    #expect(read.game.plies.allSatisfy { $0.importedEvaluation == nil })
     #expect(read.tag("White") == "Felix")
     #expect(read.tag("Black") == "Stockfish 18")
     #expect(read.tag("Result") == "*")
@@ -91,8 +98,14 @@ func pgnSkipsCommentsVariationsAndAnnotations() throws {
 
     let read = try PGN(parsing: text)
     #expect(read.game.plies.map(\.san) == ["e4", "e5", "Nf3", "Nc6", "Bb5"])
-    #expect(read.game.plies[0].evaluation == .centipawns(25))
-    #expect(read.game.plies[1].evaluation == nil)
+    // This file carries no Review Depth, so its `[%eval]` came from somebody else's engine at
+    // a Depth nobody wrote down. It is kept — as theirs — and the Review's field stays empty,
+    // which is what stops it from being ranked or called a mistake (docs/adr/0016).
+    #expect(read.game.plies[0].importedEvaluation == .centipawns(25))
+    #expect(read.game.plies[0].evaluation == nil)
+    #expect(!read.game.isReviewed)
+    #expect(read.game.reviewScore(atPly: 1) == nil)
+    #expect(read.game.plies[1].importedEvaluation == nil)
     #expect(read.tag("Round") == "3")
     // The Sicilian aside is a real line and is kept. The bracket nested inside it says
     // "2... d6" where it is white's move, so it is not a line at all — it is dropped, and

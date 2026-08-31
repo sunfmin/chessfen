@@ -781,12 +781,11 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         // the Review has nothing to disagree with.
         guard !isPractising else { return }
         analysis = snapshot
-        // Real-time recording: the ply just played gets the Score of the position it led to,
-        // refined as the search deepens. A Review recomputes all of them at one Depth later
-        // and overwrites these (docs/adr/0009).
-        if let score = snapshot.best?.score, cursor > 0 {
-            game.setEvaluation(score, atPly: cursor - 1)
-        }
+        // The Score stays here, on a snapshot belonging to a screen, and is not written into
+        // the Game. It used to be — "provisional, a Review will overwrite it" — but a Game is
+        // a file, and a file that mixes one search's incidental Depth with a Review's uniform
+        // one cannot be ranked afterwards without inventing mistakes. Only a Review writes an
+        // evaluation now (docs/adr/0016).
     }
 
     // --------------------------------------------------------------- storage
@@ -833,11 +832,11 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         }
     }
 
-    /// Replaces the recorded Scores with a Review's, which are comparable with each other.
-    public func applyReview(_ scores: [Score?]) {
-        for (ply, score) in scores.enumerated() where score != nil {
-            game.setEvaluation(score, atPly: ply)
-        }
+    /// Records a Review: one Score per ply, the starting position's, and the single Depth all
+    /// of them were computed at. The Depth travels with the Scores because without it they are
+    /// numbers nothing may be compared against (docs/adr/0016).
+    public func applyReview(_ scores: [Score?], startEvaluation: Score?, depth: Int) {
+        game.applyReview(scores, startEvaluation: startEvaluation, depth: depth)
         save()
     }
 

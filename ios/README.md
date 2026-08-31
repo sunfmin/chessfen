@@ -17,7 +17,7 @@ ios/
 │   ├── ChessfenKit/       # recognition, rules, engine, game, PGN — all the thinking
 │   └── chessfen-cli/      # a macOS entry point to the same code
 ├── Resources/Nets/        # the two NNUE files (Git LFS)
-├── Tests/                 # 191 tests
+├── Tests/                 # 199 tests
 └── App/                   # the SwiftUI shell: screens and nothing else
     ├── project.yml        # the Xcode project is generated from this
     └── ScreenTests/       # the screens, drawn into PNGs and held to what they say

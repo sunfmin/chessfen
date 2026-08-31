@@ -9,8 +9,21 @@ public struct Game: Hashable, Sendable {
     public struct Ply: Hashable, Sendable {
         public let uci: String
         public let san: String
-        /// White-relative score after this move, filled in by a Review.
+        /// White-relative score after this move, written by a **Review and by nothing else**
+        /// (docs/adr/0016).
+        ///
+        /// Three writers used to share this field at three different Depths — the unbounded
+        /// search during play, a Review, and a Score that arrived inside an imported game —
+        /// and nothing said which won. That is survivable while a number only draws a curve;
+        /// it stops being survivable once the differences between consecutive Scores decide
+        /// which moves a player is asked about, because mixed Depths invent mistakes that
+        /// never happened. So the field is a Review's, and a Game with no `reviewDepth` has
+        /// nothing comparable in here at all.
         public var evaluation: Score?
+        /// A Score that came in with an imported game: somebody else's engine, at a Depth
+        /// nobody wrote down. Kept so it can be shown as theirs, and never read when a move
+        /// is being judged.
+        public var importedEvaluation: Score?
         /// The moves that were played from this ply's own starting position instead of this
         /// ply — each one an alternative to *this* move and everything that followed it.
         ///
@@ -21,11 +34,16 @@ public struct Game: Hashable, Sendable {
         public var variations: [[Ply]] = []
 
         public init(
-            uci: String, san: String, evaluation: Score? = nil, variations: [[Ply]] = []
+            uci: String,
+            san: String,
+            evaluation: Score? = nil,
+            importedEvaluation: Score? = nil,
+            variations: [[Ply]] = []
         ) {
             self.uci = uci
             self.san = san
             self.evaluation = evaluation
+            self.importedEvaluation = importedEvaluation
             self.variations = variations
         }
     }
@@ -43,6 +61,23 @@ public struct Game: Hashable, Sendable {
     /// The position after every ply, recomputed whenever the Game changes.
     public private(set) var state: GameState
 
+    /// The one Depth every `Ply.evaluation` in this Game was computed at, or nil for a Game
+    /// no Review has been over.
+    ///
+    /// A property of the pass rather than of a move, because uniformity is what a Review
+    /// *is*: recording the Depth once turns "has this been reviewed, and how deeply" from an
+    /// inference into a fact, and nil is what stops a Game from being ranked on Scores that
+    /// cannot be compared with each other (docs/adr/0016).
+    public private(set) var reviewDepth: Int?
+    /// The Review's Score for the starting position — what the first move is compared
+    /// against. Without it the first move's quality cannot be recomputed from a saved file,
+    /// which is why it is written rather than living only in the run that produced it.
+    public private(set) var startEvaluation: Score?
+
+    /// Whether a Review has been over this Game, which is the only condition under which its
+    /// Scores may be compared with each other or a move called a mistake.
+    public var isReviewed: Bool { reviewDepth != nil }
+
     /// Fails when the FEN would not survive validation — the Confirm Position gate is
     /// what stops that from happening (docs/adr/0008).
     public init?(startFEN: String) {
@@ -52,6 +87,8 @@ public struct Game: Hashable, Sendable {
         self.startingFullmoveNumber = state.fullmoveNumber
         self.plies = []
         self.state = state
+        self.reviewDepth = nil
+        self.startEvaluation = nil
     }
 
     /// Rebuilds a Game from a starting FEN and a list of UCI moves, refusing the lot if
@@ -163,8 +200,13 @@ public struct Game: Hashable, Sendable {
             guard rebuilt.apply(uci: step.uci) else { return false }
         }
         // Replay dropped the evaluations and the nested variations, so they go back on.
+        // The Review Depth carries across untouched: it says what Depth the Scores that
+        // exist were computed at, and a promoted line's plies either carry Scores from the
+        // same pass or carry none — in which case `reviewScore` is nil and nothing about
+        // them is judged. A ply with no Score is never a mistake.
         for (offset, step) in chosen.enumerated() {
             rebuilt.plies[ply + offset].evaluation = step.evaluation
+            rebuilt.plies[ply + offset].importedEvaluation = step.importedEvaluation
             rebuilt.plies[ply + offset].variations = step.variations
         }
         self = rebuilt
@@ -195,14 +237,72 @@ public struct Game: Hashable, Sendable {
         }
         for index in 0..<ply {
             game.plies[index].evaluation = plies[index].evaluation
+            game.plies[index].importedEvaluation = plies[index].importedEvaluation
             game.plies[index].variations = plies[index].variations
         }
+        game.reviewDepth = reviewDepth
+        game.startEvaluation = startEvaluation
         return game
     }
 
-    public mutating func setEvaluation(_ score: Score?, atPly ply: Int) {
+    /// Records a whole Review: one Score per ply, the starting position's, and the single
+    /// Depth all of them were computed at.
+    ///
+    /// The only way an evaluation gets into a Game, and it takes the Depth in the same call
+    /// on purpose — a Score without the Depth it was computed at is a number nothing may be
+    /// compared against, and making that impossible to express is cheaper than remembering
+    /// not to (docs/adr/0016).
+    public mutating func applyReview(_ scores: [Score?], startEvaluation: Score?, depth: Int) {
+        for (ply, score) in scores.enumerated() where plies.indices.contains(ply) {
+            plies[ply].evaluation = score
+        }
+        self.startEvaluation = startEvaluation
+        self.reviewDepth = depth
+    }
+
+    /// The Review's Score for the position after `ply` moves — index 0 being the position the
+    /// Game started from. Nil for a Game no Review has been over, whatever is in its fields.
+    public func reviewScore(atPly ply: Int) -> Score? {
+        guard isReviewed else { return nil }
+        if ply == 0 { return startEvaluation }
+        return plies.indices.contains(ply - 1) ? plies[ply - 1].evaluation : nil
+    }
+
+    /// Who played the `ply`th move, counting from one. Not always White: a Game recognised
+    /// from a picture may well have started with Black to move.
+    public func mover(ofPly ply: Int) -> PieceColour {
+        ply.isMultiple(of: 2) ? startingSideToMove.opposite : startingSideToMove
+    }
+
+    /// What a Review made of the move at `ply`, counting from one. Nil when the Game has not
+    /// been reviewed, or when either side of the comparison is missing.
+    public func quality(atPly ply: Int) -> MoveQuality? {
+        guard ply > 0 else { return nil }
+        return MoveQuality.of(
+            move: mover(ofPly: ply),
+            before: reviewScore(atPly: ply - 1),
+            after: reviewScore(atPly: ply)
+        )
+    }
+
+    /// Where a PGN's `[%eval]` comments land while a file is being read. Which of the two
+    /// slots they go to is decided once, by whether the file carried a Review Depth.
+    mutating func setEvaluation(_ score: Score?, atPly ply: Int, reviewed: Bool) {
+        if ply < 0 {
+            if reviewed { startEvaluation = score }
+            return
+        }
         guard plies.indices.contains(ply) else { return }
-        plies[ply].evaluation = score
+        if reviewed {
+            plies[ply].evaluation = score
+        } else {
+            plies[ply].importedEvaluation = score
+        }
+    }
+
+    /// Set from the file's `[ReviewDepth]` tag as it is read, so the tag has exactly one home.
+    mutating func setReviewDepth(_ depth: Int?) {
+        reviewDepth = depth
     }
 
     /// PGN's result token for however the Game stands.

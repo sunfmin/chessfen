@@ -66,6 +66,14 @@ public struct PGN: Hashable, Sendable {
             lines.append("[FEN \"\(game.startFEN)\"]")
             written.formUnion(["SetUp", "FEN"])
         }
+        // Derived from the Game, never carried in `tags`, so there is one home for the fact
+        // (docs/adr/0016). Its presence is also what tells a reader whose engine the
+        // `[%eval]` comments below came from: with the tag they are this app's Review, at
+        // this Depth; without it they are somebody else's, at a Depth nobody wrote down.
+        if let depth = game.reviewDepth {
+            lines.append("[ReviewDepth \"\(depth)\"]")
+            written.insert("ReviewDepth")
+        }
         roster.removeAll { written.contains($0.name) }
         for tag in roster {
             lines.append("[\(tag.name) \"\(Self.escaped(tag.value))\"]")
@@ -77,11 +85,18 @@ public struct PGN: Hashable, Sendable {
     }
 
     private var movetextTokens: [String] {
-        // A Game recognised from a picture usually starts mid-game, and may start with
-        // black to move — in which case PGN wants "12... Nf6" before the first white move.
-        return Self.tokens(
-            for: game.plies, from: game.startingFullmoveNumber, sideToMove: game.startingSideToMove
-        ) + [game.resultToken]
+        // The starting position's Score goes before the first move, which is where PGN puts a
+        // comment about the position a game begins in. Without it the first move's quality
+        // cannot be recomputed from the file, because there is nothing to compare it against.
+        let baseline = game.startEvaluation.map { ["{[%eval \($0.pgnText)]}"] } ?? []
+        // A Game recognised from a picture usually starts mid-game, and may start with black
+        // to move — in which case PGN wants "12... Nf6" before the first white move.
+        return baseline
+            + Self.tokens(
+                for: game.plies,
+                from: game.startingFullmoveNumber,
+                sideToMove: game.startingSideToMove
+            ) + [game.resultToken]
     }
 
     /// One line of moves, with its Variations in brackets after the moves they replace —
@@ -101,7 +116,10 @@ public struct PGN: Hashable, Sendable {
                 written.append("\(moveNumber)...")
             }
             written.append(ply.san)
-            if let evaluation = ply.evaluation {
+            // One or the other, never both: which slot a file's Scores landed in was decided
+            // once by whether it carried a Review Depth, so writing either back out under
+            // the same tag is what makes the round trip exact.
+            if let evaluation = ply.evaluation ?? ply.importedEvaluation {
                 written.append("{[%eval \(evaluation.pgnText)]}")
             }
             for variation in ply.variations {
@@ -176,9 +194,19 @@ public struct PGN: Hashable, Sendable {
         let tags = scanner.readTags()
 
         let startFEN = tags.first { $0.name == "FEN" }?.value ?? Self.standardStartFEN
-        guard let game = Game(startFEN: startFEN) else {
+        guard var game = Game(startFEN: startFEN) else {
             throw ParseError.unusableStartingPosition(Rules.validate(fen: startFEN).issue)
         }
+
+        // Provenance, decided once for the whole file before a single move is read: with a
+        // Review Depth the `[%eval]` comments are this app's own uniform pass and may be
+        // compared with each other; without one they came from somewhere else at a Depth
+        // nobody recorded, and are kept only to be shown as somebody else's number
+        // (docs/adr/0016). A file this app wrote before the tag existed therefore reads as
+        // unreviewed, which is the honest answer rather than the convenient one.
+        let reviewDepth = (tags.first { $0.name == "ReviewDepth" }?.value).flatMap { Int($0) }
+        let isReviewed = reviewDepth != nil
+        game.setReviewDepth(reviewDepth)
 
         // One frame per open bracket. Moves always go to the innermost one, which is what
         // makes a Variation inside a Variation work without any special handling: it is the
@@ -205,8 +233,10 @@ public struct PGN: Hashable, Sendable {
                 }
             case .evaluation(let score):
                 guard !frames[last].dead else { continue }
+                // A ply index of -1 is a comment standing before the first move, which is
+                // the starting position's Score.
                 frames[last].game.setEvaluation(
-                    score, atPly: frames[last].game.plies.count - 1
+                    score, atPly: frames[last].game.plies.count - 1, reviewed: isReviewed
                 )
             case .variationStart:
                 // A Variation is an alternative to the move just read, so it starts from the
@@ -233,7 +263,9 @@ public struct PGN: Hashable, Sendable {
             }
         }
 
-        self.tags = tags
+        // ReviewDepth does not stay in `tags`: it lives on the Game and `text` writes it back
+        // from there, so the fact has one home and cannot be written twice or drift.
+        self.tags = tags.filter { $0.name != "ReviewDepth" }
         self.game = frames[0].game
     }
 }

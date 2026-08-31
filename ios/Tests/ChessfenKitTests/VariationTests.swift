@@ -94,12 +94,14 @@ func variationEvaluationsRoundTrip() throws {
     let bishop = try #require(played.rewound(to: 2)?.state.move(matching: "f1c4"))
     let branched = played.play(bishop, atPly: 2)
     #expect(branched)
-    played.setEvaluation(.centipawns(31), atPly: 2)
-    played.setEvaluation(.centipawns(18), atPly: 0)
+    played.applyReview(
+        [.centipawns(18), nil, .centipawns(31)], startEvaluation: nil, depth: 14
+    )
 
     let reread = try PGN(parsing: PGN(game: played).text)
     #expect(reread.game.plies.first?.evaluation == .centipawns(18))
     #expect(reread.game.plies[2].evaluation == .centipawns(31))
+    #expect(reread.game.reviewDepth == 14)
 }
 
 @Test("brackets a reader cannot place are ignored rather than fatal")

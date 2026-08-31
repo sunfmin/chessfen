@@ -100,8 +100,12 @@ struct GameScreenScreenshots {
             !rendered.says("谁走"),
             "but the chips that change them stay folded once there are moves"
         )
-        // And the Score reached the game itself, which is what a Review will overwrite later.
-        #expect(session.game.plies.last?.evaluation == .centipawns(38))
+        // And the Score stayed on the screen: it does *not* reach the game. A live search's
+        // Depth is whatever it happened to get to, and a file that mixes those with a
+        // Review's uniform ones cannot be ranked afterwards without inventing mistakes, so
+        // only a Review writes an evaluation now (docs/adr/0016).
+        #expect(session.game.plies.last?.evaluation == nil)
+        #expect(!session.game.isReviewed)
     }
 
     /// A board just read off a photograph: nothing played yet, three squares the recogniser was
