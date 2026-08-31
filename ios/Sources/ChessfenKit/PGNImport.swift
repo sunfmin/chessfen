@@ -20,6 +20,15 @@ public enum PGNImport {
         /// The server says this study is not public. Private and unlisted studies
         /// answer 403 to anyone who is not a member, and v1 only imports public ones.
         case privateStudy
+        /// The game is there but not ours to read.
+        case privateGame
+        /// There is no such game. A mistyped id and a deleted game look the same from here,
+        /// and the message says both rather than picking one.
+        case missingGame
+        /// lichess has no player of that name.
+        case unknownPlayer
+        /// What was typed is not a username at all.
+        case notAPlayer
         /// The link downloaded, but what came down is not a PGN.
         case notPGN
         /// It is a PGN, but not one game in it parses.
@@ -35,6 +44,14 @@ public enum PGNImport {
                 ("不是链接", "这里要的是一个网址,比如一个公开的 lichess 研究链接。")
             case .privateStudy:
                 ("这个棋谱不公开", "它没有对外公开,所以下载不下来。目前只能导入公开的棋谱。")
+            case .privateGame:
+                ("这局棋不公开", "lichess 说这局不对外开放,下载不下来。")
+            case .missingGame:
+                ("找不到这局棋", "lichess 上没有这局 —— 链接可能不对,或者这局已经被删了。")
+            case .unknownPlayer:
+                ("没有这个用户", "lichess 上找不到这个用户名。注意大小写不影响,但拼写要对。")
+            case .notAPlayer:
+                ("这不是用户名", "填一个 lichess 用户名,比如 DrNykterstein。")
             case .notPGN:
                 ("不是棋谱", "这个链接下载下来的内容不是 PGN 棋谱。")
             case .noReadableGames:
@@ -43,6 +60,26 @@ public enum PGNImport {
                 ("下载失败", "服务器回了一个 HTTP \(code)。")
             case .network(let detail):
                 ("网络不通", "下载的时候网络出错了:\(detail)")
+            }
+        }
+
+        /// Which failure an HTTP status means, given the URL it came from.
+        ///
+        /// Pure, and here rather than inside the fetcher, because "what does a 403 mean" is a
+        /// statement about lichess and not about `URLSession`: 403 on a study is a study nobody
+        /// outside it may read, 404 on a game export is a game that is not there, and 404 on the
+        /// user endpoint is a person who does not exist. Anything else is the status itself,
+        /// said plainly.
+        public static func from(status: Int, url: URL) -> Self {
+            guard let host = url.host?.lowercased(),
+                host == "lichess.org" || host.hasSuffix(".lichess.org")
+            else { return .http(status) }
+            let path = url.path
+            switch status {
+            case 403: return path.contains("/study/") ? .privateStudy : .privateGame
+            case 404 where path.contains("/api/games/user/"): return .unknownPlayer
+            case 404 where path.contains("/game/export/"): return .missingGame
+            default: return .http(status)
             }
         }
     }
@@ -61,6 +98,9 @@ public enum PGNImport {
             self.name = name
             self.pgn = pgn
         }
+
+        /// What dedup compares this against — see `PGNImport.identity(of:named:)`.
+        public var identity: String { PGNImport.identity(of: pgn, named: name) }
     }
 
     /// Everything the download found, ready to be applied.
@@ -128,9 +168,46 @@ public enum PGNImport {
         guard let url = URL(string: raw), let scheme = url.scheme?.lowercased(),
             ["http", "https"].contains(scheme), url.host != nil
         else { return nil }
-        guard let studyID = lichessStudyID(from: url) else { return [url] }
-        return [url, URL(string: "https://lichess.org/study/\(studyID).pgn")!]
+        if let studyID = lichessStudyID(from: url) {
+            return [url, URL(string: "https://lichess.org/study/\(studyID).pgn")!]
+        }
+        // A game page holds no PGN at all, so there is nothing to fall through from: the
+        // export is the only candidate, and if the guess at the id was wrong the 404 says so.
+        if let gameID = lichessGameID(from: url) { return [gameExportURL(gameID)] }
+        return [url]
     }
+
+    /// The export endpoint for one lichess game.
+    public static func gameExportURL(_ id: String) -> URL {
+        URL(string: "https://lichess.org/game/export/\(id)?evals=true&clocks=false")!
+    }
+
+    /// A player's recent games, most recent first — nil for anything that is not a username.
+    ///
+    /// The count is clamped rather than refused: a number nobody would type on purpose is a
+    /// slip, and the useful answer to a slip is the nearest thing that works.
+    public static func recentGamesURL(user: String, count: Int) -> URL? {
+        var name = user.trimmingCharacters(in: .whitespacesAndNewlines)
+        if name.hasPrefix("@") { name.removeFirst() }
+        // lichess usernames are letters, digits, underscores and hyphens. Anything else — a
+        // space, a slash, a whole URL pasted into the wrong field — is not one.
+        guard !name.isEmpty, name.count <= 30,
+            name.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == "-") })
+        else { return nil }
+        let many = min(max(count, 1), maxRecentGames)
+        return URL(
+            string: "https://lichess.org/api/games/user/\(name)?max=\(many)"
+                + "&evals=true&clocks=false&sort=dateDesc"
+        )
+    }
+
+    /// How many recent games one import may ask for. A ceiling because this is the thing you
+    /// do before getting on a plane, not a way to mirror an account: lichess streams these one
+    /// at a time and a library is a folder of files somebody has to be able to look at.
+    public static let maxRecentGames = 100
+
+    /// The default count offered, which is about a session's worth of games.
+    public static let recentGames = 10
 
     /// The study a lichess URL names, nil for anything else or for a URL that is
     /// already an export. The study id is the first path component after `/study/`;
@@ -146,6 +223,36 @@ public enum PGNImport {
         guard !studyID.hasSuffix(".pgn") else { return nil }
         return studyID
     }
+
+    /// The game a lichess URL names, nil for anything else.
+    ///
+    /// A game lives at the root of the site — `lichess.org/hf3Zpe5R` — optionally with the
+    /// colour it was watched as on the end, and the id is eight characters (twelve when the
+    /// link is a player's own, where the extra four are their private token). That shape is the
+    /// whole test, plus a short list of the site's own pages that happen to be eight letters
+    /// long. A page this misreads as a game costs one 404 and an honest error, which is why a
+    /// list of a dozen names is enough and a list of every page lichess has is not needed.
+    private static func lichessGameID(from url: URL) -> String? {
+        guard let host = url.host?.lowercased(),
+            host == "lichess.org" || host.hasSuffix(".lichess.org")
+        else { return nil }
+        let parts = url.pathComponents.dropFirst()  // the leading "/"
+        guard let first = parts.first, !first.isEmpty else { return nil }
+        guard parts.count == 1 || (parts.count == 2 && ["white", "black"].contains(parts.last!))
+        else { return nil }
+        guard first.count == 8 || first.count == 12,
+            first.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }),
+            !reservedPaths.contains(first.lowercased())
+        else { return nil }
+        return String(first.prefix(8))
+    }
+
+    /// The site's own pages that are eight or twelve characters of letters, and so would
+    /// otherwise read as game ids.
+    private static let reservedPaths: Set<String> = [
+        "training", "analysis", "practice", "streamer", "insights", "features", "download",
+        "password", "openings", "timeline", "tournament", "broadcast", "puzzletheme",
+    ]
 
     // -------------------------------------------------------------- splitting
 
@@ -278,6 +385,10 @@ public enum PGNImport {
     /// even when nothing else is.
     public static func name(for pgn: PGN, chapter ordinal: Int) -> String {
         if let chapterName = pgn.tag("ChapterName"), !chapterName.isEmpty { return chapterName }
+        // A lichess game export before the Event check, because its Event is "Rated Blitz
+        // game" — true of a million of them, and a name every game in an import would share.
+        // Who played and when is what tells one of somebody's Tuesday games from the next.
+        if lichessGameID(of: pgn) != nil, let played = playersAndDate(of: pgn) { return played }
         if let event = pgn.tag("Event"), !event.isEmpty,
             !GameLibrary.unfiledEvents.contains(event)
         {
@@ -288,6 +399,41 @@ public enum PGNImport {
         if white != "?" || black != "?" { return "\(white) 对 \(black)" }
         if let date = pgn.tag("Date"), !date.isEmpty, date != "????.??.??" { return date }
         return "第 \(ordinal) 章"
+    }
+
+    /// A game named by who played it and when — nil when the file does not say who.
+    ///
+    /// The time as well as the day when there is one, because two people who play each other
+    /// play each other more than once an evening, and two rows a person cannot tell apart are
+    /// two rows they cannot choose between.
+    private static func playersAndDate(of pgn: PGN) -> String? {
+        let white = pgn.tag("White") ?? "?"
+        let black = pgn.tag("Black") ?? "?"
+        guard white != "?" || black != "?" else { return nil }
+        var name = "\(white) 对 \(black)"
+        let date = [pgn.tag("UTCDate"), pgn.tag("Date")]
+            .compactMap { $0 }
+            .first { !$0.isEmpty && $0 != "????.??.??" }
+        if let date { name += " · \(date)" }
+        if let time = pgn.tag("UTCTime"), time.count >= 5 { name += " \(time.prefix(5))" }
+        return name
+    }
+
+    /// What dedup compares one game against another by.
+    ///
+    /// A lichess game has a canonical URL of its own, which is the one true answer to "is this
+    /// the same game": the same game imported twice, under two names, from two doors, is one
+    /// game. Everything else falls back to the name, which is what a study chapter is told
+    /// apart by — a chapter is named by the person who owns it and has no id of its own.
+    public static func identity(of pgn: PGN, named name: String) -> String {
+        guard let id = lichessGameID(of: pgn) else { return name }
+        return "lichess:\(id)"
+    }
+
+    /// The lichess game this file is, read off the `Site` tag the export writes.
+    private static func lichessGameID(of pgn: PGN) -> String? {
+        guard let site = pgn.tag("Site"), let url = URL(string: site) else { return nil }
+        return lichessGameID(from: url)
     }
 
     /// The collection a plan suggests for itself: the lichess `StudyName`, or the
@@ -305,14 +451,14 @@ public enum PGNImport {
 
     // -------------------------------------------------------------- applying
 
-    /// The chapters to write, minus any a game of that name is already standing in
-    /// for in the target collection.
+    /// The chapters to write, minus any the target collection already holds.
     ///
-    /// The name is the identity: importing the same study again must not double it,
-    /// and a chapter twice over inside one study — lichess lets chapters share a
-    /// name — cannot produce two files that read identically. Skipped rather than
-    /// renamed, because two chapters with one name have to be told apart by the
-    /// person who owns them, and the report says how many were skipped.
+    /// Keyed on `ImportChapter.identity`: a lichess game is the game its own URL names, and
+    /// everything else is its name. Importing the same study or the same twenty games again
+    /// must add nothing, and a chapter twice over inside one study — lichess lets chapters
+    /// share a name — cannot produce two files that read identically. Skipped rather than
+    /// renamed, because two chapters with one name have to be told apart by the person who
+    /// owns them, and the report says how many were skipped.
     public static func toWrite(
         _ chapters: [ImportChapter], avoiding existing: Set<String>
     ) -> (chapters: [ImportChapter], skipped: Int) {
@@ -320,7 +466,7 @@ public enum PGNImport {
         var kept: [ImportChapter] = []
         var skipped = 0
         for chapter in chapters {
-            guard taken.insert(chapter.name).inserted else {
+            guard taken.insert(chapter.identity).inserted else {
                 skipped += 1
                 continue
             }
@@ -360,10 +506,7 @@ public struct URLSessionPGNFetcher: PGNFetching, Sendable {
             throw PGNImport.Error.network("不是 HTTP 响应")
         }
         guard (200..<300).contains(http.statusCode) else {
-            if http.statusCode == 403, url.host?.lowercased().hasSuffix("lichess.org") == true {
-                throw PGNImport.Error.privateStudy
-            }
-            throw PGNImport.Error.http(http.statusCode)
+            throw PGNImport.Error.from(status: http.statusCode, url: url)
         }
         guard let text = String(data: data, encoding: .utf8) else {
             throw PGNImport.Error.notPGN
@@ -407,6 +550,25 @@ public struct URLSessionPGNFetcher: PGNFetching, Sendable {
             phase = .failed(.notALink)
             return
         }
+        await run(candidates, suggesting: nil)
+    }
+
+    /// The other door: somebody's recent games, newest first.
+    ///
+    /// The same pipeline — one download, split, one file per game — because a multi-game PGN
+    /// is a multi-game PGN whether lichess calls it a study or an account's history. What
+    /// differs is only the name the collection suggests for itself: these games have no study
+    /// to be named after, and "Rated Blitz game" is not a name.
+    public func recent(of user: String, count: Int = PGNImport.recentGames) async {
+        guard let url = PGNImport.recentGamesURL(user: user, count: count) else {
+            phase = .failed(.notAPlayer)
+            return
+        }
+        let name = user.trimmingCharacters(in: .whitespacesAndNewlines)
+        await run([url], suggesting: "\(name.hasPrefix("@") ? String(name.dropFirst()) : name) 的对局")
+    }
+
+    private func run(_ candidates: [URL], suggesting suggested: String?) async {
         phase = .fetching
         let fetching = fetcher
         phase = await Task.detached(priority: .userInitiated) { () -> Phase in
@@ -429,7 +591,8 @@ public struct URLSessionPGNFetcher: PGNFetching, Sendable {
                 }
                 return .ready(
                     PGNImport.ImportPlan(
-                        suggestedCollection: PGNImport.suggestedCollection(for: first.pgn),
+                        suggestedCollection: suggested
+                            ?? PGNImport.suggestedCollection(for: first.pgn),
                         chapters: chapters,
                         unreadable: unreadable
                     )
@@ -450,9 +613,12 @@ public struct URLSessionPGNFetcher: PGNFetching, Sendable {
     public func apply(into collection: String, library: GameLibrary) -> PGNImport.ImportOutcome? {
         guard case let .ready(plan) = phase else { return nil }
         phase = .importing
+        // What is already there, by the same identity the incoming games are compared by: a
+        // lichess game the library holds is that game whatever it has since been renamed to.
         let existing = Set(
-            library.entries.compactMap { entry in
-                entry.collection == collection ? entry.name : nil
+            library.entries.compactMap { entry -> String? in
+                guard entry.collection == collection, let pgn = entry.pgn else { return nil }
+                return PGNImport.identity(of: pgn, named: entry.name ?? entry.title)
             }
         )
         let (chapters, skipped) = PGNImport.toWrite(plan.chapters, avoiding: existing)

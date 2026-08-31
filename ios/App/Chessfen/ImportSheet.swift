@@ -1,14 +1,39 @@
 import ChessfenKit
 import SwiftUI
 
-/// The sheet that turns a pasted PGN link into games in the library (docs/adr/0014).
+/// The sheet that turns a link, or somebody's recent games, into games in the library
+/// (docs/adr/0014).
 ///
-/// One link downloads a whole multi-game PGN — a lichess study is the canonical case — and
-/// every chapter becomes one game in a collection. Opened from the library, the collection
-/// is asked for; opened from inside a collection it is pinned, which is the "add more games
-/// to this collection" door. The downloading and reading is `ImportSession`'s; this is the
+/// Two doors and one machine behind them: a link downloads a whole multi-game PGN — a lichess
+/// study or a single game — and a username downloads that player's last few games. Either way
+/// every game in what came down becomes one file in a collection. Opened from the library the
+/// collection is asked for; opened from inside a collection it is pinned, which is the "add more
+/// games to this collection" door. The downloading and reading is `ImportSession`'s; this is the
 /// deck of controls around it, one state per phase.
 struct ImportSheet: View {
+    /// Which door. Not a mode — the two share every state after the download, because after the
+    /// download there is no difference between them.
+    enum Door: Hashable, CaseIterable {
+        case link
+        case player
+
+        var label: String {
+            switch self {
+            case .link: "链接"
+            case .player: "最近对局"
+            }
+        }
+
+        var explainer: String {
+            switch self {
+            case .link:
+                "贴一个链接——一个 lichess 研究，或者一局棋——里面的每一局会变成作品集里的一局。"
+            case .player:
+                "填一个 lichess 用户名，把最近几局拉下来。上飞机前干这一步。"
+            }
+        }
+    }
+
     /// The collection the import is pinned to, when the sheet was opened from inside one.
     let targetCollection: String?
     let session: ImportSession
@@ -18,43 +43,48 @@ struct ImportSheet: View {
 
     @State private var input: String
     @State private var collectionDraft = ""
+    @State private var door: Door = .link
+    @State private var player = ""
+    @State private var count = PGNImport.recentGames
 
     init(
         targetCollection: String? = nil,
         session: ImportSession = ImportSession(),
-        initialInput: String = ""
+        initialInput: String = "",
+        initialDoor: Door = .link,
+        initialPlayer: String = ""
     ) {
         self.targetCollection = targetCollection
         self.session = session
         _input = State(initialValue: initialInput)
+        _door = State(initialValue: initialDoor)
+        _player = State(initialValue: initialPlayer)
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("贴一个 PGN 链接——比如一个 lichess 研究——每一章会变成作品集里的一局。")
+                    doors
+
+                    Text(door.explainer)
                         .font(.footnote)
                         .foregroundStyle(Palette.inkSoft)
+                        .fixedSize(horizontal: false, vertical: true)
 
-                    TextField("PGN 链接", text: $input)
-                        .keyboardType(.URL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .font(.subheadline)
-                        .foregroundStyle(Palette.ink)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 12)
-                        .background(Palette.raised, in: RoundedRectangle(cornerRadius: 12))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12).stroke(Palette.hairline, lineWidth: 0.5)
-                        )
+                    switch door {
+                    case .link:
+                        field("PGN 链接", text: $input, keyboard: .URL)
+                    case .player:
+                        field("lichess 用户名", text: $player, keyboard: .default)
+                        howMany
+                    }
 
                     collection
 
                     switch session.phase {
                     case .idle:
-                        primaryButton("获取棋谱", isEnabled: !trimmedInput.isEmpty, action: fetch)
+                        primaryButton("获取棋谱", isEnabled: canFetch, action: fetch)
                     case .fetching:
                         waiting("在下载棋谱…")
                     case .ready(let plan):
@@ -70,7 +100,7 @@ struct ImportSheet: View {
                 .padding(16)
             }
             .background(Palette.parchment)
-            .navigationTitle("从链接导入")
+            .navigationTitle("导入棋局")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Palette.parchment, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
@@ -86,6 +116,58 @@ struct ImportSheet: View {
     }
 
     // ------------------------------------------------------------------ parts
+
+    /// The two doors. A chip each, because that is the app's one selector idiom.
+    private var doors: some View {
+        HStack(spacing: 8) {
+            ForEach(Door.allCases, id: \.self) { candidate in
+                Button {
+                    door = candidate
+                    session.reset()
+                } label: {
+                    Chip(label: candidate.label, isOn: door == candidate)
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// How many recent games. Fixed steps rather than a number to type: the useful answers are
+    /// "the last few" and "enough for a flight", and neither is a number anyone has in mind.
+    private var howMany: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("拉几局").eyebrow()
+            HStack(spacing: 8) {
+                ForEach([5, 10, 20, 50], id: \.self) { many in
+                    Button {
+                        count = many
+                    } label: {
+                        Chip(label: "\(many)", isOn: count == many)
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private func field(
+        _ prompt: String, text: Binding<String>, keyboard: UIKeyboardType
+    ) -> some View {
+        TextField(prompt, text: text)
+            .keyboardType(keyboard)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .font(.subheadline)
+            .foregroundStyle(Palette.ink)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(Palette.raised, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12).stroke(Palette.hairline, lineWidth: 0.5)
+            )
+    }
 
     /// Which collection this lands in: asked for, or pinned by the door the sheet came in
     /// through.
@@ -124,12 +206,12 @@ struct ImportSheet: View {
                         .foregroundStyle(Palette.inkSoft)
                 }
                 if plan.chapters.count > 5 {
-                    Text("还有 \(plan.chapters.count - 5) 章…")
+                    Text("还有 \(plan.chapters.count - 5) 局…")
                         .font(.footnote)
                         .foregroundStyle(Palette.inkSoft)
                 }
                 if plan.unreadable > 0 {
-                    Text("有 \(plan.unreadable) 章没能读出来，会跳过。")
+                    Text("有 \(plan.unreadable) 局没能读出来，会跳过。")
                         .font(.footnote)
                         .foregroundStyle(Palette.alarm)
                 }
@@ -143,8 +225,9 @@ struct ImportSheet: View {
     }
 
     private func summary(of plan: PGNImport.ImportPlan) -> String {
-        guard let suggested = plan.suggestedCollection else { return "\(plan.chapters.count) 章" }
-        return "「\(suggested)」· \(plan.chapters.count) 章"
+        let many = "\(plan.chapters.count) 局"
+        guard let suggested = plan.suggestedCollection else { return many }
+        return "「\(suggested)」· \(many)"
     }
 
     private func done(_ outcome: PGNImport.ImportOutcome) -> some View {
@@ -235,6 +318,17 @@ struct ImportSheet: View {
         input.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private var trimmedPlayer: String {
+        player.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canFetch: Bool {
+        switch door {
+        case .link: !trimmedInput.isEmpty
+        case .player: !trimmedPlayer.isEmpty
+        }
+    }
+
     /// Whether there is a collection to import into. Pinned sheets always have one; free
     /// ones need a typed name — the collection is the point of the import, not a nicety,
     /// and an empty name would file the games nowhere.
@@ -254,8 +348,13 @@ struct ImportSheet: View {
     }
 
     private func fetch() {
-        guard !trimmedInput.isEmpty else { return }
-        Task { await session.run(trimmedInput) }
+        guard canFetch else { return }
+        switch door {
+        case .link:
+            Task { await session.run(trimmedInput) }
+        case .player:
+            Task { await session.recent(of: trimmedPlayer, count: count) }
+        }
     }
 
     private func importNow() {

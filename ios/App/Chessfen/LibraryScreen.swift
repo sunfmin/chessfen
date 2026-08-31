@@ -260,7 +260,7 @@ struct LibraryScreen: View {
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "link")
-                    Text("从链接导入").font(.subheadline.weight(.medium))
+                    Text("导入棋局").font(.subheadline.weight(.medium))
                     Spacer(minLength: 0)
                 }
                 .foregroundStyle(Palette.ink)
@@ -686,7 +686,7 @@ struct CollectionScreen: View {
                 } label: {
                     Image(systemName: "plus")
                 }
-                .accessibilityLabel("从链接导入")
+                .accessibilityLabel("导入棋局")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {

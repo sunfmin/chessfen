@@ -64,9 +64,12 @@ struct ImportScreenScreenshots {
             ImportSheet().environment(library(in: tempDir))
         }
 
-        #expect(rendered.says("从链接导入"))
-        #expect(rendered.says("贴一个 PGN 链接"), "what a link is, before one is asked for")
+        #expect(rendered.says("导入棋局"))
+        #expect(rendered.says("链接"), "and the two doors, with the link one open")
+        #expect(rendered.says("最近对局"))
+        #expect(rendered.says("贴一个链接"), "what a link is, before one is asked for")
         #expect(rendered.says("PGN 链接"))
+        #expect(!rendered.says("lichess 用户名"), "the other door's field is not on this one")
         #expect(rendered.says("获取棋谱"))
         #expect(rendered.says("导入到作品集"))
         #expect(rendered.says("作品集名字"))
@@ -89,7 +92,7 @@ struct ImportScreenScreenshots {
             ImportSheet(session: session).environment(library(in: tempDir))
         }
 
-        #expect(rendered.says("「Wood Pecker 1-47」· 2 章"))
+        #expect(rendered.says("「Wood Pecker 1-47」· 2 局"))
         #expect(rendered.says("第一题"))
         #expect(rendered.says("第二题"))
         #expect(rendered.says("导入 2 局"))
@@ -133,6 +136,77 @@ struct ImportScreenScreenshots {
         }
     }
 
+    /// Two of somebody's own games, in the shape the user endpoint hands them over.
+    private static let myGames = """
+    [Event "Rated Blitz game"]
+    [Site "https://lichess.org/hf3Zpe5R"]
+    [White "sunfmin"]
+    [Black "DrNykterstein"]
+    [Result "0-1"]
+    [UTCDate "2026.08.30"]
+    [UTCTime "21:14:03"]
+
+    1. e4 { [%eval 0.24] } e5 { [%eval 0.31] } 2. Nf3 0-1
+
+    [Event "Rated Blitz game"]
+    [Site "https://lichess.org/QQQQwwww"]
+    [White "penguingm1"]
+    [Black "sunfmin"]
+    [Result "1-0"]
+    [UTCDate "2026.08.29"]
+    [UTCTime "09:02:11"]
+
+    1. d4 d5 2. c4 1-0
+    """
+
+    /// The other door: a username and a count, and what comes back through it.
+    @Test("the other door asks for a username and how many games")
+    func recentGamesDoor() async throws {
+        let tempDir = tempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let url = try #require(PGNImport.recentGamesURL(user: "sunfmin", count: 10))
+        let session = ImportSession(
+            fetcher: ScriptedFetcher([url.absoluteString: .success(Self.myGames)])
+        )
+        await session.recent(of: "sunfmin", count: 10)
+
+        let rendered = await ScreenImage.write("import-sheet-recent") {
+            ImportSheet(session: session, initialDoor: .player, initialPlayer: "sunfmin")
+                .environment(library(in: tempDir))
+        }
+
+        #expect(rendered.says("「sunfmin 的对局」· 2 局"), "named after the player, not the event")
+        #expect(rendered.says("sunfmin 对 DrNykterstein · 2026.08.30 21:14"))
+        #expect(rendered.says("penguingm1 对 sunfmin · 2026.08.29 09:02"), "two games, two names")
+        #expect(rendered.says("导入 2 局"))
+        #expect(rendered.says("填一个 lichess 用户名"), "the door that fetched them is the open one")
+        #expect(rendered.says("拉几局"))
+    }
+
+    /// A game that is not there says so, in its own words.
+    @Test("an unavailable game is named as unavailable")
+    func missingGame() async throws {
+        let tempDir = tempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let session = ImportSession(
+            fetcher: ScriptedFetcher([
+                "https://lichess.org/game/export/hf3Zpe5R?evals=true&clocks=false":
+                    .failure(.missingGame)
+            ])
+        )
+        await session.run("https://lichess.org/hf3Zpe5R/black")
+
+        let rendered = await ScreenImage.write("import-sheet-missing") {
+            ImportSheet(session: session).environment(library(in: tempDir))
+        }
+
+        #expect(rendered.says("找不到这局棋"))
+        #expect(rendered.says("链接可能不对"), "and both of the things it could be")
+        #expect(rendered.says("重试"))
+    }
+
     /// Inside a collection the same sheet is pinned to it: the door says where games land.
     @Test("a collection's + opens an import pinned to that collection")
     func collectionImport() async throws {
@@ -148,7 +222,7 @@ struct ImportScreenScreenshots {
             .environment(EngineHost(ScriptedEngine([])))
             .environment(library)
         }
-        #expect(screen.says("从链接导入"), "the + is labelled for what it does")
+        #expect(screen.says("导入棋局"), "the + is labelled for what it does")
         #expect(screen.says("这个作品集空了"), "an empty collection says so")
 
         let sheet = await ScreenImage.write("import-sheet-pinned") {
