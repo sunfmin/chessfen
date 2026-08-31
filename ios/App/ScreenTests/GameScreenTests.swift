@@ -334,3 +334,120 @@ struct GameScreenScreenshots {
         .environment(GameLibrary())
     }
 }
+
+/// The one thing this screen promises: the board does not move.
+///
+/// Everything around it changes every single move — whose bar is live, which side the engine is
+/// answering for, what it is answering — and the board is what a person is looking at while it
+/// does. A bar that grew by a line when its side came on the clock walked the board up and down
+/// the screen once per ply, which is unusable and was invisible to every test that only read
+/// words. So this one reads pixels.
+@MainActor
+@Suite(.serialized)
+struct BoardStandsStill {
+    private static let italian = ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5", "c2c3", "g8f6"]
+
+    private static let searching = [
+        Analysis(
+            depth: 24,
+            selectiveDepth: 31,
+            lines: [
+                Line(
+                    score: .centipawns(31),
+                    uciMoves: ["d2d4", "e5d4"],
+                    san: ["d4", "exd4"]
+                )
+            ],
+            nodes: 50_000_000,
+            nodesPerSecond: 2_400_000,
+            timeMilliseconds: 20_000
+        )
+    ]
+
+    @Test("the board sits in the same place whichever colour is on the clock")
+    func boardDoesNotWalk() async throws {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
+
+        // The same game one ply apart: White to move, then Black to move. Nothing else differs.
+        let white = GameSession.fresh(game)
+        let whiteShot = await shoot("game-steady-white", white)
+
+        let black = GameSession.fresh(game)
+        black.step(by: -1)
+        let blackShot = await shoot("game-steady-black", black)
+
+        #expect(white.viewed.state.sideToMove == .white)
+        #expect(black.viewed.state.sideToMove == .black)
+
+        let onWhite = try #require(boardEdges(of: whiteShot.url))
+        let onBlack = try #require(boardEdges(of: blackShot.url))
+        // A pixel, not a point: at three pixels to the point that is the hairline above the board
+        // landing either side of a boundary, and no eye has ever seen it. A ply's worth of bar is
+        // seventy-five.
+        #expect(
+            abs(onWhite.lowerBound - onBlack.lowerBound) <= 1,
+            "the board's top moved between plies: \(onWhite) then \(onBlack)"
+        )
+        #expect(
+            abs(onWhite.count - onBlack.count) <= 1,
+            "the board changed size between plies: \(onWhite) then \(onBlack)"
+        )
+    }
+
+    // ------------------------------------------------------------------- glue
+
+    private func shoot(_ name: String, _ session: GameSession) async -> ScreenImage.Rendered {
+        await ScreenImage.write(name) {
+            NavigationStack {
+                GameScreen(session: session, path: .constant([]))
+            }
+            .environment(EngineHost(ScriptedEngine(Self.searching, isEndless: true)))
+            .environment(GameLibrary())
+        }
+    }
+
+    /// The rows down the middle of the picture that the board occupies.
+    ///
+    /// Told apart by colour: the squares are saturated wood (a red end and a dim blue end), and
+    /// everything else on this screen — parchment, the white half of the advantage bar, teal,
+    /// ink — fails one of the two. The longest run of them rather than the outermost, because a
+    /// stray antialiased pixel somewhere up in the bars would otherwise pass for the board's edge.
+    private func boardEdges(of url: URL) -> ClosedRange<Int>? {
+        guard let image = UIImage(contentsOfFile: url.path)?.cgImage else { return nil }
+        let width = image.width
+        let height = image.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        guard
+            let context = CGContext(
+                data: &pixels, width: width, height: height, bitsPerComponent: 8,
+                bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )
+        else { return nil }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        let column = width / 2
+        var longest: ClosedRange<Int>?
+        var start: Int?
+        for row in 0...height {
+            let isBoard: Bool
+            if row == height {
+                isBoard = false
+            } else {
+                let offset = (row * width + column) * 4
+                isBoard = Int(pixels[offset]) > 0xB0 && Int(pixels[offset + 2]) < 0xC0
+            }
+            switch (isBoard, start) {
+            case (true, nil):
+                start = row
+            case (false, .some(let from)):
+                let run = from...(row - 1)
+                if run.count > (longest?.count ?? 0) { longest = run }
+                start = nil
+            default:
+                break
+            }
+        }
+        return longest
+    }
+}

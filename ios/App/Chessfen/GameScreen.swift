@@ -27,9 +27,14 @@ struct GameScreen: View {
     @State private var selected: Square?
     @State private var promotion: PromotionRequest?
     @State private var isSoundOn = Sounds.current.isSoundOn
-    /// Nil until somebody opens or closes a side's own controls themselves, and then their answer
-    /// stands for as long as the screen does. Until then the game decides: see `unfolded`.
-    @State private var unfoldedByHand: Unfold?
+    /// Which side's own controls are open. Nobody's, unless somebody said otherwise — and then
+    /// their answer stands for as long as the screen does. Never derived from the game: an unfold
+    /// that answers to the moves is an unfold that opens and shuts under your thumb, and the board
+    /// walks up and down the screen every time it does.
+    @State private var unfolded: PieceColour?
+    /// Whether the opening guess below has been made yet. Once, on the way in — not on every
+    /// appearance, or coming back from a Review would shut what somebody had just opened.
+    @State private var hasGuessedUnfold = false
     /// Whether a thumb is on 让引擎走 right now. The engine is thinking for exactly as long as it is.
     @State private var isAsking = false
     /// How tall the window under the record is, and how tall the page in it turned out to be — the
@@ -37,29 +42,20 @@ struct GameScreen: View {
     @State private var readHeight: CGFloat = 0
     @State private var pageHeight: CGFloat = 0
 
-    /// Which side's own controls are open, once somebody has said. `shut` is a real answer and not
-    /// the absence of one, which is what keeps a closed bar closed on a board with nothing played.
-    enum Unfold: Hashable {
-        case shut
-        case open(PieceColour)
-    }
-
     struct PromotionRequest: Identifiable {
         let id = UUID()
         let moves: [Move]
     }
 
-    /// Whose controls are unfolded, and nobody's is the usual answer.
+    /// A guess at what to open, made once and then never again.
     ///
-    /// Open on the side to move while there is nothing played yet, because that is the side every
+    /// A board with nothing played on it opens the side to move, because that is the side every
     /// unanswered question is about — who is playing it, and whether it really is the one to move.
-    /// Closed once a game is under way, until somebody says otherwise.
-    private var unfolded: PieceColour? {
-        switch unfoldedByHand {
-        case .some(.shut): nil
-        case .some(.open(let colour)): colour
-        case nil: session.game.plies.isEmpty ? viewed.state.sideToMove : nil
-        }
+    /// A game already under way opens nothing. After this, only a thumb changes it.
+    private func guessUnfold() {
+        guard !hasGuessedUnfold else { return }
+        hasGuessedUnfold = true
+        unfolded = session.game.plies.isEmpty ? viewed.state.sideToMove : nil
     }
 
     var body: some View {
@@ -79,7 +75,7 @@ struct GameScreen: View {
                         finish: finish
                     )
                     .frame(width: side)
-                    .padding(.vertical, 7)
+                    .padding(.vertical, 5)
                 }
                 playerBar(bottomColour)
                 record
@@ -169,6 +165,7 @@ struct GameScreen: View {
             }
         }
         .onAppear {
+            guessUnfold()
             // Re-attached on every appearance: the engine may have finished starting while the
             // library was on screen, and coming back from a Review means the search this screen
             // wants is not the one that just ran.
@@ -309,7 +306,7 @@ struct GameScreen: View {
             }
             .frame(height: 30)
 
-            if live { liveLine }
+            line(for: colour)
             if unfolded == colour { chips(for: colour) }
         }
         .padding(.leading, 13)
@@ -368,15 +365,22 @@ struct GameScreen: View {
         }
     }
 
-    /// What the engine has to say to the side on the clock, on one line of fixed height — the
-    /// lines change several times a second as the search deepens, and a moving bar under a thumb
-    /// would be unreadable.
+    /// One line under each side's name, and the space is spent whether or not there is anything
+    /// to put in it.
     ///
-    /// While 让引擎走 is held the line is the engine's own: what it has spent and how deep it has
-    /// got, directly under the thumb spending it.
-    @ViewBuilder private var liveLine: some View {
+    /// What goes in it belongs to whoever is on the clock — the engine's answer, or, while 让引擎走
+    /// is held, what that thumb has bought: how long the engine has had and how deep it has got.
+    /// That side changes every single move. If the line came and went with it, the bar above the
+    /// board would grow and shrink every move and the board would walk up and down the screen with
+    /// it — so the far side's line is simply empty. A still board is worth the twenty points.
+    ///
+    /// Fixed height for the same reason within the line: the engine's answer changes several times
+    /// a second as the search deepens, and a bar that resized with it would be unreadable.
+    private func line(for colour: PieceColour) -> some View {
         Group {
-            if isAsking {
+            if !isOnClock(colour) {
+                Color.clear
+            } else if isAsking {
                 Text(askedReadout)
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(Palette.analysis)
@@ -400,6 +404,7 @@ struct GameScreen: View {
             }
         }
         .frame(height: 19)
+        .frame(maxWidth: .infinity, alignment: .leading)
         // The recommendation keeps changing as the search deepens, and that is the point
         // (docs/adr/0009) — so it must not make the bar jump while it does.
         .animation(.none, value: session.analysis?.depth)
@@ -420,7 +425,7 @@ struct GameScreen: View {
     private func unfoldButton(_ colour: PieceColour) -> some View {
         Button {
             withAnimation(.snappy(duration: 0.22)) {
-                unfoldedByHand = unfolded == colour ? .shut : .open(colour)
+                unfolded = unfolded == colour ? nil : colour
             }
         } label: {
             Image(systemName: unfolded == colour ? "chevron.up" : "chevron.down")
@@ -511,7 +516,7 @@ struct GameScreen: View {
         }
         .frame(height: 42)
         .padding(.horizontal, 12)
-        .padding(.vertical, 7)
+        .padding(.vertical, 5)
     }
 
     /// The position the game began in, at the head of its own record. It is a place in the game
@@ -860,7 +865,7 @@ struct GameScreen: View {
     /// that row is the whole job.
     static func boardSide(in size: CGSize) -> CGFloat {
         let byWidth = size.width - 16
-        let byHeight = max(240, size.height - 372)
+        let byHeight = max(240, size.height - 388)
         return (min(byWidth, byHeight) / 8).rounded(.down) * 8
     }
 
