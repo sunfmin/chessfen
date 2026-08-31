@@ -139,6 +139,57 @@ int32_t cf_legal_moves(const char       *startFen,
                        CfMove            *out,
                        int32_t            capacity);
 
+/* ----------------------------------------------------------------- control  */
+
+/*
+  Who attacks each of the 64 squares, per colour.
+
+  A move's purpose is nearly always a change in this map — a piece became
+  defended, a square changed hands, a piece stopped being hanging — so the map is
+  answered here rather than recomputed in Swift, where sliding-piece rays would be
+  a second opinion about the rules of chess (docs/adr/0003).
+
+  A piece standing on a square does not attack it. Pinned pieces DO count as
+  attackers: a pinned defender still answers a capture on the square it covers,
+  because the recapture happens before the pin could ever be cashed. That is a
+  real choice rather than an accident of the engine, and the tests hold it.
+*/
+typedef struct {
+    int32_t white[64];
+    int32_t black[64];
+} CfControl;
+
+bool cf_square_control(const char       *startFen,
+                       const char *const *moves,
+                       int32_t            moveCount,
+                       CfControl         *out);
+
+/*
+  What a move is worth in material, by static exchange evaluation: whether the
+  side making it comes out ahead, level, or behind once both sides have taken
+  everything worth taking on the destination square.
+
+  This is what tells "I win a piece here" from "this is an even trade" — the two
+  claims a player confuses most often — and, for a quiet move, whether the piece
+  is walking somewhere it can simply be taken.
+
+  Castling, promotion and en passant are reported level: the engine answers those
+  from the move type without running an exchange, and none of the three is a way
+  to win or shed material on its own.
+*/
+typedef enum {
+    CF_EXCHANGE_LOSING  = -1,
+    CF_EXCHANGE_LEVEL   = 0,
+    CF_EXCHANGE_WINNING = 1
+} CfExchange;
+
+/* False when the position does not validate or `uci` is not legal in it. */
+bool cf_exchange_value(const char       *startFen,
+                       const char *const *moves,
+                       int32_t            moveCount,
+                       const char        *uci,
+                       int32_t           *out);
+
 /* ------------------------------------------------------------------- perft  */
 
 /*

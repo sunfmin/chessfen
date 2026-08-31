@@ -37,6 +37,50 @@ case "perft":
     }
     print(Rules.perft(fen: arguments[1], depth: depth))
 
+case "control":
+    guard arguments.count >= 2 else {
+        fail("usage: chessfen-cli control <fen> [square]")
+    }
+    guard let control = Rules.control(startFEN: arguments[1]) else {
+        fail("that FEN does not validate — try `validate` on it")
+    }
+    if arguments.count >= 3 {
+        guard let square = Square(arguments[2]) else { fail("\(arguments[2]) is not a square") }
+        let white = control.attackers(of: square, by: .white)
+        let black = control.attackers(of: square, by: .black)
+        let held = control.holder(of: square).map { $0 == .white ? "white" : "black" } ?? "level"
+        print("\(square)  white \(white)  black \(black)  → \(held)")
+    } else {
+        // Eight rows from the eighth rank down, the way a board is drawn: white's count,
+        // black's count, and who that makes the square's.
+        for rank in stride(from: 7, through: 0, by: -1) {
+            let cells = (0..<8).map { file -> String in
+                let square = Square(file: file, rank: rank)
+                let white = control.attackers(of: square, by: .white)
+                let black = control.attackers(of: square, by: .black)
+                let mark =
+                    switch control.holder(of: square) {
+                    case .white: "W"
+                    case .black: "B"
+                    case nil: "·"
+                    }
+                return "\(white)\(mark)\(black)"
+            }
+            print("\(rank + 1)  \(cells.joined(separator: " "))")
+        }
+        print("   " + (0..<8).map { "  \(Character(UnicodeScalar(UInt8(97 + $0))))" }
+            .joined(separator: " "))
+    }
+
+case "exchange":
+    guard arguments.count >= 3 else {
+        fail("usage: chessfen-cli exchange <fen> <uci>")
+    }
+    guard let value = Rules.exchangeValue(startFEN: arguments[1], uci: arguments[2]) else {
+        fail("either that FEN does not validate, or \(arguments[2]) is not legal in it")
+    }
+    print("\(arguments[2]) \(value)")
+
 case "analyse":
     guard arguments.count >= 2 else {
         fail("usage: chessfen-cli analyse <fen> [depth] [--threads N] [--multipv N]")
@@ -132,5 +176,5 @@ case "icon":
     print("wrote \(arguments[1]) at \(side)×\(side)")
 
 default:
-    fail("usage: chessfen-cli <validate|perft|analyse|icon> ...")
+    fail("usage: chessfen-cli <validate|perft|control|exchange|analyse|recognise|icon> ...")
 }

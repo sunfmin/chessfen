@@ -425,6 +425,62 @@ int32_t cf_legal_moves(const char       *startFen,
     return written;
 }
 
+// ----------------------------------------------------------------- control
+
+bool cf_square_control(const char       *startFen,
+                       const char *const *moves,
+                       int32_t            moveCount,
+                       CfControl         *out) {
+    if (out == nullptr)
+        return false;
+
+    Replay replay;
+    if (!replay.build(startFen, moves, moveCount))
+        return false;
+
+    const Position& pos = replay.position;
+    *out                = CfControl{};
+
+    for (int i = 0; i < 64; ++i)
+    {
+        // Purely geometric, and deliberately so: pinned pieces count, because a
+        // pinned defender still answers a capture on the square it covers.
+        const Bitboard attackers = pos.attackers_to(Square(i));
+        out->white[i]            = popcount(attackers & pos.pieces(WHITE));
+        out->black[i]            = popcount(attackers & pos.pieces(BLACK));
+    }
+    return true;
+}
+
+bool cf_exchange_value(const char       *startFen,
+                       const char *const *moves,
+                       int32_t            moveCount,
+                       const char        *uci,
+                       int32_t           *out) {
+    if (out == nullptr || uci == nullptr)
+        return false;
+
+    Replay replay;
+    if (!replay.build(startFen, moves, moveCount))
+        return false;
+
+    Position&  pos  = replay.position;
+    const Move move = UCIEngine::to_move(pos, std::string(uci));
+    if (move == Move::none())
+        return false;
+
+    // A threshold of 1 is "strictly better than level" in the engine's own units,
+    // so the three answers come out of two questions rather than a scale nobody
+    // downstream could interpret.
+    if (pos.see_ge(move, 1))
+        *out = int32_t(CF_EXCHANGE_WINNING);
+    else if (pos.see_ge(move, 0))
+        *out = int32_t(CF_EXCHANGE_LEVEL);
+    else
+        *out = int32_t(CF_EXCHANGE_LOSING);
+    return true;
+}
+
 // ------------------------------------------------------------------- perft
 
 uint64_t cf_perft(const char *fen, int depth) {

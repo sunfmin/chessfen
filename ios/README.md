@@ -17,7 +17,7 @@ ios/
 │   ├── ChessfenKit/       # recognition, rules, engine, game, PGN — all the thinking
 │   └── chessfen-cli/      # a macOS entry point to the same code
 ├── Resources/Nets/        # the two NNUE files (Git LFS)
-├── Tests/                 # 116 tests
+├── Tests/                 # 191 tests
 └── App/                   # the SwiftUI shell: screens and nothing else
     ├── project.yml        # the Xcode project is generated from this
     └── ScreenTests/       # the screens, drawn into PNGs and held to what they say
@@ -55,6 +55,8 @@ swift run chessfen-cli recognise board.png    # FEN, orientation, shaky squares
 swift run chessfen-cli recognise board.png --straight   # no perspective correction
 swift run chessfen-cli validate "<fen>"       # is this a position at all
 swift run chessfen-cli perft "<fen>" 5        # count the moves; compare with anyone
+swift run chessfen-cli control "<fen>" [d5]     # who attacks and defends every square
+swift run chessfen-cli exchange "<fen>" e4d5  # what that move is worth in material
 swift run chessfen-cli analyse "<fen>" 24     # Stockfish, three lines, to depth 24
 swift run chessfen-cli icon out.png 1024      # redraw the app icon
 ```
