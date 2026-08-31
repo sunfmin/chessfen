@@ -100,3 +100,48 @@ extension Rules {
         }
     }
 }
+
+extension SquareControl {
+    /// Every piece standing on a square its own side does not hold — attacked more often than it
+    /// is defended.
+    ///
+    /// The checklist item that decides the most amateur games, and the reason this map exists at
+    /// all. Kings are left out: a king attacked is a check, which the board already says in red,
+    /// and a king is never *defended* in the sense this counts.
+    public func loosePieces(among pieces: [Square: Piece]) -> Set<Square> {
+        var loose: Set<Square> = []
+        for (square, piece) in pieces where piece.kind != .king {
+            let mine = attackers(of: square, by: piece.colour)
+            let theirs = attackers(of: square, by: piece.colour.opposite)
+            if theirs > mine { loose.insert(square) }
+        }
+        return loose
+    }
+}
+
+extension Game {
+    /// The pieces hanging in this position — attacked more often than defended, either colour's
+    /// (docs/adr/0018). Nil when the position could not be read.
+    ///
+    /// Computed rather than stored, and cheap enough to be: replaying the moves and asking who
+    /// attacks each of the sixty-four squares is the same work a perft node does.
+    public var loosePieces: Set<Square>? {
+        guard let control = Rules.control(startFEN: startFEN, moves: uciMoves),
+            let pieces = BoardRenderer.placement(state.fen)
+        else { return nil }
+        return control.loosePieces(among: pieces)
+    }
+
+    /// The squares whose holder the last Ply changed — what that move did to the board, as
+    /// against what it did to the Score.
+    ///
+    /// Nil for a Game with no moves in it, and for one that cannot be replayed.
+    public var squaresLastMoveChanged: Set<Square>? {
+        guard !plies.isEmpty,
+            let before = rewound(to: plies.count - 1),
+            let beforeControl = Rules.control(startFEN: before.startFEN, moves: before.uciMoves),
+            let afterControl = Rules.control(startFEN: startFEN, moves: uciMoves)
+        else { return nil }
+        return afterControl.squaresDiffering(from: beforeControl)
+    }
+}

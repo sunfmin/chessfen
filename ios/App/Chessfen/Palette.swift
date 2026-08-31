@@ -30,6 +30,11 @@ nonisolated enum Palette {
     static let walnut = Color(hex: 0x6B4522)
     static let analysis = dynamic(light: 0x2E7D6E, dark: 0x4FB8A4)
     static let alarm = dynamic(light: 0xB3402A, dark: 0xE87A62)
+    /// The player's own voice, as against the engine's teal: their arrow on the board, and the
+    /// layer they turned on to look at it. Violet is nowhere in the wood and nowhere near teal,
+    /// so two arrows in the two colours can never be mistaken for each other — which is the whole
+    /// point of drawing them both (docs/adr/0018).
+    static let mine = dynamic(light: 0x6C4AB6, dark: 0xA78BFA)
 
     /// The two ends of the advantage bar. The pieces' own colours by day; by night the black end is
     /// lifted off the page, because a bar drawn in the page's own colour is not a bar, it is a hole

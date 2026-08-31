@@ -1,4 +1,5 @@
 import ChessfenKit
+import Foundation
 import Synchronization
 import Testing
 
@@ -322,6 +323,27 @@ import Testing
         #expect(session.game.plies[2].san == "d4")
         #expect(session.game.intent(atPly: 3) == .claim(.hold, Square("d5")!))
         #expect(session.game.variations(atPly: 2).first?.map(\.san) == ["Nf3", "Nc6"])
+    }
+
+    // ---------------------------------------------------------------- the layers
+
+    @Test("the layer showing what a move changed starts off, on every Game")
+    func theChangeLayerStartsOff() throws {
+        let session = try session(PositionalEngine([:]))
+        #expect(!session.showsControlChange)
+
+        session.setShowsControlChange(true)
+        #expect(session.showsControlChange)
+
+        // And the next position in a collection asks again, like the engine's opinion and for the
+        // same reason.
+        let entry = GameLibrary.Entry(
+            url: URL(filePath: "/games/chessfen-layers.pgn"),
+            pgn: PGN(game: try game(), tags: []),
+            modified: Date(timeIntervalSince1970: 1_786_001_000)
+        )
+        let next = try #require(GameSession.opened(entry))
+        #expect(!next.showsControlChange)
     }
 
     // ---------------------------------------------------------------- the pass

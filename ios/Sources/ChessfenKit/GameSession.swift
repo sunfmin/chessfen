@@ -70,6 +70,13 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     @ObservationIgnored private var storedViewed: Game?
     /// The move offered at the Ply being studied, on the board and not yet in the Game.
     public private(set) var guess: Guess?
+    /// Whether the layer showing what the move changed is on.
+    ///
+    /// Off to begin with and off for every Game, like the engine's opinion and for the same reason
+    /// (docs/adr/0015): a board wearing every layer at once is a board nobody reads, and the
+    /// answer to "what did that move do" is worth more when somebody asked for it. On the session
+    /// rather than in the screen so that it cannot come back from a Game the player has left.
+    public private(set) var showsControlChange = false
     /// The verb chosen, waiting for the Square it is about. A claim with no target is not a claim
     /// yet, which is why this is not an Intent.
     public private(set) var declaringVerb: Intent.Verb?
@@ -641,6 +648,10 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     }
 
     // ----------------------------------------------------------------- and why
+
+    public func setShowsControlChange(_ shows: Bool) {
+        showsControlChange = shows
+    }
 
     /// Picks the verb, which is half a claim. Passing nil takes the choice back.
     ///

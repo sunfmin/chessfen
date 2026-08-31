@@ -92,6 +92,17 @@ struct BoardView: View {
     var captures: Set<Square> = []
     /// The engine's current Best Move.
     var recommendation: MoveSquares?
+    /// The player's own move, drawn beside the engine's and never in its colour. Two arrows
+    /// disagreeing is the picture a Drill is trying to leave behind (docs/adr/0018).
+    var mine: MoveSquares?
+    /// The Square a declared Intent is about — the claim's target, ringed.
+    var aim: Square?
+    /// Pieces attacked more often than defended, either colour's. Only ever drawn on a position
+    /// somebody is studying: on the position they are about to move in, this layer would be the
+    /// blunder-check done on their behalf, which is the one thing it exists to teach.
+    var loose: Set<Square> = []
+    /// Squares whose control the move being looked at changed.
+    var changed: Set<Square> = []
     var coordinates = true
     var isInteractive = true
     var onTap: ((Square) -> Void)?
@@ -234,6 +245,12 @@ struct BoardView: View {
                 if moved.contains(square) {
                     context.fill(Path(box), with: .color(Self.lastMoveWash))
                 }
+                // What the move changed, in the player's own violet: under the pieces, because it
+                // is about the squares, and a wash rather than a fill so the checker pattern and
+                // the last move's green both go on showing through.
+                if changed.contains(square) {
+                    context.fill(Path(box), with: .color(Palette.mine.opacity(0.28)))
+                }
                 if checks.contains(square) { drawCheck(in: box, into: &context) }
                 if coordinates {
                     drawCoordinate(row: row, column: column, in: box, into: &context)
@@ -268,9 +285,14 @@ struct BoardView: View {
                 if destinations.contains(square) {
                     drawDestination(in: box, isCapture: captures.contains(square), into: &context)
                 }
+                if loose.contains(square) { drawLoose(in: box, into: &context) }
+                if aim == square { drawAim(in: box, into: &context) }
             }
         }
 
+        // The player's first, so that where the two agree the engine's is the one on top and the
+        // board does not read as though only one arrow was drawn.
+        if let mine { drawArrow(mine, cell: cell, colour: Palette.mine, into: &context) }
         if let recommendation { drawArrow(recommendation, cell: cell, into: &context) }
     }
 
@@ -298,6 +320,30 @@ struct BoardView: View {
         )
     }
 
+    /// A hanging piece: a solid round ring in the alarm colour.
+    ///
+    /// Round and solid, which is what tells it apart from the other three marks a square can
+    /// wear — the last move is a full-square green wash under the pieces, a check is a soft red
+    /// halo with no edge at all, and a shaky square is a dashed orange *square*. Shape carries the
+    /// difference, so none of it depends on telling two reds apart.
+    private func drawLoose(in box: CGRect, into context: inout GraphicsContext) {
+        context.stroke(
+            Path(ellipseIn: box.insetBy(dx: box.width * 0.10, dy: box.width * 0.10)),
+            with: .color(Palette.alarm.opacity(0.95)),
+            lineWidth: box.width * 0.055
+        )
+    }
+
+    /// The Square a claim is about: a ring in the player's own violet, inside the loose ring's
+    /// radius so a hanging piece somebody is pointing at wears both marks legibly.
+    private func drawAim(in box: CGRect, into context: inout GraphicsContext) {
+        context.stroke(
+            Path(ellipseIn: box.insetBy(dx: box.width * 0.20, dy: box.width * 0.20)),
+            with: .color(Palette.mine.opacity(0.95)),
+            lineWidth: box.width * 0.07
+        )
+    }
+
     private func drawDestination(
         in box: CGRect, isCapture: Bool, into context: inout GraphicsContext
     ) {
@@ -318,7 +364,10 @@ struct BoardView: View {
     }
 
     private func drawArrow(
-        _ move: MoveSquares, cell: CGFloat, into context: inout GraphicsContext
+        _ move: MoveSquares,
+        cell: CGFloat,
+        colour: Color = Palette.analysis,
+        into context: inout GraphicsContext
     ) {
         func centre(_ square: Square) -> CGPoint {
             let position = self.cell(of: square)
@@ -341,8 +390,9 @@ struct BoardView: View {
         var shaft = Path()
         shaft.move(to: start)
         shaft.addLine(to: base)
-        // Teal, because teal is the engine's voice everywhere else on the screen (Palette).
-        let colour = Palette.analysis.opacity(0.78)
+        // Teal by default, because teal is the engine's voice everywhere else on the screen; the
+        // player's own arrow is passed the other voice (Palette).
+        let colour = colour.opacity(0.78)
         context.stroke(
             shaft, with: .color(colour),
             style: StrokeStyle(lineWidth: cell * 0.18, lineCap: .round)

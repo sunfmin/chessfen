@@ -528,6 +528,107 @@ struct GameScreenScreenshots {
         )
     }
 
+    // ------------------------------------------------------------------- the layers
+
+    /// A game with something actually hanging in it, so the rings have something to ring: after
+    /// 1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. Nxe5?? Nxe5 White has thrown a knight away.
+    private static let givenAway = [
+        "e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5", "f3e5", "c6e5",
+    ]
+
+    /// Both board layers at once, with the two arrows: the engine's teal and the player's violet,
+    /// on a position that has already been played into.
+    private func layered() async throws -> (GameSession, ScriptedEngine) {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.givenAway))
+        let asked = try #require(
+            Game(startFEN: PGN.standardStartFEN, uciMoves: Array(Self.givenAway.prefix(7)))
+        )
+        let guessed = try #require(
+            Game(
+                startFEN: PGN.standardStartFEN,
+                uciMoves: Array(Self.givenAway.prefix(7)) + ["d8g5"]
+            )
+        )
+        let engine = ScriptedEngine(
+            Self.searching,
+            isEndless: true,
+            byPosition: [
+                asked.state.fen: Self.opinion(.centipawns(30), best: ("d2d3", "d3")),
+                guessed.state.fen: Self.opinion(.centipawns(25)),
+            ]
+        )
+        let session = GameSession.fresh(game)
+        session.attach(engine: engine, library: nil)
+        // The position right after White threw the knight away: it stands on e5 attacked by the
+        // knight on c6 and defended by nothing, which is exactly what the red ring is for. Black
+        // is to move, and the guess on the board is not the recapture that was played.
+        session.jump(toPly: 7)
+        session.offer(try #require(session.viewed.state.move(matching: "d8g5")))
+        session.choose(.attack)
+        session.aim(at: try #require(Square("e5")))
+        session.setShowsControlChange(true)
+        return (session, engine)
+    }
+
+    @Test("a studied position rings what is hanging and shows what the move changed")
+    func boardLayers() async throws {
+        let (session, engine) = try await layered()
+
+        let rendered = await ScreenImage.write("game-layers") {
+            screen(session, engine: engine)
+        }
+
+        // The layers are on the board, which is a drawing — so what is asserted here is the state
+        // the drawing is made from, and the PNG is the record of how it looked.
+        let loose = try #require(session.viewed.loosePieces)
+        #expect(loose.contains(try #require(Square("e5"))), "the knight White left there")
+        #expect(session.showsControlChange)
+        #expect(try #require(session.viewed.squaresLastMoveChanged).count > 0)
+        #expect(session.guess?.san == "Qg5", "the player's own arrow has something to draw")
+        #expect(session.declaredIntent?.target == Square("e5"), "and the claim has a target to ring")
+        #expect(rendered.says("这步改了什么"))
+        #expect(rendered.says("红圈"), "with the one mark that needs a word said in one")
+    }
+
+    @Test("the same two layers hold up in the dark")
+    func boardLayersInTheDark() async throws {
+        let (session, engine) = try await layered()
+
+        let rendered = await ScreenImage.write("game-layers-dark", style: .dark) {
+            screen(session, engine: engine)
+        }
+
+        #expect(rendered.says("这步改了什么"))
+        #expect(rendered.says("你走 Qg5"))
+        #expect(rendered.says("攻 e5"), "the claim, in the player's own words")
+    }
+
+    @Test("neither layer appears on the position the player is about to move in")
+    func noLayersOnTheLivePosition() async throws {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.givenAway))
+        let session = GameSession.fresh(game)
+        session.setShowsControlChange(true)
+
+        // There is plenty hanging in this position — that is the point of the fixture — and the
+        // board says none of it, because the next move is the player's to find.
+        #expect(try #require(session.viewed.loosePieces).isEmpty == false)
+
+        let silent = await ScreenImage.write("game-layers-live") {
+            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
+        }
+        #expect(!silent.says("这步改了什么"), "the control layer is not even offered here")
+        #expect(!silent.says("红圈"))
+
+        // And with the engine's opinion on it is still not offered: the gate is the position, not
+        // the switch.
+        session.setPractising(false)
+        let talking = await ScreenImage.write("game-layers-live") {
+            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
+        }
+        #expect(!talking.says("这步改了什么"))
+        #expect(!talking.says("红圈"))
+    }
+
     /// The switch on: this is 复盘, on the board the game was played on.
     @Test("turning the engine's opinion on puts the whole game's report on the same screen")
     func reportWithTheSwitchOn() async throws {

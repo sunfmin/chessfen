@@ -37,6 +37,7 @@ struct GameScreen: View {
     @State private var hasGuessedUnfold = false
     /// Whether a thumb is on 让引擎走 right now. The engine is thinking for exactly as long as it is.
     @State private var isAsking = false
+
     /// How tall the window under the record is, and how tall the page in it turned out to be — the
     /// reading fills the first, and the difference is what says whether anything is out of sight.
     @State private var readHeight: CGFloat = 0
@@ -94,6 +95,7 @@ struct GameScreen: View {
                 ScrollView {
                     VStack(spacing: 0) {
                         study
+                        layers
                         report
                         questions
                         series
@@ -875,6 +877,43 @@ struct GameScreen: View {
         session.jump(toPly: ranked.ply - 1)
     }
 
+    /// The one control the two board layers have between them.
+    ///
+    /// Only for a position already played into: on the live position there is nothing here to
+    /// turn on, because there is nothing the app is willing to point at.
+    @ViewBuilder private var layers: some View {
+        if isPast {
+            HStack(spacing: 9) {
+                Button {
+                    session.setShowsControlChange(!session.showsControlChange)
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(
+                            systemName: session.showsControlChange
+                                ? "square.grid.3x3.fill" : "square.grid.3x3"
+                        )
+                        .font(.caption2)
+                        Text("这步改了什么").font(.footnote)
+                    }
+                    .foregroundStyle(session.showsControlChange ? Palette.mine : Palette.inkSoft)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(Palette.chipRest, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                if !looseSquares.isEmpty {
+                    Text("红圈：被吃的子比守的多")
+                        .font(.caption)
+                        .foregroundStyle(Palette.inkSoft)
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+        }
+    }
+
     // ------------------------------------------------------------------ the report
 
     /// What the engine has to say about the whole game, on the same screen it was played on.
@@ -1280,6 +1319,10 @@ struct GameScreen: View {
             destinations: Set(candidateMoves.map(\.to)),
             captures: Set(candidateMoves.filter(\.isCapture).map(\.to)),
             recommendation: recommendation,
+            mine: myArrow,
+            aim: session.declaredIntent?.target,
+            loose: looseSquares,
+            changed: changedSquares,
             // Tappable while a verb is waiting for its target, too: the board is the only place a
             // claim's target can be said, which is the whole reason a verb has one.
             isInteractive: session.isHandTurn || session.declaringVerb != nil,
@@ -1368,6 +1411,36 @@ struct GameScreen: View {
 
     private var recommendation: MoveSquares? {
         session.analysis?.bestMove.flatMap { MoveSquares(uci: $0) }
+    }
+
+    /// Whether the position on screen is one being studied rather than one about to be played
+    /// into — the single gate both board layers hang off.
+    ///
+    /// The position and not the screen, and not the switch either: play and study share one board
+    /// now (docs/adr/0015), so what decides whether the app is allowed to point at hanging pieces
+    /// is whether the move in question has already been played. On the live position these layers
+    /// would be the blunder-check performed on the player's behalf, which is precisely the habit
+    /// they exist to build.
+    private var isPast: Bool { !session.isAtLatest }
+
+    /// The player's own move, drawn in their own colour beside the engine's.
+    private var myArrow: MoveSquares? {
+        guard let guess = session.guess else { return nil }
+        return MoveSquares(from: guess.move.from, to: guess.move.to)
+    }
+
+    /// Every piece hanging in the position on screen.
+    private var looseSquares: Set<Square> {
+        guard isPast else { return [] }
+        return viewed.loosePieces ?? []
+    }
+
+    /// The squares the move on the board changed the control of — the guess when there is one,
+    /// and otherwise the move that led here. One rule, both readings: it is always the last ply of
+    /// the position being looked at.
+    private var changedSquares: Set<Square> {
+        guard isPast, session.showsControlChange else { return [] }
+        return viewed.squaresLastMoveChanged ?? []
     }
 
     /// How the game on screen ended, if it has.

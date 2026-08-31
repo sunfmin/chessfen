@@ -140,3 +140,54 @@ func exchangeRefusesIllegalMoves() {
     #expect(Rules.exchangeValue(startFEN: start, uci: "nonsense") == nil)
     #expect(Rules.exchangeValue(startFEN: "not a fen", uci: "e2e4") == nil)
 }
+
+// ------------------------------------------------------------ the board's two layers
+
+@Test("a hanging piece is one attacked more often than it is defended, either colour's")
+func loosePiecesAreFound() throws {
+    // A black rook on e5 with nothing behind it, and a white knight on d4 the black rook covers.
+    let game = try #require(Game(startFEN: "4k3/8/8/4r3/3N4/8/8/4QK2 w - - 0 1"))
+    let loose = try #require(game.loosePieces)
+
+    #expect(loose.contains(try square("e5")), "the rook is looked at by the queen and defended by nobody")
+    #expect(!loose.contains(try square("d4")), "the knight is not attacked at all")
+    // Kings are never in this list: a king attacked is a check, which the board says in red.
+    #expect(!loose.contains(try square("e8")))
+    #expect(!loose.contains(try square("f1")))
+}
+
+@Test("a defended piece is not loose, and stops being loose when it is defended")
+func defendingTakesAPieceOffTheList() throws {
+    let hanging = try #require(Game(startFEN: "4k3/8/8/4r3/8/8/8/4QK2 w - - 0 1"))
+    #expect(try #require(hanging.loosePieces).contains(try square("e5")))
+
+    // The same rook with a pawn behind it: attacked once, defended once, and not loose.
+    let held = try #require(Game(startFEN: "4k3/8/3p4/4r3/8/8/8/4QK2 w - - 0 1"))
+    #expect(!(try #require(held.loosePieces)).contains(try square("e5")))
+}
+
+@Test("what a move changed is the squares whose holder it changed")
+func theLastMoveIsWhatChanged() throws {
+    let game = try #require(
+        Game(startFEN: "4k3/8/8/8/8/8/8/R3K3 w - - 0 1", uciMoves: ["a1a5"])
+    )
+    let changed = try #require(game.squaresLastMoveChanged)
+
+    // The rook left the first rank and took the fifth: both are in, and squares it never saw
+    // are not.
+    #expect(changed.contains(try square("d5")))
+    #expect(changed.contains(try square("h5")))
+    #expect(changed.contains(try square("c1")))
+    #expect(!changed.contains(try square("h8")))
+    #expect(!changed.contains(try square("e4")))
+    // It is *who holds* a square that has to change, not how many attackers it has: d1 lost the
+    // rook and kept the king, so it was White's before and is White's still.
+    #expect(!changed.contains(try square("d1")))
+}
+
+@Test("a game with no moves has nothing to say about what a move changed")
+func nothingChangedInAPositionNobodyMovedIn() throws {
+    let fresh = try #require(Game(startFEN: start))
+    #expect(fresh.squaresLastMoveChanged == nil, "a refusal, not an empty set")
+    #expect(fresh.loosePieces?.isEmpty == true, "and nothing hangs in the starting position")
+}
