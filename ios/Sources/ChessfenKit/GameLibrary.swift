@@ -82,7 +82,7 @@ import Foundation
     /// into every game before collections existed, and PGN's two ways of saying it does not know.
     public nonisolated static let unfiledEvents: Set<String> = ["Chessfen", "?", ""]
 
-    /// One collection and the games in it, in the order they should be read and drilled.
+    /// One collection and the games in it, in the order they should be read and worked through.
     public struct Collection: Identifiable {
         /// Nil for the games nobody has filed.
         public let name: String?
@@ -94,7 +94,7 @@ import Foundation
     ///
     /// Within a collection the order is by name, compared the way a person reads numbers, so 第 2 题
     /// comes before 第 10 题 rather than after it. That order is the one 上一局 and 下一局 follow, so
-    /// naming the games is how the drilling order is set.
+    /// naming the games is how that order is set.
     public var collections: [Collection] {
         let grouped = Dictionary(grouping: entries) { $0.collection }
         let named = grouped.keys.compactMap { $0 }.sorted { Self.reads($0, before: $1) }

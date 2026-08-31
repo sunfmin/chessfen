@@ -231,7 +231,7 @@ import Foundation
     ///
     /// Last writer wins. Two devices moving in the same game at the same second is the only way
     /// to lose a move here, and the alternative — conflict versions, a UI to resolve them — is
-    /// a lot of machinery for a person drilling puzzles alone.
+    /// a lot of machinery for a person working through positions alone.
     @discardableResult
     public func write(_ data: Data, to url: URL) -> Bool {
         Self.write(data, to: url, isCloud: isCloud)

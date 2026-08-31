@@ -617,7 +617,7 @@ struct GameScreen: View {
     private func seriesButton(_ label: String, symbol: String, at index: Int) -> some View {
         let target = placeInSeries?.entries[safe: index]
         return Button {
-            if let target { drill(to: target) }
+            if let target { turnTo(target) }
         } label: {
             HStack(spacing: 3) {
                 if symbol == "chevron.left" { Image(systemName: symbol).font(.caption2) }
@@ -895,7 +895,7 @@ struct GameScreen: View {
     /// It replaces the top of the path rather than pushing, so working through fifty positions does
     /// not build a stack of fifty screens to come back through — and the way back is still the
     /// library, which is where it was. How you are working carries over — that is `session.next`.
-    private func drill(to entry: GameLibrary.Entry) {
+    private func turnTo(_ entry: GameLibrary.Entry) {
         session.suspend()
         guard let next = session.next(entry) else { return }
         selected = nil

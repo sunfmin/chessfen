@@ -107,10 +107,13 @@ take one up while the app is away (docs/adr/0009). Never mutates a Game.
 _Avoid_: evaluation (ambiguous with the engine's static eval), hint, suggestion
 
 **Review**:
-Re-scoring a whole finished Game at one uniform Depth, so that the Scores of different
-moves are comparable and mistakes can be named. Distinct from Analysis, whose Depths
-vary with how long each position happened to be looked at.
-_Avoid_: post-mortem, curve, retrospective
+Re-scoring a whole Game at one uniform Depth, so that the Scores of different moves are
+comparable and mistakes can be named. The engine's report on a game, never the player's
+examination — being asked to find the move yourself is a Drill, and the two want opposite
+things of a screen (docs/adr/0015). A Ply's evaluation is a Review's field and nothing else
+writes it (docs/adr/0016). Distinct from Analysis, whose Depths vary with how long each
+position happened to be looked at.
+_Avoid_: post-mortem, curve, retrospective, drill
 
 **Line**:
 A sequence of moves the engine expects, with the Score it leads to. `MultiPV` yields
@@ -163,3 +166,50 @@ _Avoid_: difficulty, level, skill, strength, Elo, time control
 A question about chess legality — the legal moves in a Game, whether it is over and how.
 Answered by Stockfish's position code, not reimplemented.
 _Avoid_: validation, move generation
+
+### The learning side
+
+**Practice**:
+Whether the engine keeps its opinion to itself: no Score, no arrow, no Lines, nothing
+whispering a move. The default state of the app, because an answer on screen is an answer
+the eye cannot decline to read (docs/adr/0015). Says nothing about whether the engine
+*plays* — it can hold a Controller and still not talk. 自己练 on screen.
+_Avoid_: hint off, silent mode, blindfold, difficulty, training mode
+
+**Drill**:
+One question made out of a Game the app already holds: the position comes back with the
+engine silent, and a move — with an Intent, when one is asked for — has to be committed
+before anything is revealed. The player's examination, as against a Review, which is the
+engine's report; the two want opposite things of a screen, so they are two screens.
+考一遍 on screen.
+_Avoid_: puzzle, quiz, test, exercise, training — and not Review
+
+**Intent**:
+What the player says a move was *for*: one verb and one target Square, declared by whoever
+played the Ply. That shape is the whole point — a verb with a target can be drawn on the
+board as an arrow and a ring, and can be told false by the rules code, which freeform words
+can be neither. A verb that cannot be wrong does not get one of the eight slots. 为什么
+on screen.
+_Avoid_: annotation, comment, note, reason, plan, purpose
+
+**说不清**:
+The Intent that declares no claim — the player had no reason for the move. Recorded, never
+skipped: a Game with twenty-five of them is itself the whole diagnosis, and it is one no
+engine could have produced.
+_Avoid_: unknown, none, skip, unsure
+
+**Criticality**:
+How much a Ply mattered, as a **rank within its own Game** rather than a number of
+centipawns. What a Drill asks about is that Game's worst few moves, whatever their absolute
+size, which is how one mechanism serves a beginner and a club player without the app ever
+being told which it is talking to (docs/adr/0017). Distinct from MoveQuality, which is the
+absolute label — 漏着, 失误, 不精确 — and only ever names a move, never chooses it.
+_Avoid_: importance, severity, weight, difficulty
+
+**Failure Mode**:
+The kind of error a player repeats, counted over their Games from Intents and Reviews —
+giving a piece away, missing the opponent's reply, declaring an Intent that was not true,
+having no reason at all, or only ever attacking while being attacked. Derived on demand and
+never stored (docs/adr/0018). The app's one statement about how somebody is doing; there is
+deliberately no rating and no accuracy percentage. 老毛病 on screen.
+_Avoid_: weakness, skill gap, rating, accuracy, score
