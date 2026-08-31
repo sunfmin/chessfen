@@ -145,3 +145,18 @@ extension Game {
         return afterControl.squaresDiffering(from: beforeControl)
     }
 }
+
+extension Game {
+    /// One colour's pieces hanging in this position — attacked more often than defended.
+    ///
+    /// Whose they are is the whole question a tally over a library asks: a piece of the
+    /// opponent's left loose is a chance, and one of your own left loose is the thing you keep
+    /// doing (docs/adr/0018). Nil when the position could not be read.
+    public func loosePieces(of colour: PieceColour) -> Set<Square>? {
+        guard let control = Rules.control(startFEN: startFEN, moves: uciMoves),
+            let pieces = BoardRenderer.placement(state.fen)
+        else { return nil }
+        let mine = pieces.filter { $0.value.colour == colour }
+        return control.loosePieces(among: mine)
+    }
+}

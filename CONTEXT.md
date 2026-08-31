@@ -228,3 +228,9 @@ having no reason at all, or only ever attacking while being attacked. Derived on
 never stored (docs/adr/0018). The app's one statement about how somebody is doing; there is
 deliberately no rating and no accuracy percentage. 老毛病 on screen.
 _Avoid_: weakness, skill gap, rating, accuracy, score
+
+**Occurrence**:
+One time a Failure Mode happened: the Game's file, the Ply, and one sentence about what the
+board said. The unit a count is made of, and the way back — a Failure Mode that could not
+name the moves it was counted from would be a grade with extra steps.
+_Avoid_: instance, hit, event, record, entry
