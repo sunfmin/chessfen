@@ -30,6 +30,8 @@ struct GameScreen: View {
     /// (see `body`).
     @State private var readHeight: CGFloat = 0
     @State private var pageHeight: CGFloat = 0
+    /// PROTOTYPE — see GameScreenPrototype.swift. Goes when that file does.
+    @State private var isPrototypeOpen = false
 
     private var isSetupOpen: Bool { isSetupOpenByHand ?? session.game.plies.isEmpty }
 
@@ -140,6 +142,15 @@ struct GameScreen: View {
                             Label("导出 PGN", systemImage: "square.and.arrow.up")
                         }
                     }
+                    // PROTOTYPE — the way into GameScreenPrototype.swift, and it goes when that
+                    // file does. Debug only, so a stray merge cannot ship it.
+                    #if DEBUG
+                        Button {
+                            isPrototypeOpen = true
+                        } label: {
+                            Label("布局原型", systemImage: "square.dashed")
+                        }
+                    #endif
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -176,6 +187,12 @@ struct GameScreen: View {
                 session.suspend()
             }
         }
+        // PROTOTYPE — goes with GameScreenPrototype.swift.
+        #if DEBUG
+            .fullScreenCover(isPresented: $isPrototypeOpen) {
+                NavigationStack { PrototypeGameScreen(session: session) }
+            }
+        #endif
         .confirmationDialog(
             "升变成什么？", isPresented: .constant(promotion != nil), titleVisibility: .visible
         ) {
