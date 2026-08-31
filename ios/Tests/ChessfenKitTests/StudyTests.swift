@@ -120,7 +120,9 @@ import Testing
 
     /// The scenario every reveal test uses: after 1. e4 e5 the engine likes Nf3 (+0.30); d4 is
     /// worth +0.10 and Qh5 is worth −4.00, and Nf3 as played comes out at +0.28.
-    private func markedSession(guessing uci: String) async throws -> GameSession {
+    private func markedSession(
+        guessing uci: String, because reason: Intent? = nil
+    ) async throws -> GameSession {
         let before = try game(["e2e4", "e7e5"])
         let afterD4 = try game(["e2e4", "e7e5", "d2d4"])
         let afterQh5 = try game(["e2e4", "e7e5", "d1h5"])
@@ -134,6 +136,14 @@ import Testing
         let session = try session(engine)
         session.jump(toPly: 2)
         session.offer(try move(uci, in: session))
+        // A Drill takes a reason as well as a move, so every fixture gives one.
+        switch reason ?? .unclear {
+        case .claim(let verb, let target):
+            session.choose(verb)
+            session.aim(at: target)
+        case .unclear:
+            session.declareUnclear()
+        }
         session.commitGuess()
         await hop()
         return session
@@ -198,6 +208,120 @@ import Testing
         #expect(session.game.plies[2].san == "d4")
         #expect(session.game.variations(atPly: 2).first?.map(\.san) == ["Nf3", "Nc6"])
         #expect(session.cursor == 3)
+    }
+
+    // ---------------------------------------------------------------- and why
+
+    @Test("a claim is a verb and then a target, and neither alone will commit")
+    func aClaimNeedsBoth() throws {
+        let session = try session(PositionalEngine([:]))
+        session.jump(toPly: 2)
+        session.offer(try move("d2d4", in: session))
+        #expect(!session.canCommitGuess, "a move with no reason is not an answer")
+
+        session.choose(.hold)
+        #expect(session.declaringVerb == .hold)
+        #expect(session.declaredIntent == nil, "a verb with no target is not a claim yet")
+        #expect(!session.canCommitGuess)
+
+        session.aim(at: try #require(Square("d5")))
+        #expect(session.declaredIntent == .claim(.hold, try #require(Square("d5"))))
+        #expect(session.canCommitGuess)
+
+        // And it can be changed right up until it is committed.
+        session.choose(.defend)
+        #expect(session.declaredIntent == nil)
+        session.choose(nil)
+        #expect(session.declaringVerb == nil)
+    }
+
+    @Test("说不清 is one tap, and it is a declaration like any other")
+    func unclearIsOneTap() throws {
+        let session = try session(PositionalEngine([:]))
+        session.jump(toPly: 2)
+        session.offer(try move("d2d4", in: session))
+
+        session.declareUnclear()
+
+        #expect(session.declaredIntent == .unclear)
+        #expect(session.declaringVerb == nil, "nothing left half-chosen behind it")
+        #expect(session.canCommitGuess)
+    }
+
+    @Test("committing writes the reason into the game, true or not")
+    func theReasonIsWrittenDown() async throws {
+        let session = try await markedSession(guessing: "d2d4", because: .claim(.hold, Square("d5")!))
+
+        // The guess was not the move that was played, so it is written where a line that was not
+        // played goes — with the reason on it.
+        let variations = session.game.variations(atPly: 2)
+        #expect(variations.count == 1)
+        #expect(variations.first?.first?.san == "d4")
+        #expect(variations.first?.first?.intent == .claim(.hold, Square("d5")!))
+        // And the played move is untouched: nobody ever said that was why Nf3 was played.
+        #expect(session.game.intent(atPly: 3) == nil)
+
+        // It survives the file, which is the whole point of it being written at all.
+        let reread = try PGN(parsing: session.pgn.text).game
+        #expect(reread.variations(atPly: 2).first?.first?.intent == .claim(.hold, Square("d5")!))
+    }
+
+    @Test("a reason given for the move that was actually played lands on that move")
+    func theReasonForAPlayedMove() async throws {
+        let session = try await markedSession(guessing: "g1f3", because: .claim(.attack, Square("e5")!))
+
+        #expect(session.game.intent(atPly: 3) == .claim(.attack, Square("e5")!))
+        #expect(session.game.variations(atPly: 2).isEmpty, "nothing was left to one side")
+    }
+
+    @Test("the same question answered twice the same way leaves one line, not two")
+    func answeringTwiceDoesNotDuplicate() async throws {
+        let session = try await markedSession(guessing: "d2d4", because: .claim(.hold, Square("d5")!))
+        session.withdrawGuess()
+        session.offer(try move("d2d4", in: session))
+        session.choose(.defend)
+        session.aim(at: try #require(Square("d4")))
+        session.commitGuess()
+        await hop()
+
+        #expect(session.game.variations(atPly: 2).count == 1)
+        #expect(
+            session.game.variations(atPly: 2).first?.first?.intent
+                == .claim(.defend, Square("d4")!),
+            "the second answer replaced the first rather than sitting beside it"
+        )
+    }
+
+    @Test("the move and the reason are marked separately")
+    func twoVerdictsNeverOne() async throws {
+        // A good move for a reason that is not true: d4 is inside the band, and it takes nothing
+        // on d4 — the commonest wrong reason of all, "I win something here" about a quiet move.
+        let rightMove = try await markedSession(guessing: "d2d4", because: .claim(.take, Square("d4")!))
+        let reveal = try #require(rightMove.reveal)
+        #expect(reveal.counts == true, "the move is fine")
+        #expect(reveal.intentCheck?.verdict == .failed, "and the reason is not")
+        #expect(reveal.intent == .claim(.take, Square("d4")!))
+        #expect(reveal.intentCheck?.note != nil, "with something about the board to look at")
+
+        // A bad move for a true reason: Qh5 throws a queen at nothing, and it does attack e5.
+        let rightReason = try await markedSession(guessing: "d1h5", because: .claim(.attack, Square("e5")!))
+        let second = try #require(rightReason.reveal)
+        #expect(second.counts == false)
+        #expect(second.intentCheck?.verdict == .held)
+
+        // 说不清 is marked as neither.
+        let shrug = try await markedSession(guessing: "d2d4", because: .unclear)
+        #expect(try #require(shrug.reveal).intentCheck?.verdict == .noClaim)
+    }
+
+    @Test("playing a kept guess for real carries the reason into the main line")
+    func keepingCarriesTheReason() async throws {
+        let session = try await markedSession(guessing: "d2d4", because: .claim(.hold, Square("d5")!))
+        session.keepGuess()
+
+        #expect(session.game.plies[2].san == "d4")
+        #expect(session.game.intent(atPly: 3) == .claim(.hold, Square("d5")!))
+        #expect(session.game.variations(atPly: 2).first?.map(\.san) == ["Nf3", "Nc6"])
     }
 
     // ---------------------------------------------------------------- the pass

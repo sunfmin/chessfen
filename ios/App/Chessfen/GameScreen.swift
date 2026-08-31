@@ -618,11 +618,17 @@ struct GameScreen: View {
             .padding(.top, 10)
         } else if let guess = session.guess {
             VStack(alignment: .leading, spacing: 8) {
-                Text("你走 \(guess.san)。").font(.subheadline.weight(.medium))
+                Text("你走 \(guess.san)。为什么？").font(.subheadline.weight(.medium))
+                verbs
+                Text(reason)
+                    .font(.caption)
+                    .foregroundStyle(
+                        session.declaredIntent == nil ? Palette.inkSoft : Palette.analysis
+                    )
                 HStack(spacing: 9) {
                     Button("就是这步") { session.commitGuess() }
                         .buttonStyle(.borderedProminent)
-                        .disabled(!engine.isReady)
+                        .disabled(!session.canCommitGuess)
                     Button("收回") { session.withdrawGuess() }.buttonStyle(.bordered)
                 }
                 if !engine.isReady {
@@ -649,14 +655,90 @@ struct GameScreen: View {
         }
     }
 
+    /// The eight answers to 为什么, in one row each way up. Seven verbs that can be told false and
+    /// 说不清, which is a declaration and not a refusal to make one — so it sits with the others
+    /// and looks like them (docs/adr/0018).
+    private var verbs: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                ForEach(Intent.Verb.allCases, id: \.self) { verb in
+                    Button {
+                        session.choose(session.declaringVerb == verb ? nil : verb)
+                    } label: {
+                        Text(verb.label)
+                            .font(.subheadline)
+                            .frame(minWidth: 28)
+                            .padding(.vertical, 7)
+                            .foregroundStyle(
+                                session.declaringVerb == verb ? Palette.parchment : Palette.ink
+                            )
+                            .background(
+                                session.declaringVerb == verb ? Palette.analysis : Palette.chipRest,
+                                in: Capsule()
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Button {
+                session.declareUnclear()
+            } label: {
+                Text(Intent.unclearLabel)
+                    .font(.footnote)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .foregroundStyle(
+                        session.declaredIntent == .unclear ? Palette.parchment : Palette.inkSoft
+                    )
+                    .background(
+                        session.declaredIntent == .unclear ? Palette.analysis : Palette.chipRest,
+                        in: Capsule()
+                    )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    /// What the claim reads as so far — the one line that tells somebody a verb still needs a
+    /// square, which is the only way this control can be got wrong.
+    private var reason: String {
+        if let intent = session.declaredIntent {
+            return intent == .unclear ? "说不清 —— 记下来了。" : "因为 \(intent.label)。"
+        }
+        if let verb = session.declaringVerb {
+            return "\(verb.label) 哪里？点棋盘上的格子。"
+        }
+        return "先说说这步是干什么的。"
+    }
+
     /// Three moves side by side, never one number. "Your move" against "the engine's" against
     /// "what was actually played" — because being level with the engine, matching what you did
     /// last time, and finding the move are three different pieces of news.
     private func revealed(_ reveal: Reveal) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(verdict(reveal))
+            // The headline names both outcomes without multiplying them: right move for the wrong
+            // reason and wrong move for the right reason are different failures with different
+            // remedies, and only one of them is visible in any other chess app.
+            Text(headline(reveal))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(reveal.counts == false ? Palette.alarm : Palette.ink)
+            Text(verdict(reveal)).font(.caption).foregroundStyle(Palette.inkSoft)
+            if let check = reveal.intentCheck, let intent = reveal.intent {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(intent.label).font(.footnote.weight(.medium))
+                    Text(Self.intentVerdictLabel(check.verdict))
+                        .font(.caption.bold())
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            Self.intentVerdictColour(check.verdict).opacity(0.2), in: Capsule()
+                        )
+                    Spacer(minLength: 0)
+                }
+                if let note = check.note {
+                    Text(note).font(.caption).foregroundStyle(Palette.inkSoft)
+                }
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 revealRow("你走", reveal.guess, reveal.guessScore, prominent: true)
@@ -670,7 +752,7 @@ struct GameScreen: View {
 
             HStack(spacing: 9) {
                 if !reveal.isSameAsPlayed {
-                    Button("保留这步") { session.keepGuess() }.buttonStyle(.bordered)
+                    Button("改走这步") { session.keepGuess() }.buttonStyle(.bordered)
                 }
                 Button("再来一次") { session.withdrawGuess() }.buttonStyle(.bordered)
                 if let next = nextQuestion {
@@ -694,6 +776,35 @@ struct GameScreen: View {
             Text(san).font(.notation).foregroundStyle(Palette.ink)
             Spacer(minLength: 0)
             ScoreCell(score: score, prominent: prominent)
+        }
+    }
+
+    /// Both verdicts in one sentence and no number over them.
+    private func headline(_ reveal: Reveal) -> String {
+        let moveIsFine = reveal.counts ?? false
+        switch reveal.intentCheck?.verdict {
+        case .held:
+            return moveIsFine ? "走对了，理由也站得住。" : "理由是对的，这步棋没做到。"
+        case .failed:
+            return moveIsFine ? "这步棋没问题，但理由不成立。" : "棋和理由都没站住。"
+        case .noClaim, nil:
+            return moveIsFine ? "这步棋没问题。" : "这步棋没站住。"
+        }
+    }
+
+    private static func intentVerdictLabel(_ verdict: IntentCheck.Verdict) -> String {
+        switch verdict {
+        case .held: "说对了"
+        case .failed: "没做到"
+        case .noClaim: "没说"
+        }
+    }
+
+    private static func intentVerdictColour(_ verdict: IntentCheck.Verdict) -> Color {
+        switch verdict {
+        case .held: Palette.analysis
+        case .failed: Palette.alarm
+        case .noClaim: Palette.inkSoft
         }
     }
 
@@ -1165,11 +1276,13 @@ struct GameScreen: View {
             // first move — which is what replaces the old gate: the reading's own uncertainty is
             // visible where it matters, and 改棋子 is one tap away (docs/adr/0011).
             suspects: session.unconfirmedSquares,
-            selected: selected,
+            selected: selected ?? session.declaredIntent?.target,
             destinations: Set(candidateMoves.map(\.to)),
             captures: Set(candidateMoves.filter(\.isCapture).map(\.to)),
             recommendation: recommendation,
-            isInteractive: session.isHandTurn,
+            // Tappable while a verb is waiting for its target, too: the board is the only place a
+            // claim's target can be said, which is the whole reason a verb has one.
+            isInteractive: session.isHandTurn || session.declaringVerb != nil,
             onTap: tap
         )
     }
@@ -1189,6 +1302,13 @@ struct GameScreen: View {
     }
 
     private func tap(_ square: Square) {
+        // A verb is chosen and waiting for the Square it is about, so the board is a place to
+        // point at rather than a place to move on. One tap for the verb, one for the target.
+        if session.declaringVerb != nil {
+            session.aim(at: square)
+            selected = nil
+            return
+        }
         guard session.isHandTurn else { return }
 
         if let selected {

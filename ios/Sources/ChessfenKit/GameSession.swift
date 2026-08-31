@@ -53,9 +53,12 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         didSet {
             storedViewed = nil
             // The cursor *is* the question a Drill asks, so moving it takes the answer off the
-            // board with it. One home for that, rather than four places that each remember.
+            // board with it — the move, the reason, and what either was worth. One home for that,
+            // rather than four places that each remember.
             guess = nil
             reveal = nil
+            declaringVerb = nil
+            declaredIntent = nil
             revealTask?.cancel()
             revealTask = nil
             isRevealing = false
@@ -67,6 +70,12 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     @ObservationIgnored private var storedViewed: Game?
     /// The move offered at the Ply being studied, on the board and not yet in the Game.
     public private(set) var guess: Guess?
+    /// The verb chosen, waiting for the Square it is about. A claim with no target is not a claim
+    /// yet, which is why this is not an Intent.
+    public private(set) var declaringVerb: Intent.Verb?
+    /// The finished declaration — a verb and its target, or 说不清 — ready to be committed with
+    /// the move it is about.
+    public private(set) var declaredIntent: Intent?
     /// What committing it showed. Nil until something has been committed, and cleared by
     /// anything that changes the question.
     public private(set) var reveal: Reveal?
@@ -619,13 +628,48 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
 
     /// Takes the offered move back off the board, and any reveal with it.
     public func withdrawGuess() {
-        guard guess != nil || reveal != nil else { return }
+        guard guess != nil || reveal != nil || declaredIntent != nil || declaringVerb != nil
+        else { return }
         revealTask?.cancel()
         revealTask = nil
         isRevealing = false
         guess = nil
         reveal = nil
+        declaringVerb = nil
+        declaredIntent = nil
         storedViewed = nil
+    }
+
+    // ----------------------------------------------------------------- and why
+
+    /// Picks the verb, which is half a claim. Passing nil takes the choice back.
+    ///
+    /// A verb without a target cannot be committed: every one of the seven is a statement *about a
+    /// Square*, and the one that is not — 说不清 — has its own way in below (docs/adr/0018).
+    public func choose(_ verb: Intent.Verb?) {
+        declaringVerb = verb
+        declaredIntent = nil
+    }
+
+    /// Names the Square the chosen verb is about, which finishes the claim.
+    public func aim(at square: Square) {
+        guard let verb = declaringVerb else { return }
+        declaredIntent = .claim(verb, square)
+    }
+
+    /// 说不清 — one tap, no target, and nothing discouraging about it.
+    ///
+    /// It is recorded exactly as the other seven are. A Game with twenty-five of these is itself
+    /// the diagnosis, and the app that made it hard to say would never obtain one.
+    public func declareUnclear() {
+        declaringVerb = nil
+        declaredIntent = .unclear
+    }
+
+    /// Whether there is a move and a reason to commit. Both, because a Drill takes a reason as
+    /// well as a move: an answer with no reason attached teaches only whether you were lucky.
+    public var canCommitGuess: Bool {
+        guess != nil && declaredIntent != nil && engine != nil && !isRevealing && reveal == nil
     }
 
     /// Marks the offered move: your move, the engine's, and the one that was played, all at one
@@ -635,11 +679,21 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// the whole product. A guess weighed against a deeper opinion of the alternative is a guess
     /// marked wrong by arithmetic (docs/adr/0016).
     public func commitGuess() {
-        guard let guess, let engine, !isRevealing, reveal == nil else { return }
+        guard let guess, let engine, !isRevealing, reveal == nil, declaredIntent != nil
+        else { return }
         guard let before = game.rewound(to: guess.ply - 1),
             let guessed = try? applied(guess.move, to: before),
             game.plies.indices.contains(guess.ply - 1)
         else { return }
+
+        // Written now, before a single search runs and whether or not it turns out to be true.
+        // Committing is the act; what the engine says afterwards is a separate fact about it.
+        let declared = declaredIntent
+        if let declared { record(guess, reason: declared) }
+        // Checked against the board and not against the engine: whether f7 gained a defender is
+        // a question about the position, and the rules code can answer it in microseconds
+        // (docs/adr/0018).
+        let check = declared?.check(guess.move, in: before)
 
         let playedSAN = game.plies[guess.ply - 1].san
         let playedPosition = game.rewound(to: guess.ply)
@@ -686,24 +740,57 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
                 played: playedSAN,
                 playedScore: playedScore,
                 best: best?.san.first,
-                bestScore: best?.score
+                bestScore: best?.score,
+                intent: declared,
+                intentCheck: check
             )
             isRevealing = false
             revealTask = nil
         }
     }
 
-    /// Keeps the offered move: it goes into the Game from here, and the line it replaced is kept
-    /// beside it as a Variation — which is what playing from a past position has always done.
+    /// Writes a committed Guess into the Game — on the played Ply when it *is* the played move,
+    /// and as an alternative to it when it is not.
     ///
-    /// The way a Drill turns into analysis. A guess worth keeping is a line worth having, and the
+    /// Two homes because there are two facts. "I played Nf3 and here is why" belongs on Nf3; "I
+    /// would have played d4, and here is why" is a line that was not played, which is what PGN's
+    /// brackets have been for since 1994.
+    private func record(_ guess: Guess, reason: Intent) {
+        let index = guess.ply - 1
+        guard game.plies.indices.contains(index) else { return }
+        if game.plies[index].uci == guess.move.uci {
+            game.setIntent(reason, atPly: guess.ply)
+        } else {
+            game.recordGuess(
+                uci: guess.move.uci, san: guess.san, intent: reason, atPly: index
+            )
+        }
+        save()
+    }
+
+    /// Plays the offered move for real: it becomes the move at this point in the Game, and the
+    /// line it replaces is kept beside it — which is what playing from a past position has always
+    /// done.
+    ///
+    /// The way a Drill turns into analysis. A guess worth playing is a line worth having, and the
     /// alternative — a study that can only ever be thrown away — is how somebody's best idea of
     /// the session gets lost.
     public func keepGuess() {
         guard let guess else { return }
+        let index = guess.ply - 1
+        let uci = guess.move.uci
         let move = guess.move
+        let recorded = game.variations(atPly: index).firstIndex { $0.first?.uci == uci }
         withdrawGuess()
-        play(move)
+        guard cursor == index else { return }
+        if let recorded {
+            // Committing already wrote it down as an alternative, so this promotes what is there
+            // rather than writing the same move a second time — and promoting carries the reason
+            // with it.
+            enterVariation(recorded)
+        } else {
+            play(move)
+        }
     }
 
     /// A Game's worst moves as a list of questions, worst first — nil for a Game no Review has

@@ -194,6 +194,29 @@ public struct Game: Hashable, Sendable {
         plies[ply].variations.append(variation)
     }
 
+    /// Records a Guess, and what the player said it was for, as an alternative to the move at
+    /// `ply` — counting from zero, like `addVariation`.
+    ///
+    /// This is where a Drill's answer goes when it is not the move that was played. It belongs in
+    /// a Variation and not on the played Ply: writing "the reason for Nf3" against a game where
+    /// the player proposed d4 would put a sentence in the file that nobody ever said.
+    ///
+    /// Answering the same question twice with the same move updates that alternative rather than
+    /// leaving two of them, because a file full of duplicate one-move brackets is how the record
+    /// stops being readable.
+    @discardableResult
+    public mutating func recordGuess(
+        uci: String, san: String, intent: Intent?, atPly ply: Int
+    ) -> Bool {
+        guard plies.indices.contains(ply) else { return false }
+        if let existing = plies[ply].variations.firstIndex(where: { $0.first?.uci == uci }) {
+            plies[ply].variations[existing][0].intent = intent
+            return true
+        }
+        plies[ply].variations.append([Ply(uci: uci, san: san, intent: intent)])
+        return true
+    }
+
     /// The lines that were played from the same position as the move at `ply`.
     public func variations(atPly ply: Int) -> [[Ply]] {
         plies.indices.contains(ply) ? plies[ply].variations : []

@@ -3,6 +3,9 @@
 /// Held rather than played, because a Drill is a question and a played move is an answer already
 /// marked. Between the two there has to be a moment where the move is on the board, visible, and
 /// still yours to take back — that moment is this (docs/adr/0015).
+///
+/// Note the order a Drill has to happen in: the move *and* the reason are both given before
+/// anything is shown. A reason offered after the answer is a reason fitted to it.
 public struct Guess: Hashable, Sendable {
     /// Which Ply is being answered, counting from one: the move that was played from the
     /// position on screen.
@@ -33,6 +36,14 @@ public struct Reveal: Hashable, Sendable {
     /// What the engine would play here. Nil when the engine could not be asked.
     public let best: String?
     public let bestScore: Score?
+
+    /// What the player said the move was for, and whether that claim actually held.
+    ///
+    /// Beside the Scores and never folded into them. A move can be found for a reason that is not
+    /// true, and a true reason can be given for a move that does not work, and those are the two
+    /// most useful things this app can tell somebody (docs/adr/0018).
+    public let intent: Intent?
+    public let intentCheck: IntentCheck?
 
     public var isSameAsPlayed: Bool { guess == played }
     public var isSameAsBest: Bool { best.map { $0 == guess } ?? false }

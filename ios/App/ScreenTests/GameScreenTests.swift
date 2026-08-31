@@ -418,6 +418,7 @@ struct GameScreenScreenshots {
         #expect(session.isStudying)
         #expect(rendered.says("你会走哪一步"))
         #expect(rendered.says("直接在棋盘上走一步"))
+        #expect(!rendered.says("说不清"), "the reason is asked for after a move, not before one")
         #expect(rendered.says("在看第 6/8 步"), "and the record says where the eye is")
         // The answer is not on the screen: no Score, no candidate lines, no arrow to copy.
         #expect(!rendered.says("+0."))
@@ -447,6 +448,10 @@ struct GameScreenScreenshots {
         session.jump(toPly: 6)
         let d4 = try #require(session.viewed.state.move(matching: "d2d4"))
         session.offer(d4)
+        // One tap for the verb, one for the target — and the reason is committed with the move,
+        // not after seeing what the move was worth.
+        session.choose(.attack)
+        session.aim(at: try #require(Square("c5")))
         session.commitGuess()
         await hop()
 
@@ -466,10 +471,61 @@ struct GameScreenScreenshots {
         #expect(rendered.says("c3"))
         #expect(rendered.says("过关"), "and what it was worth, in words")
         #expect(rendered.says("深度 14"), "with the Depth all three were computed at named")
-        #expect(rendered.says("保留这步"), "a guess worth keeping can be kept")
+        #expect(rendered.says("改走这步"), "a guess worth playing can be played")
+        // The second verdict, beside the first and never multiplied into it.
+        #expect(rendered.says("攻 c5"))
+        #expect(rendered.says("说对了"))
+        #expect(rendered.says("走对了，理由也站得住"))
+        #expect(session.reveal?.intentCheck?.verdict == .held)
         // The guess is on the board and not in the game: the record still ends where it did.
         #expect(session.game.plies.map(\.san).last == "Nf6")
         #expect(rendered.says("第 8 步 Nf6"))
+    }
+
+    /// The reason is asked for before anything is shown, and the two verdicts are marked
+    /// separately: this is the screenshot for "right move, wrong reason", which is the failure no
+    /// other chess app can see.
+    @Test("a good move given for a reason that is not true reads as exactly that")
+    func studyRightMoveWrongReason() async throws {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
+        let asked = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Array(Self.italian.prefix(6))))
+        let guessed = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Array(Self.italian.prefix(6)) + ["d2d4"]))
+        let engine = ScriptedEngine(
+            Self.searching,
+            isEndless: true,
+            byPosition: [
+                asked.state.fen: Self.opinion(.centipawns(45), best: ("e1g1", "O-O")),
+                guessed.state.fen: Self.opinion(.centipawns(20)),
+            ]
+        )
+        let session = GameSession.fresh(game)
+        session.attach(engine: engine, library: nil)
+        session.jump(toPly: 6)
+
+        session.offer(try #require(session.viewed.state.move(matching: "d2d4")))
+        // 吃 d4 — "I win something here" about a quiet move, which is the commonest wrong reason
+        // there is and one the rules code can settle in microseconds.
+        session.choose(.take)
+        session.aim(at: try #require(Square("d4")))
+        session.commitGuess()
+        await hop()
+
+        let marked = await ScreenImage.write("game-study-wrong-reason") {
+            screen(session, engine: engine)
+        }
+
+        let reveal = try #require(session.reveal)
+        #expect(reveal.counts == true)
+        #expect(reveal.intentCheck?.verdict == .failed)
+        #expect(marked.says("这步棋没问题，但理由不成立"))
+        #expect(marked.says("吃 d4"))
+        #expect(marked.says("没做到"))
+        #expect(marked.says("没有在 d4 吃子"), "with the fact about the board that settles it")
+        // And it is written into the game whether it held or not.
+        #expect(
+            session.game.variations(atPly: 6).first?.first?.intent
+                == .claim(.take, try #require(Square("d4")))
+        )
     }
 
     /// The switch on: this is 复盘, on the board the game was played on.
