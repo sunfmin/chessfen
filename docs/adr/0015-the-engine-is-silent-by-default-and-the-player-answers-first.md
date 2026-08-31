@@ -14,10 +14,16 @@ sequence is fixed: **the player answers, and only then does the engine.**
 
 ## Consequences
 
-- **`Drill` is the first door out of a finished Game, and `Review` the second.** They are
-  two screens rather than one screen with a switch, because a switch means the answer is
-  always one tap away, which is the same as it being on screen. A Drill hides the Score
-  and takes a move; a Review is the engine's report and shows everything. 考一遍 and 复盘.
+- **One board, one switch.** There is no separate review screen. A Game, a Drill and a
+  Review are the same screen with the engine's opinion switched off or on, and browsing back
+  to a past Ply is what makes it a study rather than a game.
+
+  The cost is recorded rather than designed around, because it is real and it is this ADR's
+  own argument: a switch does put the answer one tap away, which is close to it being on
+  screen. What carries the discipline instead is the switch's **default and its scope** — it
+  starts off every time and it belongs to the Game in front of you, so the answer is never
+  where you left it. Two screens for one board would have been two places to keep in step,
+  and that price was judged the higher one.
 - **The app does not point at the critical moments.** The engine could say "think here",
   and it deliberately does not: noticing that a position is critical is most of the
   distance between a beginner and a club player, so handing it over would be teaching

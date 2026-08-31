@@ -109,9 +109,9 @@ _Avoid_: evaluation (ambiguous with the engine's static eval), hint, suggestion
 **Review**:
 Re-scoring a whole Game at one uniform Depth, so that the Scores of different moves are
 comparable and mistakes can be named. The engine's report on a game, never the player's
-examination — being asked to find the move yourself is a Drill, and the two want opposite
-things of a screen (docs/adr/0015). A Ply's evaluation is a Review's field and nothing else
-writes it (docs/adr/0016). Distinct from Analysis, whose Depths vary with how long each
+examination — being asked to find the move yourself is a Drill. Both happen on the one
+board, told apart by whether the engine's opinion is switched on (docs/adr/0015). A Ply's
+evaluation is a Review's field and nothing else writes it (docs/adr/0016). Distinct from Analysis, whose Depths vary with how long each
 position happened to be looked at.
 _Avoid_: post-mortem, curve, retrospective, drill
 
@@ -180,7 +180,8 @@ _Avoid_: hint off, silent mode, blindfold, difficulty, training mode
 One question made out of a Game the app already holds: the position comes back with the
 engine silent, and a move — with an Intent, when one is asked for — has to be committed
 before anything is revealed. The player's examination, as against a Review, which is the
-engine's report; the two want opposite things of a screen, so they are two screens.
+engine's report. Neither a screen of its own nor a mode: it is what the one board is when
+the engine's opinion is off and the Ply being looked at is a past one (docs/adr/0015).
 考一遍 on screen.
 _Avoid_: puzzle, quiz, test, exercise, training — and not Review
 
