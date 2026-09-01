@@ -304,11 +304,15 @@ struct BoardView: View {
         // The route to the first 要害格, when somebody can actually walk to it. One route and not
         // three: it is the answer to "and then what happens", and three answers at once is the
         // scattering this layer was rebuilt to stop being.
-        if let first = key.first, let occupation = first.occupation {
-            drawRoute(
-                occupation, cell: cell,
-                colour: first.isGain ? Palette.mine : Palette.alarm, into: &context
-            )
+        if let first = key.first {
+            let colour = first.isGain ? Palette.mine : Palette.alarm
+            if first.kind == .shutOut, let stuck = first.shutOut {
+                // A ring and no line. The claim about a shut-out square is that this piece may
+                // *not* go there, and a line drawn to it says the opposite in the same breath.
+                drawWaiting(at: stuck.from, cell: cell, colour: colour, into: &context)
+            } else if let occupation = first.occupation {
+                drawRoute(occupation, cell: cell, colour: colour, into: &context)
+            }
         }
         // The player's first, so that where the two agree the engine's is the one on top and the
         // board does not read as though only one arrow was drawn.
@@ -422,6 +426,24 @@ struct BoardView: View {
                 with: .color(Palette.ink.opacity(0.45))
             )
         }
+    }
+
+    /// A ring round the piece that wants a square and cannot have it. No line: it is not going.
+    private func drawWaiting(
+        at square: Square, cell: CGFloat, colour: Color, into context: inout GraphicsContext
+    ) {
+        let position = self.cell(of: square)
+        let centre = CGPoint(
+            x: (CGFloat(position.column) + 0.5) * cell, y: (CGFloat(position.row) + 0.5) * cell
+        )
+        let radius = cell * 0.34
+        context.stroke(
+            Path(ellipseIn: CGRect(
+                x: centre.x - radius, y: centre.y - radius, width: radius * 2, height: radius * 2
+            )),
+            with: .color(colour.opacity(0.8)),
+            style: StrokeStyle(lineWidth: cell * 0.06, dash: [cell * 0.1, cell * 0.09])
+        )
     }
 
     /// The walk a piece would take to the square, one dash per move.

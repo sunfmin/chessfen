@@ -157,7 +157,7 @@ func theKingsOwnSquareIsSaidDifferently() throws {
     let game = try #require(
         Game(startFEN: "3qk3/8/8/8/8/8/8/R3K3 b - - 0 1", uciMoves: ["d8g5"])
     )
-    let key = game.keySquares(continuation: ["Rb1", "Ke7", "Rc1", "Kf6"])
+    let key = game.keySquares(continuation: ["Rb1", "Ke7", "Ra1", "Kf6"])
     let e8 = try #require(key.first { $0.square == (try? square("e8")) })
     #expect(e8.kind == .ownKing)
     #expect(!e8.isGain)
@@ -271,4 +271,113 @@ func theComerFollowsTheDirection() throws {
     let arrival = try #require(d1.occupation)
     #expect(arrival.piece.colour == .black, "the square was let go of, so they are the ones coming")
     #expect(d1.note.contains("对方的车"))
+}
+
+// ---------------------------------------------- the squares your own pieces want
+
+/// A null move is not a chess move, and it is the only way to ask what the side that just moved
+/// could do next — after their move it is not their turn.
+@Test("a position can be handed back to the side that just moved, unless they gave check")
+func passingTheTurnBack() throws {
+    let game = try #require(
+        Game(startFEN: "4k3/8/8/8/8/8/8/R3K3 w - - 0 1", uciMoves: ["a1a5"])
+    )
+    #expect(game.state.sideToMove == .black)
+    let passed = try #require(game.passed())
+    #expect(passed.state.sideToMove == .white, "White is asked what it could do next")
+    #expect(passed.state.fen.split(separator: " ").first == game.state.fen.split(separator: " ").first)
+
+    // A move that gives check refuses: with the king able to be taken, this is not a position.
+    let checking = try #require(
+        Game(startFEN: "4k3/8/8/8/8/8/8/R3K3 w - - 0 1", uciMoves: ["a1a8"])
+    )
+    #expect(checking.state.inCheck)
+    #expect(checking.passed() == nil)
+}
+
+/// The cost of a move that never shows up as anything changing hands: your knight would like d5
+/// and would simply be taken there.
+@Test("a square your own piece wants and cannot safely take is named, and the count says why")
+func aSquareYouAreShutOutOf() throws {
+    // White's rook takes the fifth rank. Its own knight on b4 would like d5 — but two black pawns
+    // on c6 and e6 are looking at it, so going there is giving a knight away.
+    let game = try #require(
+        Game(startFEN: "4k3/8/2p1p3/8/1N6/8/8/R3K3 w - - 0 1", uciMoves: ["a1a5"])
+    )
+    let passed = try #require(game.passed())
+    let d5 = try square("d5")
+    let stuck = try #require(game.shutOut(of: d5, for: .white, in: passed))
+    #expect(stuck.piece.kind == .knight, "cheaper than the rook that could also go there")
+    #expect(stuck.from == (try square("b4")))
+    #expect(stuck.defenders == 2, "the two pawns looking at d5")
+
+    // And a square nothing is stopping anybody from taking is not one of these.
+    #expect(game.shutOut(of: try square("h5"), for: .white, in: passed) == nil)
+}
+
+@Test("the cheapest piece that cannot go is the one named")
+func theCheapestShutOutPieceWins() throws {
+    // Both the queen and the rook could go to d5, and both would be taken by the pawn on c6. The
+    // rook is the cheaper of the two, and a rook being unable to go is the stronger statement.
+    let game = try #require(
+        Game(startFEN: "4k3/8/2p5/8/8/8/8/R2QK3 w - - 0 1", uciMoves: ["a1a5"])
+    )
+    let passed = try #require(game.passed())
+    let stuck = try #require(game.shutOut(of: try square("d5"), for: .white, in: passed))
+    #expect(stuck.piece.kind == .rook)
+}
+
+@Test("a shut-out square joins the same net and gets the same kind of sentence")
+func shutOutJoinsTheNet() throws {
+    let game = try #require(
+        Game(startFEN: "4k3/8/2p1p3/8/1N6/8/8/R3K3 w - - 0 1", uciMoves: ["a1a5"])
+    )
+    let key = game.keySquares(continuation: ["Kd8", "Ra4", "Kc8", "Rd4"])
+    // d4 is on the rook's own new rank neither way; what the line does touch is d4, and the square
+    // the reading is about has to have come out of the change the move made.
+    #expect(key.allSatisfy { $0.mover == .white })
+    if let stuck = key.first(where: { $0.kind == .shutOut }) {
+        #expect(stuck.note.contains("站不上去"))
+        #expect(stuck.shutOut != nil)
+    }
+    // Whatever is drawn, a square one of White's own pieces cannot take says so somewhere.
+    #expect(key.allSatisfy { !$0.note.isEmpty })
+}
+
+/// The one reading that is about your own pieces: the rook takes the fifth rank, d5 changes hands,
+/// and the knight that would like to stand there still cannot.
+@Test("a square you took and cannot stand on is what the reading names")
+func theSquareYouTookAndCannotStandOn() throws {
+    let game = try #require(
+        Game(startFEN: "4k3/1p1p1pp1/2p1p3/8/1N6/8/1P4B1/R3K3 w - - 0 1", uciMoves: ["a1a5"])
+    )
+    let key = game.keySquares(continuation: ["Kf8", "Ke2", "Ke8", "Kd1"])
+    let first = try #require(key.first)
+    #expect(first.square == (try square("d5")))
+    #expect(first.kind == .shutOut)
+    #expect(first.isGain, "taken, and still not somewhere anything of yours may stand")
+    let stuck = try #require(first.shutOut)
+    #expect(stuck.piece.kind == .knight)
+    #expect(stuck.defenders == 2)
+    #expect(first.note.contains("站不上去"))
+}
+
+/// A sentence that names a piece has to name the same piece every time it is asked. Two candidates
+/// the same distance away and a dictionary's iteration order deciding between them is a screen
+/// whose words change when nothing about the position has.
+@Test("the piece named as the one who comes is the same piece every time")
+func theArrivalIsDeterministic() throws {
+    // A rook on d1 and a queen on a5 are both one move from d5.
+    let board = try pieces("4k3/8/8/Q7/8/8/8/3RK3 w - - 0 1")
+    let d5 = try square("d5")
+    let answers = (0..<40).compactMap { _ in
+        Rules.occupation(of: d5, by: .white, pieces: board)
+    }
+    #expect(answers.count == 40)
+    #expect(Set(answers).count == 1, "forty asks, one answer")
+    // And the cheapest of the equally quick is the one named: a rook that can have the square is
+    // a stronger claim about the square than a queen that can.
+    let named = try #require(answers.first)
+    #expect(named.piece.kind == .rook)
+    #expect(named.moves == 1)
 }

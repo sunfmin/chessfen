@@ -713,6 +713,47 @@ struct GameScreenScreenshots {
         #expect(rendered.says("自己的马从 c3 走 1 步就到"), "who comes, and how far away they are")
     }
 
+    /// The one reading that is about your own pieces. The rook takes the fifth rank and d5 changes
+    /// hands — and the knight that would like to stand there still cannot, which is a cost of the
+    /// move that never shows up as anything changing hands (docs/adr/0020).
+    @Test("a square you took and still cannot stand on is drawn as one of yours")
+    func aSquareYouAreShutOutOfIsDrawn() async throws {
+        var game = try #require(
+            Game(
+                startFEN: "4k3/1p1p1pp1/2p1p3/8/1N6/8/1P4B1/R3K3 w - - 0 1",
+                uciMoves: ["a1a5", "e8f8"]
+            )
+        )
+        game.applyReview(
+            [
+                ReviewedPly(score: .centipawns(30), line: ["Kf8", "Ke2", "Ke8", "Kd1"]),
+                ReviewedPly(score: .centipawns(30), line: ["Ke2"]),
+            ],
+            startEvaluation: .centipawns(25),
+            depth: 18
+        )
+        let engine = ScriptedEngine(Self.searching)
+        let session = GameSession.fresh(game)
+        session.attach(engine: engine, library: nil)
+        session.jump(toPly: 1)
+        session.setShowsControlChange(true)
+
+        let rendered = await ScreenImage.write("game-shut-out") {
+            screen(session, engine: engine)
+        }
+
+        let key = session.viewed.keySquares(continuation: session.viewedContinuation)
+        let d5 = try #require(key.first)
+        #expect(d5.square == Square("d5"))
+        #expect(d5.kind == .shutOut)
+        #expect(d5.isGain, "taken, and still not somewhere anything of White's may stand")
+        let stuck = try #require(d5.shutOut)
+        #expect(stuck.piece.kind == .knight)
+        #expect(stuck.defenders == 2)
+        #expect(rendered.says("站不上去"))
+        #expect(rendered.says("对方有 2 个子看着这格") || rendered.says("d5 管住了"))
+    }
+
     @Test("the same two layers hold up in the dark")
     func boardLayersInTheDark() async throws {
         let (session, engine) = try await layered()

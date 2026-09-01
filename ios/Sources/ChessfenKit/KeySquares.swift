@@ -19,6 +19,10 @@ public struct KeySquare: Hashable, Sendable {
         /// A hole somebody can actually get to. The difference between a weakness on paper and a
         /// weakness with a knight walking towards it, which is the difference a player can act on.
         case outpost
+        /// A square one of the mover's own pieces wants and cannot safely take. The only kind that
+        /// is about their own pieces rather than the other side's, and the only cost of a move that
+        /// never shows up as anything changing hands.
+        case shutOut
     }
 
     /// How the engine's Line showed the square mattered. Both are facts about moves, not opinions
@@ -41,8 +45,18 @@ public struct KeySquare: Hashable, Sendable {
     /// Who can come and stand here, and whether they could be thrown out again. Nil when nobody
     /// can reach it soon enough for the answer to be about this position.
     public let occupation: Occupation?
+    /// One of the mover's own pieces that wants this square and cannot safely have it. Nil when
+    /// none does, and nil for a move that gave check — a null move is not a position then.
+    public let shutOut: ShutOut?
     /// One sentence over facts the rules code can check, in the style an Intent is judged in.
     public let note: String
+}
+
+extension KeySquare {
+    /// How hard the square is to have, as the value of the cheapest piece that cannot take it.
+    /// Zero when nothing of the mover's wants it, which sorts first because there is no claim to
+    /// weaken.
+    var stubbornness: Int { Int(shutOut?.piece.kind.rawValue ?? 0) }
 }
 
 extension KeySquare.Proof {
@@ -69,7 +83,8 @@ extension KeySquare.Kind {
         case .ownKing: 0
         case .enemyKing: 1
         case .outpost: 2
-        case .hole: 3
+        case .shutOut: 3
+        case .hole: 4
         }
     }
 }
@@ -134,7 +149,14 @@ extension Game {
         )
 
         // ---- the rules net: which of the squares that changed hands could matter at all
-        var candidates: [Square: (kind: KeySquare.Kind, isGain: Bool, by: Occupation?)] = [:]
+        // A null move, so the side that just moved can be asked what its own pieces could do next.
+        // Nil for a move that gave check, and then the mobility half of the reading is simply not
+        // said — which is right: a check is not the moment to discuss where a knight would like to
+        // stand.
+        let passed = passed()
+
+        var candidates:
+            [Square: (kind: KeySquare.Kind, isGain: Bool, by: Occupation?, stuck: ShutOut?)] = [:]
         for (squares, isGain) in [(change.gained, true), (change.lost, false)] {
             for square in squares {
                 // A square you took is one *you* would come and use; one you let go of is one
@@ -142,6 +164,7 @@ extension Game {
                 // weakness, and it is decided by which way the square went.
                 let comer = isGain ? mover : mover.opposite
                 let occupation = Rules.occupation(of: square, by: comer, pieces: pieces)
+                let stuck = passed.flatMap { shutOut(of: square, for: mover, in: $0) }
                 let kind: KeySquare.Kind?
                 if ownRing.contains(square) {
                     kind = .ownKing
@@ -153,10 +176,14 @@ extension Game {
                     // A hole nobody can get to is a weakness on paper. A hole with a piece walking
                     // towards it is the thing that actually happens to you.
                     kind = occupation != nil ? .outpost : .hole
+                } else if stuck != nil {
+                    // Nothing textbook about the square, and one of your own pieces still cannot
+                    // go there. That is a fact about this position and nowhere else.
+                    kind = .shutOut
                 } else {
                     kind = nil
                 }
-                if let kind { candidates[square] = (kind, isGain, occupation) }
+                if let kind { candidates[square] = (kind, isGain, occupation, stuck) }
             }
         }
         guard !candidates.isEmpty else { return [] }
@@ -197,21 +224,25 @@ extension Game {
                     isGain: candidate.isGain,
                     proof: proof,
                     occupation: candidate.by,
+                    shutOut: candidate.stuck,
                     note: Self.note(
                         square: square, kind: candidate.kind, isGain: candidate.isGain,
                         proof: proof,
                         isTheKingsOwnSquare: kings[
                             candidate.kind == .ownKing ? mover : mover.opposite
                         ] == square,
-                        arrival: candidate.by
+                        arrival: candidate.by,
+                        stuck: candidate.stuck
                     )
                 )
             )
         }
 
         found.sort {
-            ($0.proof.order, $0.kind.order, $0.square.index)
-                < ($1.proof.order, $1.kind.order, $1.square.index)
+            // The last tie-break before the square's own number: the cheaper the piece that cannot
+            // go, the stronger the statement — if a pawn may not have the square, nothing may.
+            ($0.proof.order, $0.kind.order, $0.stubbornness, $0.square.index)
+                < ($1.proof.order, $1.kind.order, $1.stubbornness, $1.square.index)
         }
         // A square the Line actually visits is worth drawing; when it visits none of them, one
         // square that merely stayed changed is all this is allowed to claim. This is where
@@ -228,7 +259,7 @@ extension Game {
     /// thing whichever side is reading.
     private static func note(
         square: Square, kind: KeySquare.Kind, isGain: Bool, proof: KeySquare.Proof,
-        isTheKingsOwnSquare: Bool, arrival: Occupation?
+        isTheKingsOwnSquare: Bool, arrival: Occupation?, stuck: ShutOut?
     ) -> String {
         let what: String =
             switch (kind, isGain, isTheKingsOwnSquare) {
@@ -250,6 +281,15 @@ extension Game {
                 "\(square) 成了永久据点：对方的兵再也管不到这格"
             case (.hole, false, _), (.outpost, false, _):
                 "\(square) 成了永久弱格：自己的兵再也管不回这格"
+            // The one kind whose claim carries its own detail. Said any other way it contradicts
+            // itself: "nothing of yours may stand there" followed by "your knight is one move
+            // away" is two true sentences that read as one wrong one.
+            case (.shutOut, true, _):
+                "\(square) 管住了，可自己的\(stuck?.piece.kind.name ?? "子")站不上去"
+                    + "：对方有 \(stuck?.defenders ?? 0) 个子看着这格，去了就亏"
+            case (.shutOut, false, _):
+                "\(square) 松开了，而自己的\(stuck?.piece.kind.name ?? "子")本来也站不上去"
+                    + "：对方有 \(stuck?.defenders ?? 0) 个子看着这格"
             }
         let because: String =
             switch proof {
@@ -259,7 +299,8 @@ extension Game {
                 "走完引擎这 \(plies) 步，它还是这样"
             }
         // Claim, mechanism, evidence — in that order, and the engine's word closes it.
-        return "\(what)。\(walk(arrival, kind: kind, isGain: isGain))\(because)。"
+        return "\(what)。\(walk(arrival, kind: kind, isGain: isGain))"
+            + "\(wanted(stuck, kind: kind))\(because)。"
     }
 
     /// The clause that turns a square into something that happens: which piece comes and how far
@@ -269,8 +310,17 @@ extension Game {
     /// a sentence about a different position. Whether it could be thrown out again is said only
     /// for the king-ring kinds: a hole is *defined* by nothing being able to throw anybody out, so
     /// saying it twice is saying it once and wasting a line.
+    /// The mirror clause: which of your own pieces wants the square, and how many of theirs are
+    /// looking at it. Not said for `.shutOut` itself, where the claim above already is this.
+    private static func wanted(_ stuck: ShutOut?, kind: KeySquare.Kind) -> String {
+        guard let stuck, kind != .shutOut else { return "" }
+        return "自己的\(stuck.piece.kind.name)想去，可对方有 \(stuck.defenders) 个子看着这格，去了就亏。"
+    }
+
     private static func walk(_ arrival: Occupation?, kind: KeySquare.Kind, isGain: Bool) -> String {
-        guard let arrival else { return "" }
+        // Never for a shut-out square: the claim there is that your own piece may *not* have it,
+        // and a route saying it is one move away is the same fact wearing the opposite face.
+        guard let arrival, kind != .shutOut else { return "" }
         let whose = isGain ? "自己的" : "对方的"
         let stay =
             switch (kind, arrival.canBeDislodged) {
@@ -398,15 +448,23 @@ extension Rules {
     /// it when it got there. Nil when nobody can inside the horizon.
     ///
     /// Kings are left out. A king walking to an outpost is not a plan.
+    ///
+    /// Ties are broken all the way down — soonest, then cheapest, then by square — because a
+    /// sentence naming a piece must name the same piece every time it is asked. Two pieces three
+    /// moves away and a dictionary's iteration order deciding between them is a screen whose words
+    /// change when nothing about the position has.
     public static func occupation(
         of square: Square, by colour: PieceColour, pieces: [Square: Piece], horizon: Int = 3
     ) -> Occupation? {
         var best: Occupation?
         for (origin, piece) in pieces
         where piece.colour == colour && piece.kind != .king && origin != square {
-            guard let route = route(to: square, from: origin, pieces: pieces, horizon: horizon),
-                best == nil || route.count < best!.moves
+            guard let route = route(to: square, from: origin, pieces: pieces, horizon: horizon)
             else { continue }
+            let mine = (route.count, Int(piece.kind.rawValue), origin.index)
+            if let best, (best.moves, Int(best.piece.kind.rawValue), best.from.index) <= mine {
+                continue
+            }
             best = Occupation(
                 piece: piece,
                 from: origin,
@@ -415,7 +473,81 @@ extension Rules {
                 route: route,
                 canBeDislodged: !isHole(at: square, for: colour.opposite, pieces: pieces)
             )
-            if route.count == 1 { break }
+        }
+        return best
+    }
+}
+
+/// One of your own pieces that wants a square and cannot safely have it.
+///
+/// The mirror of an Occupation, and the half of a move's cost that never shows up as anything
+/// changing hands: a square you are shut out of was never yours to lose. 「管住了 d5」 and 「站不上
+/// 去」 are both true of the same square, and only the second one explains why the position feels
+/// stuck (docs/adr/0020).
+public struct ShutOut: Hashable, Sendable {
+    public let piece: Piece
+    public let from: Square
+    public let target: Square
+    /// How many of the other side's pieces are looking at the square — what stops it, counted
+    /// rather than named, because a count is a thing anybody can check on the board.
+    public let defenders: Int
+}
+
+extension Game {
+    /// The same position with the other side to move.
+    ///
+    /// Not a chess move, and the only way to ask what the side that *just* moved could do next:
+    /// after their move it is not their turn, so every question about their own pieces' mobility
+    /// is a question about a position the rules will not produce.
+    ///
+    /// Nil when the side to move is in check, because then this is not a position at all — the
+    /// king could simply be taken. That is the honest refusal, and it also means a move that gives
+    /// check says nothing here, which is right: a check is not the moment to discuss mobility.
+    public func passed() -> Game? {
+        guard !state.inCheck else { return nil }
+        let fields = state.fen.split(separator: " ", omittingEmptySubsequences: false)
+        guard fields.count >= 4 else { return nil }
+        let side = state.sideToMove == .white ? "b" : "w"
+        // En passant goes: it belonged to the move that has just been un-asked.
+        let swapped = "\(fields[0]) \(side) \(fields[2]) - 0 \(state.fullmoveNumber)"
+        return Game(startFEN: swapped)
+    }
+
+    /// Which of `colour`'s pieces wants `square` and what stops it: a piece that could legally move
+    /// there in one move, where the exchange on arrival loses material.
+    ///
+    /// The cheapest such piece, because the cheapest one being unable to go is the strongest form
+    /// of the statement — if a pawn cannot have the square, nothing can.
+    public func shutOut(of square: Square, for colour: PieceColour) -> ShutOut? {
+        passed().flatMap { shutOut(of: square, for: colour, in: $0) }
+    }
+
+    /// The same, over a null-move position already in hand — which is what the reading does, once
+    /// per move rather than once per square.
+    public func shutOut(of square: Square, for colour: PieceColour, in passed: Game) -> ShutOut? {
+        guard passed.state.sideToMove == colour,
+            let pieces = BoardRenderer.placement(passed.state.fen),
+            let control = Rules.control(startFEN: passed.startFEN, moves: passed.uciMoves)
+        else { return nil }
+        var best: ShutOut?
+        for move in passed.state.legalMoves where move.to == square {
+            guard let piece = pieces[move.from],
+                Rules.exchangeValue(
+                    startFEN: passed.startFEN, moves: passed.uciMoves, uci: move.uci
+                ) == .losing
+            else { continue }
+            // Cheapest, then by the square it starts from: same reason as an Occupation's
+            // tie-breaks, and `legalMoves` is no more ordered than a dictionary is.
+            if let standing = best,
+                (standing.piece.kind.rawValue, standing.from.index)
+                    <= (piece.kind.rawValue, move.from.index)
+            { continue }
+            best = ShutOut(
+                piece: piece,
+                from: move.from,
+                target: square,
+                defenders: control.attackers(of: square, by: colour.opposite)
+            )
         }
         return best
     }
