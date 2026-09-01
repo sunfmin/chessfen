@@ -208,6 +208,15 @@ the engine's move, finding a move as good as it, and finding what you played las
 different pieces of news.
 _Avoid_: result, score, grade, feedback, verdict
 
+**Control Change**:
+What one move did to the map of who holds which squares, split by which way each square went
+for the side that played it: the squares it took a grip on and the squares it let go of. Two
+sets and not one — a move's gains and its costs are opposite facts, and a board that washed
+both in a single colour was a scattering of squares nobody could read. Only ever drawn on a
+past position, and always about that position's last Ply, which is the Guess when there is
+one. 这步改了什么 on screen.
+_Avoid_: influence, coverage, heat map, territory, diff
+
 **Intent**:
 What the player says a move was *for*: one verb and one target Square, declared by whoever
 played the Ply. That shape is the whole point — a verb with a target can be drawn on the

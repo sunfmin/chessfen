@@ -33,6 +33,18 @@ public struct SquareControl: Hashable, Sendable {
         return mine > theirs ? .white : .black
     }
 
+    /// How firmly one colour holds a square, as an order rather than a count: theirs, nobody's,
+    /// mine. Two maps compared through this say which way a square went for that colour, which a
+    /// pair of `holder` answers cannot — a square that fell from held to contested and one that
+    /// rose from contested to held are both "the holder changed".
+    public func grip(on square: Square, for colour: PieceColour) -> Int {
+        switch holder(of: square) {
+        case colour: 1
+        case nil: 0
+        default: -1
+        }
+    }
+
     /// The squares where this map and another disagree about who holds them — what a move
     /// changed, when the two maps are the positions either side of it.
     public func squaresDiffering(from other: SquareControl) -> Set<Square> {
@@ -144,6 +156,59 @@ extension Game {
         else { return nil }
         return afterControl.squaresDiffering(from: beforeControl)
     }
+
+    /// The same squares, told apart by which way they went for the side that just moved.
+    ///
+    /// One set was not enough to look at. A move takes a grip on some squares and lets go of
+    /// others, and those are opposite facts about it — drawn in one colour they are nine squares
+    /// scattered over a board with nothing to say about any of them. Told apart they are the move's
+    /// gains and the move's costs, which is a thing a person can read.
+    ///
+    /// Nil under the same conditions as `squaresLastMoveChanged`.
+    public var lastMoveControlChange: ControlChange? {
+        guard !plies.isEmpty,
+            let before = rewound(to: plies.count - 1),
+            let beforeControl = Rules.control(startFEN: before.startFEN, moves: before.uciMoves),
+            let afterControl = Rules.control(startFEN: startFEN, moves: uciMoves)
+        else { return nil }
+        // Whoever is *not* to move now is the one who just moved.
+        let mover = state.sideToMove.opposite
+        var change = ControlChange(mover: mover)
+        for square in afterControl.squaresDiffering(from: beforeControl) {
+            let was = beforeControl.grip(on: square, for: mover)
+            let now = afterControl.grip(on: square, for: mover)
+            if now > was {
+                change.gained.insert(square)
+            } else if now < was {
+                change.lost.insert(square)
+            }
+        }
+        return change
+    }
+}
+
+/// What one move did to the map of who holds what, from the point of view of whoever played it.
+///
+/// A square can only be in one of the two: the holder changed, so the mover's grip on it either
+/// tightened or loosened, and there is no third way for it to have changed at all.
+public struct ControlChange: Hashable, Sendable {
+    /// The side that played the move both sets are about. Neither set means anything without it —
+    /// "gained" is somebody's gain.
+    public let mover: PieceColour
+    /// Squares the mover holds more firmly than before: taken outright, or wrested off the other
+    /// side into a stand-off.
+    public var gained: Set<Square> = []
+    /// Squares it holds less firmly: given away outright, or let go into a stand-off.
+    public var lost: Set<Square> = []
+
+    public init(mover: PieceColour, gained: Set<Square> = [], lost: Set<Square> = []) {
+        self.mover = mover
+        self.gained = gained
+        self.lost = lost
+    }
+
+    public var isEmpty: Bool { gained.isEmpty && lost.isEmpty }
+    public var count: Int { gained.count + lost.count }
 }
 
 extension Game {

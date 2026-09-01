@@ -1055,36 +1055,79 @@ struct GameScreen: View {
     ///
     /// Only for a position already played into: on the live position there is nothing here to
     /// turn on, because there is nothing the app is willing to point at.
+    ///
+    /// **A wash on nine squares means nothing without a sentence.** The layer used to be one
+    /// colour and no words at all, next to a legend belonging to the *other* layer — so what it
+    /// drew was a scattering of violet squares that nobody could read, in the same violet as the
+    /// player's own arrow and their claim's ring. It says who now holds what, and it says it in
+    /// the names of the two sides, because "gained" is somebody's gain.
     @ViewBuilder private var layers: some View {
         if isPast {
-            HStack(spacing: 9) {
-                Button {
-                    session.setShowsControlChange(!session.showsControlChange)
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(
-                            systemName: session.showsControlChange
-                                ? "square.grid.3x3.fill" : "square.grid.3x3"
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 9) {
+                    Button {
+                        withAnimation(.snappy(duration: 0.2)) {
+                            session.setShowsControlChange(!session.showsControlChange)
+                        }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(
+                                systemName: session.showsControlChange
+                                    ? "square.grid.3x3.fill" : "square.grid.3x3"
+                            )
+                            .font(.caption2)
+                            Text("这步改了什么").font(.footnote)
+                        }
+                        .foregroundStyle(
+                            session.showsControlChange ? Palette.mine : Palette.inkSoft
                         )
-                        .font(.caption2)
-                        Text("这步改了什么").font(.footnote)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(Palette.chipRest, in: Capsule())
                     }
-                    .foregroundStyle(session.showsControlChange ? Palette.mine : Palette.inkSoft)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(Palette.chipRest, in: Capsule())
+                    .buttonStyle(.plain)
+                    if !looseSquares.isEmpty {
+                        Text("红圈：被吃的子比守的多")
+                            .font(.caption)
+                            .foregroundStyle(Palette.inkSoft)
+                    }
+                    Spacer(minLength: 0)
                 }
-                .buttonStyle(.plain)
-                if !looseSquares.isEmpty {
-                    Text("红圈：被吃的子比守的多")
-                        .font(.caption)
-                        .foregroundStyle(Palette.inkSoft)
-                }
-                Spacer(minLength: 0)
+                if session.showsControlChange { controlLegend }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.top, 10)
+        }
+    }
+
+    /// What the two washes mean, in the names of the sides they are about.
+    ///
+    /// Said with the colours themselves rather than only in words — a swatch beside its sentence
+    /// is how somebody checks a colour they are unsure of without leaving the board. And it says
+    /// nothing at all when the move changed nothing, which happens and is worth knowing: a move
+    /// that took no square off anybody is the honest answer to 这步改了什么.
+    @ViewBuilder private var controlLegend: some View {
+        if let change = controlChange {
+            let mover = change.mover.chinese
+            if change.isEmpty {
+                Text("这步没改变任何格子的归属。")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
+            } else {
+                HStack(spacing: 12) {
+                    swatch(Palette.mine.opacity(0.45), "\(mover)管住了 \(change.gained.count) 格")
+                    swatch(Palette.alarm.opacity(0.35), "松开了 \(change.lost.count) 格")
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    private func swatch(_ colour: Color, _ label: String) -> some View {
+        HStack(spacing: 5) {
+            RoundedRectangle(cornerRadius: 2).fill(colour).frame(width: 11, height: 11)
+            Text(label).font(.caption).foregroundStyle(Palette.inkSoft)
         }
     }
 
@@ -1399,7 +1442,7 @@ struct GameScreen: View {
             mine: myArrow,
             aim: session.declaredIntent?.target,
             loose: looseSquares,
-            changed: changedSquares,
+            control: controlChange,
             // Tappable while a verb is waiting for its target, too: the board is the only place a
             // claim's target can be said, which is the whole reason a verb has one.
             isInteractive: session.isHandTurn || session.declaringVerb != nil,
@@ -1512,12 +1555,12 @@ struct GameScreen: View {
         return viewed.loosePieces ?? []
     }
 
-    /// The squares the move on the board changed the control of — the guess when there is one,
+    /// What the move on the board did to the control of the squares — the guess when there is one,
     /// and otherwise the move that led here. One rule, both readings: it is always the last ply of
     /// the position being looked at.
-    private var changedSquares: Set<Square> {
-        guard isPast, session.showsControlChange else { return [] }
-        return viewed.squaresLastMoveChanged ?? []
+    private var controlChange: ControlChange? {
+        guard isPast, session.showsControlChange else { return nil }
+        return viewed.lastMoveControlChange
     }
 
     /// How the game on screen ended, if it has.

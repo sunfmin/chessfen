@@ -189,5 +189,44 @@ func theLastMoveIsWhatChanged() throws {
 func nothingChangedInAPositionNobodyMovedIn() throws {
     let fresh = try #require(Game(startFEN: start))
     #expect(fresh.squaresLastMoveChanged == nil, "a refusal, not an empty set")
+    #expect(fresh.lastMoveControlChange == nil, "and the same refusal, told apart or not")
     #expect(fresh.loosePieces?.isEmpty == true, "and nothing hangs in the starting position")
+}
+
+/// The same squares, told apart by which way they went — because a move's gains and its costs
+/// drawn in one colour are a scattering of squares nobody can read.
+@Test("what a move changed is split into what it took a grip on and what it let go")
+func theLastMoveIsSplitIntoGainsAndCosts() throws {
+    let game = try #require(
+        Game(startFEN: "4k3/8/8/8/8/8/8/R3K3 w - - 0 1", uciMoves: ["a1a5"])
+    )
+    let change = try #require(game.lastMoveControlChange)
+
+    #expect(change.mover == .white, "the side not to move now is the side that just moved")
+    // The fifth rank is what the rook took.
+    #expect(change.gained.contains(try square("d5")))
+    #expect(change.gained.contains(try square("h5")))
+    #expect(!change.lost.contains(try square("d5")))
+    // The first rank is what it let go of, and that is the half the old single set could not say.
+    #expect(change.lost.contains(try square("c1")))
+    #expect(!change.gained.contains(try square("c1")))
+    // Every changed square is in exactly one of the two, and the two together are the old set.
+    let changed = try #require(game.squaresLastMoveChanged)
+    #expect(change.gained.union(change.lost) == changed)
+    #expect(change.gained.isDisjoint(with: change.lost))
+    #expect(change.count == changed.count)
+    #expect(!change.isEmpty)
+}
+
+/// Black's move is read in Black's favour: the same board, the other point of view.
+@Test("the split is from the point of view of whoever played the move")
+func theSplitFollowsTheMover() throws {
+    let game = try #require(
+        Game(startFEN: "r3k3/8/8/8/8/8/8/4K3 b - - 0 1", uciMoves: ["a8a4"])
+    )
+    let change = try #require(game.lastMoveControlChange)
+
+    #expect(change.mover == .black)
+    #expect(change.gained.contains(try square("d4")), "the rank the rook took")
+    #expect(change.lost.contains(try square("c8")), "the rank it left")
 }

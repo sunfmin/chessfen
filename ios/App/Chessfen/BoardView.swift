@@ -101,8 +101,10 @@ struct BoardView: View {
     /// somebody is studying: on the position they are about to move in, this layer would be the
     /// blunder-check done on their behalf, which is the one thing it exists to teach.
     var loose: Set<Square> = []
-    /// Squares whose control the move being looked at changed.
-    var changed: Set<Square> = []
+    /// What the move being looked at did to the map of who holds what, from the point of view of
+    /// whoever played it. Two sets and not one: a move's gains and its costs drawn in the same
+    /// colour are a scattering of squares with nothing to say about any of them.
+    var control: ControlChange?
     var coordinates = true
     var isInteractive = true
     var onTap: ((Square) -> Void)?
@@ -245,11 +247,22 @@ struct BoardView: View {
                 if moved.contains(square) {
                     context.fill(Path(box), with: .color(Self.lastMoveWash))
                 }
-                // What the move changed, in the player's own violet: under the pieces, because it
-                // is about the squares, and a wash rather than a fill so the checker pattern and
-                // the last move's green both go on showing through.
-                if changed.contains(square) {
-                    context.fill(Path(box), with: .color(Palette.mine.opacity(0.28)))
+                // What the move did to the squares, under the pieces, because it is about the
+                // squares — and a wash rather than a fill, so the checker pattern and the last
+                // move's green both go on showing through.
+                //
+                // Two colours for two opposite facts. The mover's own violet for the squares it
+                // took a grip on, and the alarm colour for the ones it let go of: this layer is
+                // read after a move to find out what it cost as much as what it won, and one
+                // colour for both made that impossible to see. Paler than the rings that wear the
+                // same colours, which are marks about *pieces* and have to stay the louder of the
+                // two.
+                if let control {
+                    if control.gained.contains(square) {
+                        context.fill(Path(box), with: .color(Palette.mine.opacity(0.30)))
+                    } else if control.lost.contains(square) {
+                        context.fill(Path(box), with: .color(Palette.alarm.opacity(0.20)))
+                    }
                 }
                 if checks.contains(square) { drawCheck(in: box, into: &context) }
                 if coordinates {

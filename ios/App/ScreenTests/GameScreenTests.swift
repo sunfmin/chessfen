@@ -623,11 +623,19 @@ struct GameScreenScreenshots {
         let loose = try #require(session.viewed.loosePieces)
         #expect(loose.contains(try #require(Square("e5"))), "the knight White left there")
         #expect(session.showsControlChange)
-        #expect(try #require(session.viewed.squaresLastMoveChanged).count > 0)
+        let change = try #require(session.viewed.lastMoveControlChange)
+        #expect(!change.isEmpty)
         #expect(session.guess?.san == "Qg5", "the player's own arrow has something to draw")
         #expect(session.declaredIntent?.target == Square("e5"), "and the claim has a target to ring")
         #expect(rendered.says("这步改了什么"))
         #expect(rendered.says("红圈"), "with the one mark that needs a word said in one")
+        // And the layer's own words, which it went without for far too long: a wash on nine
+        // squares in one colour is a thing nobody can read, so the two directions are told apart
+        // and both are named, in the name of the side whose move it was.
+        #expect(rendered.says("管住了"), "what the move took a grip on")
+        #expect(rendered.says("松开了"), "and what it let go of, which is the half that was missing")
+        #expect(rendered.says("\(change.gained.count) 格"))
+        #expect(rendered.says("\(change.lost.count) 格"))
     }
 
     @Test("the same two layers hold up in the dark")
