@@ -26,7 +26,7 @@ struct HabitsScreen: View {
             }
         }
         .background(Palette.parchment)
-        .navigationTitle("老毛病")
+        .navigationTitle(localized("habits"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Palette.parchment, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
@@ -36,7 +36,7 @@ struct HabitsScreen: View {
     private var counting: some View {
         VStack(spacing: 10) {
             ProgressView()
-            Text("在数…").font(.footnote).foregroundStyle(Palette.inkSoft)
+            Text(localized("habits.counting")).font(.footnote).foregroundStyle(Palette.inkSoft)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -72,9 +72,9 @@ struct HabitsView: View {
                 masthead
 
                 if habits.hasNothingToCount {
-                    note("还没有能数的对局。先给一局打分，这里才有话说。")
+                    note(localized("habits.nothing"))
                 } else if habits.isClean {
-                    note("数了 \(habits.gamesCounted) 局，没找到老毛病。")
+                    note(localized("habits.clean", plural: habits.gamesCounted))
                 } else {
                     ForEach(habits.habits) { habit in
                         card(habit)
@@ -91,8 +91,8 @@ struct HabitsView: View {
 
     private var masthead: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("老毛病").font(.title2.weight(.bold)).foregroundStyle(Palette.ink)
-            Text("从你存下的对局里数出来的。不打分，不排名。")
+            Text(localized("habits")).font(.title2.weight(.bold)).foregroundStyle(Palette.ink)
+            Text(localized("habits.subtitle"))
                 .font(.footnote)
                 .foregroundStyle(Palette.inkSoft)
         }
@@ -106,7 +106,7 @@ struct HabitsView: View {
                 Text(habit.mode.label)
                     .font(.headline)
                     .foregroundStyle(Palette.ink)
-                Text("\(habit.count) 次")
+                Text(localized("habits.times", plural: habit.count))
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(Palette.alarm)
                 Spacer(minLength: 0)
@@ -135,10 +135,10 @@ struct HabitsView: View {
         HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Text("第 \(occurrence.moveNumber) 回合")
+                    Text(localized("move.number", occurrence.moveNumber))
                         .font(.caption)
                         .foregroundStyle(Palette.inkSoft)
-                    Text("\(occurrence.mover.chinese) \(occurrence.san)")
+                    Text("\(occurrence.mover.label) \(occurrence.san)")
                         .font(.notation)
                         .foregroundStyle(Palette.ink)
                 }
@@ -169,11 +169,15 @@ struct HabitsView: View {
     /// count means nothing without the number of games behind it.
     private var footer: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("数了 \(habits.gamesCounted) 局。")
+            Text(localized("habits.counted", plural: habits.gamesCounted))
                 .font(.caption)
                 .foregroundStyle(Palette.inkSoft)
             ForEach(habits.exclusions, id: \.reason) { exclusion in
-                Text("另外 \(exclusion.count) 局\(exclusion.reason.label)，没算进去。")
+                Text(
+                    localized(
+                        "habits.excluded", plural: exclusion.count, exclusion.reason.label
+                    )
+                )
                     .font(.caption)
                     .foregroundStyle(Palette.inkSoft)
             }

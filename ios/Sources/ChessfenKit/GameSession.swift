@@ -17,11 +17,11 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     public static let tagName = "Source"
 
     public var tagValue: String { rawValue }
-    public var chinese: String {
+    public var label: String {
         switch self {
-        case .fresh: "手摆"
-        case .recognised: "识别"
-        case .imported: "导入"
+        case .fresh: localized("origin.fresh")
+        case .recognised: localized("origin.recognised")
+        case .imported: localized("origin.imported")
         }
     }
     public var symbol: String {

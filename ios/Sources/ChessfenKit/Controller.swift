@@ -10,6 +10,10 @@ public enum Controller: String, Hashable, Sendable, CaseIterable, Codable {
     case engine
 
     /// What to write in PGN's White or Black tag for a side played this way.
+    ///
+    /// Not localized, and it must not be: this is written into the file and read back out of it
+    /// — `PGN.handMoved` decides whose moves a Habit is counted over by comparing against it —
+    /// so a game saved in one language has to still be readable in another.
     public var playerName: String {
         switch self {
         case .hand: "手动"
@@ -99,10 +103,10 @@ public enum MoveQuality: String, Hashable, Sendable, CaseIterable {
 
     public var label: String {
         switch self {
-        case .blunder: "漏着"
-        case .mistake: "失误"
-        case .inaccuracy: "不精确"
-        case .fine: "正常"
+        case .blunder: localized("quality.blunder")
+        case .mistake: localized("quality.mistake")
+        case .inaccuracy: localized("quality.inaccuracy")
+        case .fine: localized("quality.fine")
         }
     }
 

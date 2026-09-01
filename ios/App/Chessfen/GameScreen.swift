@@ -147,13 +147,13 @@ struct GameScreen: View {
                         selected = nil
                         session.undo()
                     } label: {
-                        Label("悔棋", systemImage: "arrow.uturn.backward")
+                        Label(localized("game.undo"), systemImage: "arrow.uturn.backward")
                     }
                     .disabled(!session.isAtLatest || session.game.plies.isEmpty)
                     Button {
                         path.append(.confirm(PositionProposal(reopening: session)))
                     } label: {
-                        Label("改棋子", systemImage: "hand.point.up.left")
+                        Label(localized("edit.title"), systemImage: "hand.point.up.left")
                     }
                     // Time is the only dial (docs/adr/0009), and here it is spent per ply: a
                     // deeper pass is a better opinion and a longer wait, and nothing else changes.
@@ -162,18 +162,23 @@ struct GameScreen: View {
                     // produced, and changing it is here with the other things done rarely.
                     Menu {
                         ForEach([10, 14, 18, 22], id: \.self) { depth in
-                            Button("深度 \(depth)") { session.startReview(depth: depth) }
+                            Button(localized("game.depth", depth)) {
+                                session.startReview(depth: depth)
+                            }
                         }
                     } label: {
-                        Label("重新打分", systemImage: "arrow.clockwise")
+                        Label(localized("game.rescore"), systemImage: "arrow.clockwise")
                     }
                     .disabled(session.reviewPass?.isRunning == true || !engine.isReady)
                     Toggle(isOn: $isSoundOn) {
-                        Label("音效", systemImage: isSoundOn ? "speaker.wave.2" : "speaker.slash")
+                        Label(
+                            localized("game.sound"),
+                            systemImage: isSoundOn ? "speaker.wave.2" : "speaker.slash"
+                        )
                     }
                     if let url = session.url {
                         ShareLink(item: url) {
-                            Label("导出 PGN", systemImage: "square.and.arrow.up")
+                            Label(localized("game.exportPGN"), systemImage: "square.and.arrow.up")
                         }
                     }
                     // 先走 throws a game away, and it stays on offer for as long as the game lasts,
@@ -181,13 +186,13 @@ struct GameScreen: View {
                     // out it was guessed wrong three moves later is the normal way to find out.
                     // What it does is said where it is about to matter, rather than in a chip
                     // standing under the board for the rest of the game.
-                    Section("换先走方会重开一局，走过的这局留在记录里") {
-                        Button("白先走") {
+                    Section(localized("game.restart.explained")) {
+                        Button(localized("game.whiteFirst")) {
                             selected = nil
                             session.restart(withSideToMove: .white)
                         }
                         .disabled(!session.canStart(withSideToMove: .white))
-                        Button("黑先走") {
+                        Button(localized("game.blackFirst")) {
                             selected = nil
                             session.restart(withSideToMove: .black)
                         }
@@ -196,7 +201,7 @@ struct GameScreen: View {
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
-                .accessibilityLabel("更多，先走的是\(session.startingSideToMove.chinese)")
+                .accessibilityLabel(localized("game.more", session.startingSideToMove.label))
             }
         }
         .onAppear {
@@ -232,10 +237,11 @@ struct GameScreen: View {
             }
         }
         .confirmationDialog(
-            "升变成什么？", isPresented: .constant(promotion != nil), titleVisibility: .visible
+            localized("game.promotion"), isPresented: .constant(promotion != nil),
+            titleVisibility: .visible
         ) {
             ForEach(promotion?.moves ?? [], id: \.uci) { move in
-                Button(move.promotion?.chinese ?? move.uci) {
+                Button(move.promotion?.label ?? move.uci) {
                     if session.isStudying {
                         session.offer(move)
                     } else {
@@ -244,7 +250,7 @@ struct GameScreen: View {
                     promotion = nil
                 }
             }
-            Button("取消", role: .cancel) { promotion = nil }
+            Button(localized("cancel"), role: .cancel) { promotion = nil }
         }
     }
 
@@ -269,7 +275,7 @@ struct GameScreen: View {
         HStack(spacing: 10) {
             if viewed.isOver {
                 // Who won is not a fact about one side, so it is said here rather than in a bar.
-                Text(viewed.chineseTurn)
+                Text(viewed.turn)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Palette.ink)
             } else if session.isPractising {
@@ -277,11 +283,11 @@ struct GameScreen: View {
                 // engine that has died.
                 HStack(spacing: 5) {
                     Image(systemName: "eye.slash").font(.caption2)
-                    Text("练习").font(.footnote.weight(.semibold))
+                    Text(localized("game.practice")).font(.footnote.weight(.semibold))
                 }
                 .foregroundStyle(Palette.inkSoft)
             } else if engine.unavailableReason != nil {
-                Text("没有引擎").font(.caption).foregroundStyle(Palette.alarm)
+                Text(localized("game.noEngine")).font(.caption).foregroundStyle(Palette.alarm)
             }
 
             if !session.isPractising || finish != nil {
@@ -326,23 +332,27 @@ struct GameScreen: View {
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Swatch(colour: colour)
-                Text(colour.chinese)
+                Text(colour.label)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Palette.ink)
-                Text(session.controller(for: colour).chinese)
+                Text(session.controller(for: colour).label)
                     .font(.caption)
                     .foregroundStyle(Palette.inkSoft)
                 // The engine's clock, and only where it decides something: how long this side's
                 // next move takes. It is the only dial in the app (docs/adr/0009).
                 if session.controller(for: colour) == .engine {
-                    Text(session.thinkingTime.chinese)
+                    Text(session.thinkingTime.label)
                         .font(.caption)
                         .foregroundStyle(Palette.inkSoft)
                 }
                 if live, !viewed.isOver {
-                    Text("该走了").font(.caption.weight(.semibold)).foregroundStyle(Palette.analysis)
+                    Text(localized("game.toPlay"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Palette.analysis)
                     if viewed.state.inCheck {
-                        Text("被将").font(.caption.weight(.semibold)).foregroundStyle(Palette.alarm)
+                        Text(localized("game.inCheck"))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Palette.alarm)
                     }
                     advice(for: colour)
                 }
@@ -386,7 +396,7 @@ struct GameScreen: View {
             Button { session.moveNow() } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "forward.fill").font(.system(size: 9))
-                    Text("马上走").font(.caption.weight(.semibold))
+                    Text(localized("game.moveNow")).font(.caption.weight(.semibold))
                 }
                 .foregroundStyle(Palette.parchment)
                 .padding(.horizontal, 10)
@@ -396,7 +406,7 @@ struct GameScreen: View {
             .buttonStyle(.plain)
         } else if session.canPlayBestMove {
             HoldButton(
-                label: "让引擎走",
+                label: localized("game.letEngine"),
                 symbol: "cpu",
                 isHeld: isAsking,
                 fill: Double(session.searchProgress?.depth ?? 0) / SearchDepth.deepEnough,
@@ -406,8 +416,8 @@ struct GameScreen: View {
                 },
                 onRelease: { session.endAskedMove() }
             )
-            .accessibilityLabel("让引擎走")
-            .accessibilityHint("按住不放，引擎算得更深；松手就走")
+            .accessibilityLabel(localized("game.letEngine"))
+            .accessibilityHint(localized("game.letEngine.hint"))
         }
     }
 
@@ -433,7 +443,13 @@ struct GameScreen: View {
             // says "no opinion" every move is an opinion about how much you are missing.
             EmptyView()
         } else if let best = session.analysis?.best?.san.first {
-            Text("\(session.controller(for: colour) == .engine ? "会走" : "建议") \(best)")
+            Text(
+                localized(
+                    session.controller(for: colour) == .engine
+                        ? "game.willPlay" : "game.suggests",
+                    best
+                )
+            )
                 .font(.caption)
                 .foregroundStyle(Palette.analysis)
                 .lineLimit(1)
@@ -443,7 +459,7 @@ struct GameScreen: View {
         } else if let reason = engine.unavailableReason {
             Text(reason).font(.caption).foregroundStyle(Palette.alarm).lineLimit(1)
         } else {
-            Text("在算").font(.caption).foregroundStyle(Palette.inkSoft)
+            Text(localized("game.thinking")).font(.caption).foregroundStyle(Palette.inkSoft)
         }
     }
 
@@ -452,9 +468,9 @@ struct GameScreen: View {
     /// not said here — it is the button under the thumb, and it says it itself.
     private var askedReadout: String {
         guard let progress = session.searchProgress, progress.depth > 0 else {
-            return "按住越久算得越深"
+            return localized("game.hold.deeper")
         }
-        return String(format: "%.1f 秒 · 深 %d", progress.seconds, progress.depth)
+        return localized("game.hold.progress", progress.seconds, progress.depth)
     }
 
     private func unfoldButton(_ colour: PieceColour) -> some View {
@@ -470,16 +486,21 @@ struct GameScreen: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(unfolded == colour ? "收起\(colour.chinese)的设置" : "打开\(colour.chinese)的设置")
+        .accessibilityLabel(
+            localized(
+                unfolded == colour ? "game.settings.collapse" : "game.settings.expand",
+                colour.label
+            )
+        )
     }
 
     /// Who plays this colour, and how long they get if it is the engine.
     private func chips(for colour: PieceColour) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             ChipCluster(
-                title: "谁走",
+                title: localized("game.who"),
                 options: Controller.allCases.map {
-                    .init(value: $0, label: $0.chinese, isEnabled: $0 == .hand || engine.isReady)
+                    .init(value: $0, label: $0.label, isEnabled: $0 == .hand || engine.isReady)
                 },
                 selection: session.controller(for: colour)
             ) { controller in
@@ -490,10 +511,10 @@ struct GameScreen: View {
             // is no player's last move to mirror, so the game names a clock instead.
             if session.controller(for: colour) == .engine {
                 ChipCluster(
-                    title: "每步",
+                    title: localized("game.perMove"),
                     options: ThinkingTime.offered.map {
                         .init(
-                            value: $0, label: $0.chinese,
+                            value: $0, label: $0.label,
                             isEnabled: $0 != .mirrored || !session.isSelfPlaying
                         )
                     },
@@ -526,14 +547,17 @@ struct GameScreen: View {
     /// is a ground and the numbers are said in words underneath.
     private var record: some View {
         HStack(spacing: 6) {
-            arrow("chevron.left", label: "上一步", enabled: session.cursor > 0) { walk(-1) }
+            arrow("chevron.left", label: localized("record.previous"), enabled: session.cursor > 0)
+            { walk(-1) }
             moveStrip
-            arrow("chevron.right", label: "下一步", enabled: !session.isAtLatest) { walk(1) }
+            arrow(
+                "chevron.right", label: localized("record.next"), enabled: !session.isAtLatest
+            ) { walk(1) }
             // The way back to the present, beside the arrows that walked away from it. It used to
             // be a sentence above the board — "在看第 7/8 步 · 回到最新" — which spent a row saying
             // where the eye was, and where the eye is is what this whole strip is drawing.
             if !session.isAtLatest {
-                arrow("forward.end.fill", label: "回到最新", enabled: true) {
+                arrow("forward.end.fill", label: localized("record.latest"), enabled: true) {
                     selected = nil
                     session.jumpToLatest()
                 }
@@ -558,8 +582,8 @@ struct GameScreen: View {
             plies: session.game.plies.count,
             score: { session.game.reviewScore(atPly: $0) }
         )
-        .accessibilityLabel("分数曲线")
-        .accessibilityValue("第 \(session.cursor) 步")
+        .accessibilityLabel(localized("record.curve"))
+        .accessibilityValue(localized("record.ply", session.cursor))
     }
 
     private var moveStrip: some View {
@@ -599,7 +623,7 @@ struct GameScreen: View {
     /// like any other, and without it there is no way back to it in one tap.
     private var openingCell: some View {
         Button { walk(to: 0) } label: {
-            Text(session.game.plies.isEmpty ? "从这里开始走" : "开局")
+            Text(localized(session.game.plies.isEmpty ? "record.startHere" : "record.opening"))
                 .font(.caption)
                 .foregroundStyle(session.cursor == 0 ? Palette.parchment : Palette.inkSoft)
                 .padding(.horizontal, 9)
@@ -636,8 +660,8 @@ struct GameScreen: View {
         .id(cell.cursor)
         // Said the way somebody reading a game aloud says it. A bare "Nf6" out of VoiceOver is a
         // move with no place in the game, and place is the whole of what this strip is for.
-        .accessibilityLabel("第 \(cell.cursor) 步 \(cell.san)")
-        .accessibilityHint("回到这一步")
+        .accessibilityLabel("\(localized("record.ply", cell.cursor)) \(cell.san)")
+        .accessibilityHint(localized("record.jump"))
     }
 
     private func arrow(
@@ -674,7 +698,7 @@ struct GameScreen: View {
         } else if session.isRevealing {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
-                Text("正在算这一步…").font(.footnote).foregroundStyle(Palette.inkSoft)
+                Text(localized("study.computing")).font(.footnote).foregroundStyle(Palette.inkSoft)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
@@ -685,7 +709,7 @@ struct GameScreen: View {
             // one they answer badly. So the verbs are one row, and the two buttons ride beside
             // the line that says what the claim reads as.
             VStack(alignment: .leading, spacing: 8) {
-                Text("你走 \(guess.san)。为什么？").font(.subheadline.weight(.medium))
+                Text(localized("study.why", guess.san)).font(.subheadline.weight(.medium))
                 verbs
                 HStack(spacing: 9) {
                     Text(reason)
@@ -696,13 +720,14 @@ struct GameScreen: View {
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
-                    Button("收回") { session.withdrawGuess() }.buttonStyle(.bordered)
-                    Button("就是这步") { session.commitGuess() }
+                    Button(localized("study.withdraw")) { session.withdrawGuess() }
+                        .buttonStyle(.bordered)
+                    Button(localized("study.commit")) { session.commitGuess() }
                         .buttonStyle(.borderedProminent)
                         .disabled(!session.canCommitGuess)
                 }
                 if !engine.isReady {
-                    Text("引擎还没准备好，没法给这步打分。")
+                    Text(localized("study.notReady"))
                         .font(.caption)
                         .foregroundStyle(Palette.alarm)
                 }
@@ -712,10 +737,10 @@ struct GameScreen: View {
             .padding(.top, 10)
         } else if session.isStudying {
             VStack(alignment: .leading, spacing: 4) {
-                Text("轮到\(viewed.state.sideToMove.chinese)走。你会走哪一步？")
+                Text(localized("study.ask", viewed.state.sideToMove.label))
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(Palette.ink)
-                Text("直接在棋盘上走一步。走完才会告诉你结果。")
+                Text(localized("study.ask.explained"))
                     .font(.caption)
                     .foregroundStyle(Palette.inkSoft)
             }
@@ -725,22 +750,27 @@ struct GameScreen: View {
         }
     }
 
-    /// The eight answers to 为什么, in one row. Seven verbs that can be told false and 说不清,
-    /// which is a declaration and not a refusal to make one — so it sits with the others, in the
-    /// same row and the same shape (docs/adr/0018).
+    /// The eight answers to 为什么. Seven verbs that can be told false and 说不清, which is a
+    /// declaration and not a refusal to make one — so it sits with the others, in the same row
+    /// and the same shape (docs/adr/0018).
     ///
-    /// One row and not two, because the room under the record is measured in tens of points: the
-    /// eight of them are the question, and a question whose second half is below the fold is one
-    /// half of a question.
+    /// One row wherever one row holds them, because the room under the record is measured in
+    /// tens of points: the eight of them are the question, and a question whose second half is
+    /// below the fold is half a question. In Chinese, Japanese and Korean each verb is a single
+    /// character and one row is all it takes. In French they are Attaquer and Échanger and
+    /// Défendre, which no phone fits in a line — so `Wrapping` gives them a second one rather
+    /// than cutting seven words down to "Att…" (docs/adr/0019).
     private var verbs: some View {
-        HStack(spacing: 5) {
+        Wrapping(spacing: 5, lineSpacing: 5) {
             ForEach(Intent.Verb.allCases, id: \.self) { verb in
                 Button {
                     session.choose(session.declaringVerb == verb ? nil : verb)
                 } label: {
                     Text(verb.label)
                         .font(.subheadline)
+                        .lineLimit(1)
                         .frame(minWidth: 30)
+                        .padding(.horizontal, 9)
                         .padding(.vertical, 7)
                         .foregroundStyle(
                             session.declaringVerb == verb ? Palette.parchment : Palette.ink
@@ -776,12 +806,13 @@ struct GameScreen: View {
     /// square, which is the only way this control can be got wrong.
     private var reason: String {
         if let intent = session.declaredIntent {
-            return intent == .unclear ? "说不清 —— 记下来了。" : "因为 \(intent.label)。"
+            return intent == .unclear
+                ? localized("study.reason.unclear") : localized("study.reason.because", intent.label)
         }
         if let verb = session.declaringVerb {
-            return "\(verb.label) 哪里？点棋盘上的格子。"
+            return localized("study.reason.where", verb.label)
         }
-        return "先说说这步是干什么的。"
+        return localized("study.reason.prompt")
     }
 
     /// Three moves side by side, never one number. "Your move" against "the engine's" against
@@ -814,25 +845,28 @@ struct GameScreen: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                revealRow("你走", reveal.guess, reveal.guessScore, prominent: true)
+                revealRow(
+                    localized("study.yours"), reveal.guess, reveal.guessScore, prominent: true
+                )
                 if !reveal.isSameAsBest {
-                    revealRow("引擎", reveal.best ?? "—", reveal.bestScore)
+                    revealRow(localized("study.engine"), reveal.best ?? "—", reveal.bestScore)
                 }
                 if !reveal.isSameAsPlayed {
-                    revealRow("实战", reveal.played, reveal.playedScore)
+                    revealRow(localized("study.played"), reveal.played, reveal.playedScore)
                 }
             }
 
             HStack(spacing: 9) {
                 if !reveal.isSameAsPlayed {
-                    Button("改走这步") { session.keepGuess() }.buttonStyle(.bordered)
+                    Button(localized("study.keep")) { session.keepGuess() }.buttonStyle(.bordered)
                 }
-                Button("再来一次") { session.withdrawGuess() }.buttonStyle(.bordered)
+                Button(localized("study.again")) { session.withdrawGuess() }.buttonStyle(.bordered)
                 if let next = nextQuestion {
-                    Button("下一题") { jump(toQuestion: next) }.buttonStyle(.bordered)
+                    Button(localized("study.next")) { jump(toQuestion: next) }
+                        .buttonStyle(.bordered)
                 }
             }
-            Text("三步都按深度 \(reveal.depth) 算，所以彼此可以比。")
+            Text(localized("study.depth.explained", reveal.depth))
                 .font(.caption)
                 .foregroundStyle(Palette.inkSoft)
         }
@@ -857,19 +891,19 @@ struct GameScreen: View {
         let moveIsFine = reveal.counts ?? false
         switch reveal.intentCheck?.verdict {
         case .held:
-            return moveIsFine ? "走对了，理由也站得住。" : "理由是对的，这步棋没做到。"
+            return localized(moveIsFine ? "study.headline.both" : "study.headline.reasonOnly")
         case .failed:
-            return moveIsFine ? "这步棋没问题，但理由不成立。" : "棋和理由都没站住。"
+            return localized(moveIsFine ? "study.headline.moveOnly" : "study.headline.neither")
         case .noClaim, nil:
-            return moveIsFine ? "这步棋没问题。" : "这步棋没站住。"
+            return localized(moveIsFine ? "study.headline.fine" : "study.headline.poor")
         }
     }
 
     private static func intentVerdictLabel(_ verdict: IntentCheck.Verdict) -> String {
         switch verdict {
-        case .held: "说对了"
-        case .failed: "没做到"
-        case .noClaim: "没说"
+        case .held: localized("verdict.held")
+        case .failed: localized("verdict.failed")
+        case .noClaim: localized("verdict.noClaim")
         }
     }
 
@@ -883,12 +917,14 @@ struct GameScreen: View {
 
     private func verdict(_ reveal: Reveal) -> String {
         guard let lost = reveal.lost, let quality = reveal.quality else {
-            return "引擎没给出意见，只能跟实战比。"
+            return localized("study.verdict.noOpinion")
         }
-        let gap = String(format: "%.2f", Double(abs(lost)) / 100)
-        if reveal.isSameAsBest { return "就是引擎的第一选择。" }
-        if lost <= 0 { return "比引擎的还好 \(gap)。" }
-        return quality == .fine ? "过关：跟引擎差 \(gap)。" : "\(quality.label)：比引擎差 \(gap)。"
+        let gap = String(format: "%.2f", locale: Speech.locale, Double(abs(lost)) / 100)
+        if reveal.isSameAsBest { return localized("study.verdict.best") }
+        if lost <= 0 { return localized("study.verdict.better", gap) }
+        return quality == .fine
+            ? localized("study.verdict.pass", gap)
+            : localized("study.verdict.worse", quality.label, gap)
     }
 
     /// The Game's worst moves, as the questions they are (docs/adr/0017).
@@ -899,7 +935,7 @@ struct GameScreen: View {
     @ViewBuilder private var questions: some View {
         if let worst = session.worstMoves(3), !worst.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                Text(session.isPractising ? "最该看的三步" : "这局最贵的三步")
+                Text(localized(session.isPractising ? "game.worst.quiet" : "game.worst"))
                     .font(.caption)
                     .foregroundStyle(Palette.inkSoft)
                 HStack(spacing: 8) {
@@ -909,8 +945,8 @@ struct GameScreen: View {
                                 let number = session.game.moveNumber(ofPly: ranked.ply)
                                 if session.isPractising {
                                     // No move to name, so the turn has to be named in words.
-                                    Text("第 \(number) 回合").font(.caption)
-                                    Text(ranked.mover.chinese).font(.caption)
+                                    Text(localized("move.number", number)).font(.caption)
+                                    Text(ranked.mover.label).font(.caption)
                                 } else {
                                     // The way a game is written down: "4." is White's fourth move
                                     // and "4…" is Black's answer to it. Three of these have to
@@ -973,7 +1009,7 @@ struct GameScreen: View {
                                 ? "square.grid.3x3.fill" : "square.grid.3x3"
                         )
                         .font(.caption2)
-                        Text("这步改了什么").font(.footnote)
+                        Text(localized("game.changed")).font(.footnote)
                     }
                     .foregroundStyle(session.showsControlChange ? Palette.mine : Palette.inkSoft)
                     .padding(.horizontal, 12)
@@ -982,7 +1018,7 @@ struct GameScreen: View {
                 }
                 .buttonStyle(.plain)
                 if !looseSquares.isEmpty {
-                    Text("红圈：被吃的子比守的多")
+                    Text(localized("game.loose"))
                         .font(.caption)
                         .foregroundStyle(Palette.inkSoft)
                 }
@@ -1007,7 +1043,11 @@ struct GameScreen: View {
                 if let pass = session.reviewPass, pass.isRunning {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
-                        Text("正在用深度 \(pass.depth) 重算：\(pass.completed)/\(max(pass.total, 1))")
+                        Text(
+                            localized(
+                                "report.running", pass.depth, pass.completed, max(pass.total, 1)
+                            )
+                        )
                             .font(.footnote)
                             .foregroundStyle(Palette.inkSoft)
                     }
@@ -1021,8 +1061,11 @@ struct GameScreen: View {
                     Text(reason).font(.caption).foregroundStyle(Palette.alarm)
                 } else if session.reviewPass == nil, !session.game.plies.isEmpty {
                     HStack(spacing: 9) {
-                        Text("这局还没打过分。").font(.footnote).foregroundStyle(Palette.inkSoft)
-                        Button("打分") { session.startReview() }.buttonStyle(.bordered)
+                        Text(localized("report.unscored"))
+                            .font(.footnote)
+                            .foregroundStyle(Palette.inkSoft)
+                        Button(localized("report.score")) { session.startReview() }
+                            .buttonStyle(.bordered)
                     }
                 }
             }
@@ -1037,7 +1080,12 @@ struct GameScreen: View {
         let ply = session.cursor
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             if ply > 0, let played = session.game.plies[safe: ply - 1] {
-                Text("第 \(session.game.moveNumber(ofPly: ply)) 回合 \(session.game.mover(ofPly: ply).chinese) \(played.san)")
+                Text(
+                    localized(
+                        "report.ply", session.game.moveNumber(ofPly: ply),
+                        session.game.mover(ofPly: ply).label, played.san
+                    )
+                )
                     .font(.subheadline.weight(.medium))
                 if let quality = session.game.quality(atPly: ply), quality != .fine {
                     Text(quality.label)
@@ -1050,12 +1098,12 @@ struct GameScreen: View {
                         )
                 }
             } else {
-                Text("起始局面").font(.subheadline.weight(.medium))
+                Text(localized("report.start")).font(.subheadline.weight(.medium))
             }
             // Named, because a Score without a depth compares to nothing — but said as two words
             // beside the number it qualifies rather than as a sentence on a row of its own. The
             // way to change it is in the ⋯ menu, with the other things done once a game.
-            Text("深度 \(session.game.reviewDepth ?? GameSession.reviewDepth)")
+            Text(localized("game.depth", session.game.reviewDepth ?? GameSession.reviewDepth))
                 .font(.caption2)
                 .foregroundStyle(Palette.inkSoft)
             Spacer(minLength: 0)
@@ -1072,18 +1120,18 @@ struct GameScreen: View {
     @ViewBuilder private var series: some View {
         if let collection = session.collection, let place = placeInSeries {
             HStack(spacing: 10) {
-                seriesButton("上一局", symbol: "chevron.left", at: place.index - 1)
+                seriesButton(localized("series.previous"), symbol: "chevron.left", at: place.index - 1)
                 VStack(spacing: 1) {
                     Text(collection)
                         .font(.caption.weight(.medium))
                         .foregroundStyle(Palette.ink)
                         .lineLimit(1)
-                    Text("第 \(place.index + 1)/\(place.entries.count) 局")
+                    Text(localized("series.place", place.index + 1, place.entries.count))
                         .font(.caption2)
                         .foregroundStyle(Palette.inkSoft)
                 }
                 .frame(maxWidth: .infinity)
-                seriesButton("下一局", symbol: "chevron.right", at: place.index + 1)
+                seriesButton(localized("series.next"), symbol: "chevron.right", at: place.index + 1)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
@@ -1129,11 +1177,11 @@ struct GameScreen: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: session.shaky.isEmpty ? "hand.point.up.left" : "questionmark.circle")
-                    Text(session.shaky.shakySummary ?? "照片认错了棋子？")
+                    Text(session.shaky.shakySummary ?? localized("game.wrongPiece"))
                         .font(.footnote)
                         .multilineTextAlignment(.leading)
                     Spacer(minLength: 4)
-                    Text("改棋子").font(.footnote.weight(.semibold))
+                    Text(localized("edit.title")).font(.footnote.weight(.semibold))
                     Image(systemName: "chevron.right").font(.caption2)
                 }
                 .foregroundStyle(session.shaky.isEmpty ? Palette.ink : Palette.alarm)
@@ -1164,7 +1212,7 @@ struct GameScreen: View {
             // window that has about four. What somebody can actually use is "these were the other
             // moves worth a look, and this is what each is worth".
             HStack(spacing: 8) {
-                Text("其它选择").eyebrow()
+                Text(localized("game.alternatives")).eyebrow()
                 ForEach(Array(rest.enumerated()), id: \.offset) { _, candidate in
                     HStack(spacing: 5) {
                         Text(candidate.san).font(.notation).foregroundStyle(Palette.ink)
@@ -1228,19 +1276,17 @@ struct GameScreen: View {
             if viewed.isOver {
                 // The result is at the top and on the bar; what is left to say is what to do next.
                 Text(
-                    session.isPractising
-                        ? "这局走完了。打开「引擎意见」，它会把每一步重新打一遍分。"
-                        : "这局走完了。曲线和每一步的得失都在下面。"
+                    localized(session.isPractising ? "game.over.quiet" : "game.over")
                 )
             } else if session.isPractising {
-                Text("练习中，引擎不给意见。想看它怎么说，打开上面的「引擎意见」。")
+                Text(localized("game.quiet"))
             }
             // What a game with nobody on the clock does, and how to stop it — which is the one
             // thing about self-play that is not on the screen already. Stepping back is a stop
             // because the engine only plays from the latest position, so browsing is where a
             // machine game is paused and 回到最新 is where it carries on.
             if session.isSelfPlaying {
-                Text("双方都是引擎，程序自己走下去；翻回上一步就停")
+                Text(localized("game.selfPlaying"))
             }
         }
         .font(.caption)
@@ -1272,7 +1318,7 @@ struct GameScreen: View {
         ) {
             HStack(spacing: 5) {
                 Image(systemName: session.isPractising ? "eye.slash" : "eye").font(.caption2)
-                Text("引擎意见").font(.footnote)
+                Text(localized("game.opinion")).font(.footnote)
             }
             .foregroundStyle(session.isPractising ? Palette.inkSoft : Palette.ink)
         }
@@ -1299,7 +1345,7 @@ struct GameScreen: View {
                 .foregroundStyle(Palette.ink)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("翻转棋盘")
+        .accessibilityLabel(localized("game.flip"))
     }
 
     // ------------------------------------------------------------------ the board

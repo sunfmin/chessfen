@@ -126,10 +126,10 @@ import Foundation
         _ failure: EngineService.StartupFailure
     ) -> String {
         switch failure {
-        case .networkMissing: "找不到神经网络权重文件，引擎无法启动。"
-        case .networkTooSmall: "权重文件不完整，引擎无法启动。"
-        case .allocationFailed: "内存不足，引擎无法启动。"
-        case .unknown: "引擎启动失败。"
+        case .networkMissing: localized("engine.networkMissing")
+        case .networkTooSmall: localized("engine.networkTooSmall")
+        case .allocationFailed: localized("engine.allocationFailed")
+        case .unknown: localized("engine.unknown")
         }
     }
 }

@@ -17,7 +17,7 @@ ios/
 │   ├── ChessfenKit/       # recognition, rules, engine, game, PGN — all the thinking
 │   └── chessfen-cli/      # a macOS entry point to the same code
 ├── Resources/Nets/        # the two NNUE files (Git LFS)
-├── Tests/                 # 199 tests
+├── Tests/                 # 290 tests
 └── App/                   # the SwiftUI shell: screens and nothing else
     ├── project.yml        # the Xcode project is generated from this
     └── ScreenTests/       # the screens, drawn into PNGs and held to what they say
@@ -96,11 +96,13 @@ xcodebuild test -project Chessfen.xcodeproj -scheme Chessfen \
 open out/game-in-play.png
 ```
 
-Ten pictures land in `ios/App/out`: a game under way, a board straight off a photograph, one
-filed into a collection, a reopened game, the engine on its own clock, the app playing itself,
-a Variation offered where it branches, a mate, practice, and the whole screen at night. They
-are not in the repository — they are written to be looked at, and they are rewritten by every
-run.
+Every screenshot lands in `ios/App/out`: a game under way, a board straight off a photograph,
+one filed into a collection, a reopened game, the engine on its own clock, the app playing
+itself, a Variation offered where it branches, a mate, practice, 老毛病, the import sheet, and
+the whole screen at night. One of them — `game-study-french.png` — is the same question asked
+in French, which is how a run finds out that all eight languages reached the app rather than
+only the one it was written in (docs/adr/0019). They are not in the repository: they are
+written to be looked at, and they are rewritten by every run.
 
 The only thing faked is the search. `Engine` is a protocol the app's `EngineService` conforms
 to, so a test can hand a screen a scripted `Analysis` and everything above the search — the
@@ -142,6 +144,16 @@ short without changing which move it picks. Put both sides on the engine and it 
 three seconds a move — there is no player's clock to mirror then, so the clock is named, and
 每步 changes it mid-game for either kind of opponent. Time is the only dial: no skill level,
 no Elo.
+
+**It speaks eight languages, out of the package rather than the app**
+([ADR 0019](../docs/adr/0019-the-app-speaks-eight-languages-from-tables-in-the-package.md)).
+Chinese, English, French, Japanese, Korean, German, Spanish and Portuguese, one
+`Sources/ChessfenKit/Resources/<lang>.lproj/Localizable.strings` each — with the words beside
+the domain because most of them *are* the domain: 漏着, 说不清, "王旁边有王" are `MoveQuality`,
+`Intent` and `FENIssue` values, and each of those types owns its own `.label`. Chinese is the
+language it was written in and the one every key falls back to. The person can pick one in 关于
+regardless of what the phone is set to, and `LocalizationTests` fails the build if a key is
+missing from a table or carries different `%@`s than the Chinese it translates.
 
 **Games are PGN files.** One per game, in Documents, with the photograph a recognised game came
 from kept beside it ([ADR 0010](../docs/adr/0010-pgn-files-are-the-storage-format.md)). There is

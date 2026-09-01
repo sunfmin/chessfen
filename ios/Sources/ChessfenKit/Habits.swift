@@ -21,11 +21,11 @@ public struct Habit: Identifiable, Hashable, Sendable {
 
         public var label: String {
             switch self {
-            case .giveaway: "送子"
-            case .missedReply: "没算对手那一步"
-            case .untrueReason: "理由不成立"
-            case .noReason: "说不清"
-            case .attackWhileHanging: "只顾进攻"
+            case .giveaway: localized("habit.giveaway")
+            case .missedReply: localized("habit.missedReply")
+            case .untrueReason: localized("habit.untrueReason")
+            case .noReason: localized("habit.noReason")
+            case .attackWhileHanging: localized("habit.attackWhileHanging")
             }
         }
 
@@ -33,11 +33,11 @@ public struct Habit: Identifiable, Hashable, Sendable {
         /// grade. One sentence a player can go and check.
         public var explanation: String {
             switch self {
-            case .giveaway: "走完这步，你有子没人守 —— 这次对手没吃。"
-            case .missedReply: "走完这步你有子没人守，对手下一步就吃了。"
-            case .untrueReason: "你说了这步是干什么的，棋盘上没发生。"
-            case .noReason: "走了，但说不清为什么。"
-            case .attackWhileHanging: "你在攻、在吃，自己却有子挂着。"
+            case .giveaway: localized("habit.giveaway.explained")
+            case .missedReply: localized("habit.missedReply.explained")
+            case .untrueReason: localized("habit.untrueReason.explained")
+            case .noReason: localized("habit.noReason.explained")
+            case .attackWhileHanging: localized("habit.attackWhileHanging.explained")
             }
         }
 
@@ -115,9 +115,9 @@ public struct Habits: Hashable, Sendable {
 
         public var label: String {
             switch self {
-            case .unreviewed: "还没打过分"
-            case .unreadable: "读不出来"
-            case .waiting: "还在从 iCloud 下载"
+            case .unreviewed: localized("habit.excluded.unreviewed")
+            case .unreadable: localized("habit.excluded.unreadable")
+            case .waiting: localized("habit.excluded.waiting")
             }
         }
     }
@@ -229,8 +229,7 @@ public struct Habits: Hashable, Sendable {
             // statement has to be about the move, or it is about the position the opponent made.
             let exposed = looseAfter.subtracting(looseBefore)
             guard !exposed.isEmpty else { continue }
-            let where_ = exposed.sorted { $0.index < $1.index }
-                .map(\.description).joined(separator: "、")
+            let where_ = exposed.sorted { $0.index < $1.index }.listed
 
             // Did they take it? The very next ply, because that is what "算对手那一步" means.
             let taken = game.plies.indices.contains(played.ply)
@@ -247,9 +246,9 @@ public struct Habits: Hashable, Sendable {
                         moveNumber: game.moveNumber(ofPly: played.ply),
                         mover: played.mover,
                         san: played.san,
-                        note: taken
-                            ? "\(where_) 上的子没人守，对手下一步吃了它"
-                            : "走完这步，\(where_) 上的子没人守"
+                        note: localized(
+                            taken ? "habit.note.taken" : "habit.note.exposed", where_
+                        )
                     )
                 )
             )
@@ -297,9 +296,10 @@ public struct Habits: Hashable, Sendable {
             if verb == .attack || verb == .take,
                 let hanging = before.loosePieces(of: mover), !hanging.isEmpty
             {
-                let where_ = hanging.sorted { $0.index < $1.index }
-                    .map(\.description).joined(separator: "、")
-                out.append((.attackWhileHanging, occurrence("你自己的 \(where_) 当时就没人守")))
+                let where_ = hanging.sorted { $0.index < $1.index }.listed
+                out.append(
+                    (.attackWhileHanging, occurrence(localized("habit.note.hanging", where_)))
+                )
             }
         }
         return out

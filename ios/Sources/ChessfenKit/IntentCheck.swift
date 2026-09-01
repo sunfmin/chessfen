@@ -56,39 +56,44 @@ extension Intent {
         // and which would therefore teach nothing.
         case .take:
             guard move.isCapture, captured == target else {
-                return failed("这一步没有在 \(target) 吃子")
+                return failed(localized("check.take.notHere", "\(target)"))
             }
             guard let exchange else { return nil }
             return exchange == .winning
-                ? held("在 \(target) 吃子赢了子")
-                : failed("\(target) 上的交换不赚：对方吃回来不亏")
+                ? held(localized("check.take.won", "\(target)"))
+                : failed(localized("check.take.notWorth", "\(target)"))
 
         // 换 — "a trade that does not lose". The pair 吃/换 is the one players confuse most, and
         // the exchange value is exactly what tells them apart.
         case .trade:
             guard move.isCapture, captured == target else {
-                return failed("这一步没有在 \(target) 换子")
+                return failed(localized("check.trade.notHere", "\(target)"))
             }
             guard let exchange else { return nil }
             return exchange == .losing
-                ? failed("\(target) 上这个换子是亏的")
-                : held("\(target) 上换得起")
+                ? failed(localized("check.trade.losing", "\(target)"))
+                : held(localized("check.trade.affordable", "\(target)"))
 
         // 攻 — "I now threaten that piece, and it cannot hold". Two halves, both falsifiable:
         // the threat has to be new, and it has to outnumber the defence.
         case .attack:
             guard let piece = afterPieces[target], piece.colour == opponent else {
-                return failed("\(target) 上没有对方的子")
+                return failed(localized("check.attack.noPiece", "\(target)"))
             }
             let now = afterControl.attackers(of: target, by: mover)
             let was = beforeControl.attackers(of: target, by: mover)
             guard now > was else {
-                return failed("\(target) 上的子并没有因为这一步多受一次攻击")
+                return failed(localized("check.attack.noNewThreat", "\(target)"))
             }
             guard now > afterControl.attackers(of: target, by: opponent) else {
-                return failed("\(target) 对方守得住：\(now) 攻 \(afterControl.attackers(of: target, by: opponent)) 守")
+                return failed(
+                    localized(
+                        "check.attack.defended", "\(target)", now,
+                        afterControl.attackers(of: target, by: opponent)
+                    )
+                )
             }
-            return held("\(target) 上的子挨打了，而且守不住")
+            return held(localized("check.attack.held", "\(target)"))
 
         // 护 — "it now has one more defender". Purely a statement about the control map, which is
         // why it is the easiest of the eight to check and the easiest to be wrong about.
@@ -96,30 +101,32 @@ extension Intent {
             let now = afterControl.attackers(of: target, by: mover)
             let was = beforeControl.attackers(of: target, by: mover)
             return now > was
-                ? held("\(target) 的守子从 \(was) 变成 \(now)")
-                : failed("\(target) 的守子没有增加，还是 \(was)")
+                ? held(localized("check.defend.held", "\(target)", was, now))
+                : failed(localized("check.defend.unchanged", "\(target)", was))
 
         // 躲 — "this piece was hanging, and where it went it is not". The target is the attacker
         // it ran from, so the claim names both ends of it.
         case .flee:
             guard let attacker = beforePieces[target], attacker.colour == opponent else {
-                return failed("\(target) 上原本没有对方的子")
+                return failed(localized("check.flee.noAttacker", "\(target)"))
             }
             let attacked = beforeControl.attackers(of: move.from, by: opponent)
             let defended = beforeControl.attackers(of: move.from, by: mover)
             guard attacked > defended else {
-                return failed("\(move.from) 本来不算悬着：\(attacked) 攻 \(defended) 守")
+                return failed(
+                    localized("check.flee.notHanging", "\(move.from)", attacked, defended)
+                )
             }
             guard let exchange else { return nil }
             return exchange == .losing
-                ? failed("走到 \(move.to) 一样会被吃")
-                : held("从 \(move.from) 躲开了 \(target)")
+                ? failed(localized("check.flee.stillTaken", "\(move.to)"))
+                : held(localized("check.flee.held", "\(move.from)", "\(target)"))
 
         // 挡 — "I interposed on a line". Geometry and nothing else: something of the mover's,
         // in line with the square stepped onto, is attacked less than it was.
         case .block:
             guard move.to == target else {
-                return failed("这一步没有走到 \(target)")
+                return failed(localized("check.block.notThere", "\(target)"))
             }
             let relieved = (0..<64).compactMap(Square.init(index:)).first { square in
                 square != target
@@ -129,9 +136,9 @@ extension Intent {
                         < beforeControl.attackers(of: square, by: opponent)
             }
             guard let relieved else {
-                return failed("走到 \(target) 没有挡住什么")
+                return failed(localized("check.block.nothing", "\(target)"))
             }
-            return held("挡在 \(target)，\(relieved) 上的子不再挨那一击")
+            return held(localized("check.block.held", "\(target)", "\(relieved)"))
 
         // 占 — "I hold this square more than the opponent does". Before against after, so holding
         // a square you already held is not a claim.
@@ -139,7 +146,7 @@ extension Intent {
             guard afterControl.holder(of: target) == mover else {
                 let mine = afterControl.attackers(of: target, by: mover)
                 let theirs = afterControl.attackers(of: target, by: opponent)
-                return failed("\(target) 还算不上你的：\(mine) 对 \(theirs)")
+                return failed(localized("check.hold.notYours", "\(target)", mine, theirs))
             }
             let now =
                 afterControl.attackers(of: target, by: mover)
@@ -148,8 +155,8 @@ extension Intent {
                 beforeControl.attackers(of: target, by: mover)
                 - beforeControl.attackers(of: target, by: opponent)
             return now > was
-                ? held("\(target) 的争夺从 \(was) 变成 \(now)，归你了")
-                : failed("\(target) 本来就归你，这一步没有改变什么")
+                ? held(localized("check.hold.held", "\(target)", was, now))
+                : failed(localized("check.hold.unchanged", "\(target)"))
         }
     }
 

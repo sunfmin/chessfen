@@ -42,20 +42,20 @@ public enum Intent: Hashable, Sendable {
         /// a phone beside the board rather than under it.
         public var label: String {
             switch self {
-            case .take: "吃"
-            case .trade: "换"
-            case .attack: "攻"
-            case .defend: "护"
-            case .flee: "躲"
-            case .block: "挡"
-            case .hold: "占"
+            case .take: localized("verb.take")
+            case .trade: localized("verb.trade")
+            case .attack: localized("verb.attack")
+            case .defend: localized("verb.defend")
+            case .flee: localized("verb.flee")
+            case .block: localized("verb.block")
+            case .hold: localized("verb.hold")
             }
         }
     }
 
     /// 说不清's own name on screen, so the eighth button is written from the same place as the
     /// other seven.
-    public static let unclearLabel = "说不清"
+    public static var unclearLabel: String { localized("intent.unclear") }
 
     public var verb: Verb? {
         switch self {

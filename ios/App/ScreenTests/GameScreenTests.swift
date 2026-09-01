@@ -9,7 +9,7 @@ import Testing
 /// Serialized and on the main actor because there is one screen: two of these rendering at once
 /// would be two key windows, and whichever drew second would be photographing the other one.
 @MainActor
-@Suite(.serialized)
+@Suite(.serialized, .speaking(.chinese))
 struct GameScreenScreenshots {
     /// The Italian, eight plies in, White to move — a position anyone who plays reads at a glance,
     /// which is what a screenshot is for.
@@ -436,6 +436,39 @@ struct GameScreenScreenshots {
         #expect(session.analysis == nil)
     }
 
+    /// The same question asked in French — the one screenshot here that proves eight tables of
+    /// words reached the app rather than only the one it was written in. Every other picture in
+    /// this file would look exactly the same if seven of them had been left behind, because a
+    /// missing language falls back to Chinese by design (docs/adr/0019).
+    ///
+    /// It is also the row that had to give. The eight answers to 为什么 are one character each
+    /// in Chinese and Prendre, Échanger, Défendre in French, so this is the picture that says
+    /// whether they wrapped onto a second line or were squeezed into ellipses.
+    @Test("the same question, asked in French", .speaking(.french))
+    func studyInFrench() async throws {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
+        let session = GameSession.fresh(game)
+        session.jump(toPly: 6)
+        session.offer(try #require(session.viewed.state.move(matching: "d2d4")))
+
+        let rendered = await ScreenImage.write("game-study-french") {
+            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
+        }
+
+        #expect(rendered.says("Vous jouez d4. Pourquoi ?"))
+        #expect(rendered.says("Dites d'abord à quoi sert ce coup."))
+        // All eight answers, the long ones included, and the two buttons under them.
+        for verb in ["Prendre", "Échanger", "Attaquer", "Défendre", "Fuir", "Bloquer", "Occuper"] {
+            #expect(rendered.says(verb), "the verb \(verb) is one of the eight answers")
+        }
+        #expect(rendered.says("Je ne sais pas"))
+        #expect(rendered.says("C'est mon coup"))
+        #expect(rendered.says("Reprendre"))
+        // And nothing has leaked back from the language it was all written in.
+        #expect(!rendered.says("说不清"))
+        #expect(!rendered.says("你会走哪一步"))
+    }
+
     /// Committing a guess: your move, the engine's, and the one actually played, at one Depth.
     @Test("committing a guess shows it against the engine's move and the one that was played")
     func studyAfterTheReveal() async throws {
@@ -755,7 +788,7 @@ struct GameScreenScreenshots {
 /// the screen once per ply, which is unusable and was invisible to every test that only read
 /// words. So this one reads pixels.
 @MainActor
-@Suite(.serialized)
+@Suite(.serialized, .speaking(.chinese))
 struct BoardStandsStill {
     private static let italian = ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5", "c2c3", "g8f6"]
 
