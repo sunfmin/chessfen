@@ -218,6 +218,27 @@ func theLastMoveIsSplitIntoGainsAndCosts() throws {
     #expect(!change.isEmpty)
 }
 
+/// A square let go of in the middle of the board is a matter of taste; one let go of beside your
+/// own king is where the attack comes in. So the layer counts those separately.
+@Test("squares let go of next to the mover's own king are counted apart")
+func lettingGoBesideYourOwnKing() throws {
+    // The queen on d8 covers e8 and the squares round the king; walking her out to g5 lets go of
+    // them, and the king is still standing there.
+    let game = try #require(
+        Game(startFEN: "3qk3/8/8/8/8/8/8/4K3 b - - 0 1", uciMoves: ["d8g5"])
+    )
+    let change = try #require(game.lastMoveControlChange)
+
+    #expect(change.mover == .black)
+    #expect(!change.nearKing.isEmpty, "the queen walked away from her own king")
+    #expect(
+        change.nearKing.isSubset(of: change.lost),
+        "it is a subset, so a screen can name it without counting anything twice"
+    )
+    #expect(change.nearKing.allSatisfy { $0.rank >= 6 }, "and all of it is up beside the king")
+    #expect(change.gained.isDisjoint(with: change.nearKing))
+}
+
 /// Black's move is read in Black's favour: the same board, the other point of view.
 @Test("the split is from the point of view of whoever played the move")
 func theSplitFollowsTheMover() throws {

@@ -183,7 +183,27 @@ extension Game {
                 change.lost.insert(square)
             }
         }
+        change.nearKing = change.lost.intersection(kingRing(of: mover))
         return change
+    }
+
+    /// The eight squares round a colour's own king, and the square it stands on.
+    ///
+    /// The one place on the board where letting go of a square is not a matter of taste. A square
+    /// given up in the middle is a square somebody else might use; a square given up next to your
+    /// own king is where the attack goes.
+    func kingRing(of colour: PieceColour) -> Set<Square> {
+        guard let pieces = BoardRenderer.placement(state.fen),
+            let king = pieces.first(where: { $0.value.kind == .king && $0.value.colour == colour })?
+                .key
+        else { return [] }
+        var ring: Set<Square> = [king]
+        for file in (king.file - 1)...(king.file + 1) where (0..<8).contains(file) {
+            for rank in (king.rank - 1)...(king.rank + 1) where (0..<8).contains(rank) {
+                ring.insert(Square(file: file, rank: rank))
+            }
+        }
+        return ring
     }
 }
 
@@ -200,11 +220,21 @@ public struct ControlChange: Hashable, Sendable {
     public var gained: Set<Square> = []
     /// Squares it holds less firmly: given away outright, or let go into a stand-off.
     public var lost: Set<Square> = []
+    /// The subset of `lost` that touches the mover's own king — a square given up in the middle of
+    /// the board is a matter of taste, and one given up beside your own king is where the attack
+    /// goes. Always a subset, so a screen can name it without counting anything twice.
+    public var nearKing: Set<Square> = []
 
-    public init(mover: PieceColour, gained: Set<Square> = [], lost: Set<Square> = []) {
+    public init(
+        mover: PieceColour,
+        gained: Set<Square> = [],
+        lost: Set<Square> = [],
+        nearKing: Set<Square> = []
+    ) {
         self.mover = mover
         self.gained = gained
         self.lost = lost
+        self.nearKing = nearKing
     }
 
     public var isEmpty: Bool { gained.isEmpty && lost.isEmpty }

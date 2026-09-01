@@ -336,7 +336,10 @@ struct GameScreen: View {
         .buttonStyle(.plain)
         .disabled(!engine.isReady && session.isPractising)
         .accessibilityLabel("引擎意见")
-        .accessibilityValue(session.isPractising ? "关" : "开")
+        // The word the control is actually wearing, not a bare 关. A screen that draws 练习 and
+        // reports "off" says two different things to two different readers, and the tree is the
+        // one VoiceOver hears.
+        .accessibilityValue(session.isPractising ? "练习" : "开")
     }
 
     /// Who is ahead, with how hard the engine is still working on that answer drawn underneath it.
@@ -809,6 +812,21 @@ struct GameScreen: View {
                 Text("轮到\(viewed.state.sideToMove.chinese)走。你会走哪一步？")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(Palette.ink)
+                // Why here. Tapping one of the three chips leaves the list behind, and a board
+                // asking a question with no account of why it picked this position is a question
+                // you can only take on trust.
+                if let (place, ranked) = questionPlace {
+                    Text(
+                        session.isPractising
+                            // The size is the answer to the question being asked, so while the
+                            // engine is silent this says which of the three it is and no more.
+                            ? "这是这局得失最大的第 \(place) 步。实战在这儿走的那步，引擎重算下来不值。"
+                            : "这局得失第 \(place) 大的一步：实战走的 \(ranked.san)，\(Self.cost(ranked.lost)) 分。"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
                 Text("直接在棋盘上走一步。走完才会告诉你结果。")
                     .font(.caption)
                     .foregroundStyle(Palette.inkSoft)
@@ -996,10 +1014,32 @@ struct GameScreen: View {
                 Text(session.isPractising ? "最该看的三步" : "这局最贵的三步")
                     .font(.caption)
                     .foregroundStyle(Palette.inkSoft)
-                HStack(spacing: 8) {
-                    ForEach(worst, id: \.ply) { ranked in
+                    .padding(.horizontal, 16)
+                // Why these three and not three others. It is one sentence and it was missing
+                // altogether: a list headed 最该看的三步 with no account of who decided is a list
+                // you can only take on trust, and "我不懂这一步为什么最该看" is the right response
+                // to one. The rank is on each chip for the same reason — three chips in a row do
+                // not look ordered unless they say they are.
+                Text("引擎按统一深度重算了全局，这三步的得失最大，从大到小排。")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 16)
+                // Sideways rather than squeezed. Three chips carrying a rank, a move and what it
+                // cost do not fit across a phone, and the one that gave way was the move's own
+                // name — truncated to "4…" inside a chip whose whole job is to name a move. It
+                // only scrolls when it has to (`basedOnSize`), so on a game whose three fit it is
+                // still just a row.
+                ScrollView(.horizontal) {
+                    HStack(spacing: 8) {
+                    ForEach(Array(worst.enumerated()), id: \.element.ply) { place, ranked in
                         Button { jump(toQuestion: ranked) } label: {
                             HStack(spacing: 5) {
+                                Text("\(place + 1)")
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(Palette.parchment)
+                                    .frame(width: 15, height: 15)
+                                    .background(Palette.inkSoft, in: Circle())
                                 let number = session.game.moveNumber(ofPly: ranked.ply)
                                 if session.isPractising {
                                     // No move to name, so the turn has to be named in words.
@@ -1013,9 +1053,19 @@ struct GameScreen: View {
                                     // sheet has to know this notation anyway.
                                     Text("\(number)\(ranked.mover == .white ? "." : "…") \(ranked.san)")
                                         .font(.notation)
-                                    if let quality = ranked.quality, quality != .fine {
-                                        Text(quality.mark).font(.caption2.bold())
-                                    }
+                                    // What it cost, which is the whole of why it is on this list —
+                                    // and said instead of the 漏着 that used to stand here, not
+                                    // beside it. The mark is a name for this number and the ply
+                                    // report above is already wearing it; two of them in one chip
+                                    // was what pushed the move's own name out of the chip.
+                                    //
+                                    // Only with the engine talking: while it is silent this is the
+                                    // answer to the question about to be asked.
+                                    Text(Self.cost(ranked.lost))
+                                        .font(.caption2.monospacedDigit())
+                                        .foregroundStyle(
+                                            ranked.lost > 0 ? Palette.alarm : Palette.analysis
+                                        )
                                 }
                             }
                             .lineLimit(1)
@@ -1028,13 +1078,36 @@ struct GameScreen: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    Spacer(minLength: 0)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 16)
                 }
+                .scrollBounceBehavior(.basedOnSize)
+                .scrollIndicators(.hidden)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16)
             .padding(.top, 10)
         }
+    }
+
+    /// What a ranked move cost its mover, in pawns. A move that *gained* is ranked too and reads
+    /// as a gain rather than a negative loss — "−0.30 丢分" is a sentence nobody parses.
+    private static func cost(_ lost: Int) -> String {
+        let pawns = String(format: "%.1f", Double(abs(lost)) / 100)
+        return lost > 0 ? "−\(pawns)" : "+\(pawns)"
+    }
+
+    /// Where the position on screen stands in that list of three, when it is one of them.
+    ///
+    /// The list is ranked and the chips say so, but somebody who tapped one and is now looking at
+    /// a board has left the list behind — and the board's own question, 你会走哪一步, says nothing
+    /// about why it is being asked here.
+    private var questionPlace: (place: Int, ranked: Criticality)? {
+        guard let worst = session.worstMoves(3) else { return nil }
+        guard let index = worst.firstIndex(where: { $0.ply - 1 == session.cursor }) else {
+            return nil
+        }
+        return (index + 1, worst[index])
     }
 
     /// The next worst move that is not the one already on screen, so 下一题 walks the three in
@@ -1115,18 +1188,36 @@ struct GameScreen: View {
                     .font(.caption)
                     .foregroundStyle(Palette.inkSoft)
             } else {
-                HStack(spacing: 12) {
-                    swatch(Palette.mine.opacity(0.45), "\(mover)管住了 \(change.gained.count) 格")
-                    swatch(Palette.alarm.opacity(0.35), "松开了 \(change.lost.count) 格")
-                    Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 12) {
+                        swatch(Palette.mine, "\(mover)管住了 \(change.gained.count) 格")
+                        swatch(Palette.alarm, "松开了 \(change.lost.count) 格")
+                        Spacer(minLength: 0)
+                    }
+                    // The one place where letting go of a square is not a matter of taste. Said
+                    // only when it happened, because a line that reads "0 格贴着王" every other
+                    // move is a line nobody reads by the third one.
+                    if !change.nearKing.isEmpty {
+                        Text("其中 \(change.nearKing.count) 格贴着\(mover)自己的王——对方的攻势从这里进来。")
+                            .font(.caption)
+                            .foregroundStyle(Palette.alarm)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         }
     }
 
+    /// A colour, drawn the way the board draws it, beside what it means. The same tint and the
+    /// same edge, or it is a legend for a different picture.
     private func swatch(_ colour: Color, _ label: String) -> some View {
         HStack(spacing: 5) {
-            RoundedRectangle(cornerRadius: 2).fill(colour).frame(width: 11, height: 11)
+            RoundedRectangle(cornerRadius: 2)
+                .fill(colour.opacity(0.24))
+                .frame(width: 12, height: 12)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 2).stroke(colour.opacity(0.9), lineWidth: 1.5)
+                )
             Text(label).font(.caption).foregroundStyle(Palette.inkSoft)
         }
     }
@@ -1366,12 +1457,15 @@ struct GameScreen: View {
                 // The result is at the top and on the bar; what is left to say is what to do next.
                 Text(
                     session.isPractising
-                        ? "这局走完了。打开「引擎意见」，它会把每一步重新打一遍分。"
+                        ? "这局走完了。点棋盘下面那只眼睛，引擎会把每一步重新打一遍分。"
                         : "这局走完了。曲线和每一步的得失都在下面。"
                 )
-            } else if session.isPractising {
-                Text("练习中，引擎不给意见。想看它怎么说，打开上面的「引擎意见」。")
             }
+            // Nothing here about practice any more. It used to say "练习中，引擎不给意见。想看它怎么
+            // 说，打开上面的「引擎意见」" — a sentence that pointed up at a switch in the navigation
+            // bar. The switch is now the eye in the strip directly under the board, wearing the
+            // word 练习 while it is off, so the sentence was three lines of a phone spent
+            // explaining a control that had come to explain itself.
             // What a game with nobody on the clock does, and how to stop it — which is the one
             // thing about self-play that is not on the screen already. Stepping back is a stop
             // because the engine only plays from the latest position, so browsing is where a

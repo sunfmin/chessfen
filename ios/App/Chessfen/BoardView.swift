@@ -248,20 +248,13 @@ struct BoardView: View {
                     context.fill(Path(box), with: .color(Self.lastMoveWash))
                 }
                 // What the move did to the squares, under the pieces, because it is about the
-                // squares — and a wash rather than a fill, so the checker pattern and the last
-                // move's green both go on showing through.
-                //
-                // Two colours for two opposite facts. The mover's own violet for the squares it
-                // took a grip on, and the alarm colour for the ones it let go of: this layer is
-                // read after a move to find out what it cost as much as what it won, and one
-                // colour for both made that impossible to see. Paler than the rings that wear the
-                // same colours, which are marks about *pieces* and have to stay the louder of the
-                // two.
+                // squares. Two colours for two opposite facts: the mover's own violet for the
+                // squares it took a grip on, the alarm colour for the ones it let go of.
                 if let control {
                     if control.gained.contains(square) {
-                        context.fill(Path(box), with: .color(Palette.mine.opacity(0.30)))
+                        markSquare(box, Palette.mine, cell: cell, into: &context)
                     } else if control.lost.contains(square) {
-                        context.fill(Path(box), with: .color(Palette.alarm.opacity(0.20)))
+                        markSquare(box, Palette.alarm, cell: cell, into: &context)
                     }
                 }
                 if checks.contains(square) { drawCheck(in: box, into: &context) }
@@ -307,6 +300,29 @@ struct BoardView: View {
         // board does not read as though only one arrow was drawn.
         if let mine { drawArrow(mine, cell: cell, colour: Palette.mine, into: &context) }
         if let recommendation { drawArrow(recommendation, cell: cell, into: &context) }
+    }
+
+    /// A whole square marked: a tint over it, and a line just inside its edge.
+    ///
+    /// The tint on its own was the trouble. This board is two browns, and a wash pale enough to
+    /// keep a piece readable over a light square disappears into a dark one — so the layer was
+    /// invisible on half the board it was drawn on, and the quieter of its two colours was
+    /// invisible on all of it. The line inside the edge is what carries the mark now: an edge
+    /// reads at full strength against any square colour, and the tint underneath can stay quiet
+    /// enough to draw a piece on top of.
+    ///
+    /// A square, not a circle. The rings on this board are marks about *pieces* — what is hanging,
+    /// what a claim is about — and these are marks about squares, some of which are empty.
+    private func markSquare(
+        _ box: CGRect, _ colour: Color, cell: CGFloat, into context: inout GraphicsContext
+    ) {
+        let width = max(1.5, cell * 0.055)
+        context.fill(Path(box), with: .color(colour.opacity(0.24)))
+        context.stroke(
+            Path(box.insetBy(dx: width / 2, dy: width / 2)),
+            with: .color(colour.opacity(0.9)),
+            lineWidth: width
+        )
     }
 
     private func drawCheck(in box: CGRect, into context: inout GraphicsContext) {
