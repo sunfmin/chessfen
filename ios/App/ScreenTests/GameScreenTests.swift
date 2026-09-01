@@ -893,7 +893,7 @@ struct GameScreenScreenshots {
         #expect(only.kind == .ownKing)
         #expect(!only.isGain, "she walked away from the square her own king stands on")
         #expect(rendered.says(only.note))
-        #expect(rendered.says("自己的王正站在上面"))
+        #expect(rendered.says("自己的王就站在 e8 上"))
     }
 
     /// An outpost, cashed in: the square, the piece that comes to it, and the walk between them.

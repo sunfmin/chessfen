@@ -159,12 +159,14 @@ extension Game {
             [Square: (kind: KeySquare.Kind, isGain: Bool, by: Occupation?, stuck: ShutOut?)] = [:]
         for (squares, isGain) in [(change.gained, true), (change.lost, false)] {
             for square in squares {
-                // A square you took is one *you* would come and use; one you let go of is one
-                // *they* would. Who walks there is the whole difference between an outpost and a
-                // weakness, and it is decided by which way the square went.
-                let comer = isGain ? mover : mover.opposite
-                let occupation = Rules.occupation(of: square, by: comer, pieces: pieces)
                 let stuck = passed.flatMap { shutOut(of: square, for: mover, in: $0) }
+                // Away from the kings, who would come and stand here follows which way the square
+                // went: one you took is one *you* would use, one you let go of is one *they*
+                // would, and that is the whole difference between an outpost and a weakness.
+                let awayFromKings = isGain ? mover : mover.opposite
+                let awayOccupation = Rules.occupation(
+                    of: square, by: awayFromKings, pieces: pieces
+                )
                 let kind: KeySquare.Kind?
                 if ownRing.contains(square) {
                     kind = .ownKing
@@ -175,7 +177,7 @@ extension Game {
                 ) {
                     // A hole nobody can get to is a weakness on paper. A hole with a piece walking
                     // towards it is the thing that actually happens to you.
-                    kind = occupation != nil ? .outpost : .hole
+                    kind = awayOccupation != nil ? .outpost : .hole
                 } else if stuck != nil {
                     // Nothing textbook about the square, and one of your own pieces still cannot
                     // go there. That is a fact about this position and nowhere else.
@@ -183,6 +185,19 @@ extension Game {
                 } else {
                     kind = nil
                 }
+                // Beside a king it does not follow which way the square went. The piece worth
+                // naming on a square by your own king is always *theirs* — what a square by your
+                // king is for is somebody arriving on it, and 「自己的马 2 步就能到 d7」 about the
+                // square in front of your own king is a true sentence nobody has a use for. Which
+                // king it is decides, and nothing else.
+                let occupation: Occupation? =
+                    switch kind {
+                    case .ownKing?:
+                        Rules.occupation(of: square, by: mover.opposite, pieces: pieces)
+                    case .enemyKing?:
+                        Rules.occupation(of: square, by: mover, pieces: pieces)
+                    default: awayOccupation
+                    }
                 if let kind { candidates[square] = (kind, isGain, occupation, stuck) }
             }
         }
@@ -261,22 +276,25 @@ extension Game {
         square: Square, kind: KeySquare.Kind, isGain: Bool, proof: KeySquare.Proof,
         isTheKingsOwnSquare: Bool, arrival: Occupation?, stuck: ShutOut?
     ) -> String {
+        // Every one of these says the square, then who it belongs to now, then *what that lets
+        // somebody do*. The last clause is the one that used to be missing: 「d7 补上了」 is a fact
+        // about a map, and a player asked to act on a map asks 然后呢 (docs/adr/0020, 0021).
         let what: String =
             switch (kind, isGain, isTheKingsOwnSquare) {
             case (.ownKing, false, true):
-                "\(square) 松开了，自己的王正站在上面——现在没有子在守着它"
+                "自己的王就站在 \(square) 上，而这格现在归对方管——王脚下已经不是自己的地方了"
             case (.ownKing, true, true):
-                "\(square) 补上了，自己的王正站在上面"
+                "自己的王就站在 \(square) 上，这格现在自己守得住"
             case (.ownKing, false, _):
-                "\(square) 松开了，就在自己王的旁边——对方的攻势从这里进来"
+                "\(square) 归对方管了，这格紧挨着自己的王——对方的攻势就从这儿切进来"
             case (.ownKing, true, _):
-                "\(square) 补上了，就在自己王的旁边"
+                "\(square) 自己守住了，这格紧挨着自己的王——对方想从这儿切进来，得先过这一关"
             case (.enemyKing, true, true):
-                "\(square) 管住了，对方的王正站在上面"
+                "对方的王就站在 \(square) 上，这格现在归自己管——王脚下已经是自己的地方了"
             case (.enemyKing, true, _):
-                "\(square) 管住了，就在对方王的旁边——攻势从这里开始"
+                "\(square) 归自己管了，这格紧挨着对方的王——攻势就从这儿起手"
             case (.enemyKing, false, _):
-                "\(square) 松开了，对方王边少了一分压力"
+                "\(square) 让给对方了，这格紧挨着对方的王——那边少了一分压力"
             case (.hole, true, _), (.outpost, true, _):
                 "\(square) 成了永久据点：对方的兵再也管不到这格"
             case (.hole, false, _), (.outpost, false, _):
@@ -294,9 +312,9 @@ extension Game {
         let because: String =
             switch proof {
             case .occupied(let step, let san):
-                "引擎第 \(step) 步就走 \(san)"
+                "引擎第 \(step) 步就走 \(san)，冲的就是这格"
             case .persisted(let plies):
-                "走完引擎这 \(plies) 步，它还是这样"
+                "引擎往下 \(plies) 步都没能改回来——这格就这么定了"
             }
         // Claim, mechanism, evidence — in that order, and the engine's word closes it.
         return "\(what)。\(walk(arrival, kind: kind, isGain: isGain))"
@@ -321,14 +339,25 @@ extension Game {
         // Never for a shut-out square: the claim there is that your own piece may *not* have it,
         // and a route saying it is one move away is the same fact wearing the opposite face.
         guard let arrival, kind != .shutOut else { return "" }
-        let whose = isGain ? "自己的" : "对方的"
-        let stay =
-            switch (kind, arrival.canBeDislodged) {
-            case (.ownKing, false), (.enemyKing, false): "，兵赶不走它"
-            case (.ownKing, true), (.enemyKing, true): "，不过兵还能把它赶走"
-            default: ""
-            }
-        return "\(whose)\(arrival.piece.kind.name)从 \(arrival.from) 走 \(arrival.moves) 步就到\(stay)。"
+        let piece = arrival.piece.kind.name
+        // Whose pawns would do the chasing is the other side from whoever arrives, and saying just
+        // 「兵」 left the reader to work out which — on a square by your own king, 「兵还能把它赶走」
+        // was a sentence about your own pawns doing you a favour and read as the opposite.
+        switch kind {
+        case .ownKing:
+            let stay =
+                arrival.canBeDislodged
+                ? "，好在自己的兵推上去能把它赶走" : "，而且自己的兵永远赶不走它"
+            return "对方的\(piece)从 \(arrival.from) 走 \(arrival.moves) 步就能站上来\(stay)。"
+        case .enemyKing:
+            let stay =
+                arrival.canBeDislodged
+                ? "，不过对方的兵推上来能把它赶走" : "，而且对方的兵永远赶不走它"
+            return "自己的\(piece)从 \(arrival.from) 走 \(arrival.moves) 步就能站上去\(stay)。"
+        default:
+            let whose = isGain ? "自己的" : "对方的"
+            return "\(whose)\(piece)从 \(arrival.from) 走 \(arrival.moves) 步就到。"
+        }
     }
 }
 

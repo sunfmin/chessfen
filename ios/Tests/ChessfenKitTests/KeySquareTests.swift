@@ -99,7 +99,7 @@ func aSquareNobodyVisitsPersistsAtMostAlone() throws {
             return
         }
         #expect(plies == 4)
-        #expect(only.note.contains("走完引擎这 4 步"))
+        #expect(only.note.contains("引擎往下 4 步都没能改回来"))
     }
 }
 
@@ -118,8 +118,11 @@ func lettingGoBesideYourOwnKingIsItsOwnKind() throws {
     #expect(d7.kind == .ownKing)
     #expect(!d7.isGain)
     #expect(d7.proof == .occupied(step: 1, san: "Rd7"))
-    #expect(d7.note.contains("自己王的旁边"))
-    #expect(d7.note.contains("对方的攻势从这里进来"))
+    #expect(d7.note.contains("紧挨着自己的王"))
+    #expect(d7.note.contains("对方的攻势就从这儿切进来"))
+    // And the piece named is theirs. On a square by your own king the arrival is always the
+    // invader — 「自己的车 1 步就能到 d7」 is true and nobody has a use for it.
+    #expect(d7.note.contains("对方的车从 a7"))
 }
 
 /// A square in the *other* king's ring is where an attack is built rather than where one arrives,
@@ -136,7 +139,10 @@ func takingBesideTheOtherKingIsItsOwnKind() throws {
     #expect(f7.mover == .white)
     #expect(f7.kind == .enemyKing)
     #expect(f7.isGain)
-    #expect(f7.note.contains("对方王的旁边"))
+    #expect(f7.note.contains("紧挨着对方的王"))
+    #expect(f7.note.contains("攻势就从这儿起手"))
+    // The mirror: by *their* king the arrival is always yours, because that is the attacker.
+    #expect(f7.note.contains("自己的车从 a7"))
 }
 
 @Test("never more than the limit, however much the engine's line touches")
@@ -161,8 +167,8 @@ func theKingsOwnSquareIsSaidDifferently() throws {
     let e8 = try #require(key.first { $0.square == (try? square("e8")) })
     #expect(e8.kind == .ownKing)
     #expect(!e8.isGain)
-    #expect(e8.note.contains("自己的王正站在上面"))
-    #expect(!e8.note.contains("旁边"))
+    #expect(e8.note.contains("自己的王就站在 e8 上"))
+    #expect(!e8.note.contains("紧挨着"))
 }
 
 // ------------------------------------------------------- who can actually come

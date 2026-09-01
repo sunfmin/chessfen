@@ -222,9 +222,14 @@ A square the board judged worth drawing: one a rules net proposed — beside the
 king, a hole no pawn of theirs can attack again, a square an enemy piece can reach and hold,
 a square one of their own pieces wants and cannot safely take — and the engine's Line then
 confirmed mattered. At most three per move and usually one, each with a sentence saying what
-it costs or buys. Ranked within the position, never against a threshold, for the same reason
-Criticality is (docs/adr/0017). Distinct from a Control Change, which is every square that
-changed hands and makes no claim about any of them. 这步的要害 on screen.
+it costs or buys. Every sentence is three clauses in one order — 这格现在归谁 / 谁能过来站上去，
+兵赶不赶得走 / 引擎凭什么这么说 — and the first clause always ends in what it lets somebody *do*,
+because 「d7 补上了」 is a fact about a map and a player handed a map asks 然后呢. Beside a king,
+「谁能过来」 is decided by whose king it is and never by which way the square went: the arrival
+worth naming by your own king is always theirs, and by theirs is always yours (docs/adr/0021).
+Ranked within the position, never against a threshold, for the same reason Criticality is
+(docs/adr/0017). Distinct from a Control Change, which is every square that changed hands and
+makes no claim about any of them. 这步的要害 on screen.
 _Avoid_: key square, weak square, hotspot, important square, highlight
 
 **走马灯**:
