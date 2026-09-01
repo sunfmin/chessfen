@@ -1,5 +1,11 @@
 # A Ply's evaluation belongs to a Review, and to nothing else
 
+> Extended by [ADR 0020](0020-the-layer-names-a-few-squares-instead-of-reporting-them-all.md): a Review now keeps
+> the Line it produced alongside the Score, under the same rule — nothing but a Review
+> writes either. The Line is what lets the board say which squares a move actually cost,
+> and keeping it costs no engine time, because the search that produced the Score produced
+> it too.
+
 `Game.Ply.evaluation` had three writers at different Depths from different engines: the
 unbounded search during play wrote whatever Depth it happened to have reached
 (`GameSession.recordAnalysis`), a Review overwrote the lot at one uniform Depth

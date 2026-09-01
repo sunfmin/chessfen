@@ -30,3 +30,8 @@ follows the player up as they improve without being told that they have.
   is covered by letting an Intent attach to a Variation they play out — the same Variation
   machinery a rewound Game already has. Still no level setting: a beginner never opens that
   door and a club player lives behind it.
+
+  > Built by [ADR 0020](0020-the-layer-names-a-few-squares-instead-of-reporting-them-all.md), which caps that
+  > Variation at five Ply and gives it a layer that marks the plan's gains and costs along
+  > the way. That ADR also borrows this one's central move — rank within the position,
+  > never a threshold — to decide which squares are worth drawing at all.

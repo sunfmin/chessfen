@@ -48,3 +48,8 @@ sequence is fixed: **the player answers, and only then does the engine.**
   changed hands — belongs to a Drill and a Review, not to a Game in progress.** Drawn
   during play it would be the blunder-check performed on the player's behalf, which is
   the one thing they are here to learn to do.
+
+  > Sharpened by [ADR 0020](0020-the-layer-names-a-few-squares-instead-of-reporting-them-all.md): during a Game
+  > the layer now draws nothing at all on its own initiative, and answers a tap about one
+  > square instead. After a Guess is committed it appears by itself — that is the moment the
+  > engine is already speaking, so a second tap to reach the reading buys nothing.

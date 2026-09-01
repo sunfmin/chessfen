@@ -211,11 +211,37 @@ _Avoid_: result, score, grade, feedback, verdict
 **Control Change**:
 What one move did to the map of who holds which squares, split by which way each square went
 for the side that played it: the squares it took a grip on and the squares it let go of. Two
-sets and not one — a move's gains and its costs are opposite facts, and a board that washed
-both in a single colour was a scattering of squares nobody could read. Only ever drawn on a
-past position, and always about that position's last Ply, which is the Guess when there is
-one. 这步改了什么 on screen.
+sets and not one — a move's gains and its costs are opposite facts. Not what the board draws:
+it is the **candidate pool** a 要害格 is chosen out of, because ten squares in two colours is
+a diff and a player cannot act on a diff (docs/adr/0020). Only ever computed for a past
+position, and always about that position's last Ply, which is the Guess when there is one.
 _Avoid_: influence, coverage, heat map, territory, diff
+
+**要害格**:
+A square the board judged worth drawing: one a rules net proposed — beside the mover's own
+king, a hole no pawn of theirs can attack again, a square an enemy piece can reach and hold,
+a square one of their own pieces wants and cannot safely take — and the engine's Line then
+confirmed mattered. At most three per move and usually one, each with a sentence saying what
+it costs or buys. Ranked within the position, never against a threshold, for the same reason
+Criticality is (docs/adr/0017). Distinct from a Control Change, which is every square that
+changed hands and makes no claim about any of them. 这步的要害 on screen.
+_Avoid_: key square, weak square, hotspot, important square, highlight
+
+**走马灯**:
+Playing a Line out on the main board a Ply at a time, with the 要害格 layer following each
+step and one cumulative sentence saying where the whole line arrived. Ephemeral by
+definition: no Variation is made, nothing reaches the PGN, and leaving it restores the
+position exactly — a Line is a hypothesis and nothing was played. The concrete form of
+"seeing five moves ahead", as against being told that one should.
+_Avoid_: playback, animation, preview, autoplay, simulation
+
+**五步计划**:
+A Variation of the player's own, at most five Ply, carrying one Intent judged over the whole
+line instead of over its first move. The unbuilt consequence of docs/adr/0017, finally built.
+The cap is about what can be checked rather than about how far people see: past about five
+Ply the opponent has had enough replies that no claim about the position is falsifiable, and
+an Intent that cannot be told false is not one (docs/adr/0018).
+_Avoid_: plan, strategy, sequence, combination, opening prep
 
 **Intent**:
 What the player says a move was *for*: one verb and one target Square, declared by whoever
