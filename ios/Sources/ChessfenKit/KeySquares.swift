@@ -309,16 +309,30 @@ extension Game {
                 "\(square) 松开了，而自己的\(stuck?.piece.kind.name ?? "子")本来也站不上去"
                     + "：对方有 \(stuck?.defenders ?? 0) 个子看着这格"
             }
+        // The evidence, and it has to be a thing that happens rather than a thing the app decided.
+        // The Line runs from the position the move made, so its first Ply is the reply: odd steps
+        // are the opponent's and even ones are the mover's own.
         let because: String =
             switch proof {
             case .occupied(let step, let san):
-                "引擎第 \(step) 步就走 \(san)，冲的就是这格"
+                "引擎往下第 \(step) 步，\(step.isMultiple(of: 2) ? "自己" : "对方")就走 \(san) 站到这格上"
             case .persisted(let plies):
-                "引擎往下 \(plies) 步都没能改回来——这格就这么定了"
+                // Not 「没能改回来」: nobody was trying to change it back. What is being said is
+                // that the change outlived the answer, which is what makes it worth a sentence at
+                // all — a square that flips back next move is not a 要害格.
+                "往下 \(plies) 步这格都没变回去，不是随手一步能扳回来的"
             }
+        // The Line landing one of the mover's own moves on the square refutes 「去了就亏」 outright,
+        // so that clause is not said then: 「自己的车想去，可去了就亏。引擎第 2 步就走 Rf7 站上去」
+        // is two true halves that read as one wrong sentence. Even steps are the mover's own.
+        let isTakenByTheMover =
+            if case .occupied(let step, _) = proof { step.isMultiple(of: 2) } else { false }
+        // And when the walk clause has already named the piece, the cost clause does not name it
+        // again — 「自己的车…能站上去。自己的车想去…」 reads as two different rooks.
+        let named = arrival != nil && (kind == .enemyKing || (kind != .ownKing && isGain))
         // Claim, mechanism, evidence — in that order, and the engine's word closes it.
         return "\(what)。\(walk(arrival, kind: kind, isGain: isGain))"
-            + "\(wanted(stuck, kind: kind))\(because)。"
+            + "\(isTakenByTheMover ? "" : wanted(stuck, kind: kind, isNamed: named))\(because)。"
     }
 
     /// The clause that turns a square into something that happens: which piece comes and how far
@@ -330,9 +344,11 @@ extension Game {
     /// saying it twice is saying it once and wasting a line.
     /// The mirror clause: which of your own pieces wants the square, and how many of theirs are
     /// looking at it. Not said for `.shutOut` itself, where the claim above already is this.
-    private static func wanted(_ stuck: ShutOut?, kind: KeySquare.Kind) -> String {
+    private static func wanted(_ stuck: ShutOut?, kind: KeySquare.Kind, isNamed: Bool) -> String {
         guard let stuck, kind != .shutOut else { return "" }
-        return "自己的\(stuck.piece.kind.name)想去，可对方有 \(stuck.defenders) 个子看着这格，去了就亏。"
+        return isNamed
+            ? "对方有 \(stuck.defenders) 个子看着这格，现在过去就亏。"
+            : "自己的\(stuck.piece.kind.name)想去，可对方有 \(stuck.defenders) 个子看着这格，去了就亏。"
     }
 
     private static func walk(_ arrival: Occupation?, kind: KeySquare.Kind, isGain: Bool) -> String {

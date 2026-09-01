@@ -99,7 +99,7 @@ func aSquareNobodyVisitsPersistsAtMostAlone() throws {
             return
         }
         #expect(plies == 4)
-        #expect(only.note.contains("引擎往下 4 步都没能改回来"))
+        #expect(only.note.contains("往下 4 步这格都没变回去"))
     }
 }
 
@@ -118,6 +118,9 @@ func lettingGoBesideYourOwnKingIsItsOwnKind() throws {
     #expect(d7.kind == .ownKing)
     #expect(!d7.isGain)
     #expect(d7.proof == .occupied(step: 1, san: "Rd7"))
+    // The Line runs from the position the move made, so its first Ply is the reply — and the
+    // sentence says whose move it is rather than leaving the step number to be counted out.
+    #expect(d7.note.contains("引擎往下第 1 步，对方就走 Rd7 站到这格上"))
     #expect(d7.note.contains("紧挨着自己的王"))
     #expect(d7.note.contains("对方的攻势就从这儿切进来"))
     // And the piece named is theirs. On a square by your own king the arrival is always the
@@ -140,6 +143,9 @@ func takingBesideTheOtherKingIsItsOwnKind() throws {
     #expect(f7.kind == .enemyKing)
     #expect(f7.isGain)
     #expect(f7.note.contains("紧挨着对方的王"))
+    // And not 「去了就亏」: the Line puts the mover's own rook on f7 two plies later, which refutes
+    // it outright. Two true halves that read as one wrong sentence.
+    #expect(!f7.note.contains("就亏"))
     #expect(f7.note.contains("攻势就从这儿起手"))
     // The mirror: by *their* king the arrival is always yours, because that is the attacker.
     #expect(f7.note.contains("自己的车从 a7"))
