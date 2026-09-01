@@ -26,7 +26,12 @@ import Foundation
 
     /// What the app is actually speaking, chosen or followed. What the root view is keyed on, so
     /// every screen is rebuilt in the new language the moment this changes.
-    var current: Language { Speech.language }
+    ///
+    /// Reads `chosen` rather than `Speech.language`, which is the same answer by a different
+    /// route — but only the first route is a stored property of an `@Observable`, and a view
+    /// that reads the second one registers no dependency on anything and is never invalidated.
+    /// The screens would have gone on speaking the old language until something else redrew them.
+    var current: Language { chosen ?? Speech.followingSystem }
 
     private static let key = "chessfen.language"
 
