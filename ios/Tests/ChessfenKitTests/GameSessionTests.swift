@@ -15,8 +15,8 @@ private final class SilentEngine: Engine, @unchecked Sendable {
     func clear() async {}
     func evaluate(_ game: Game, budget: SearchBudget) async -> Score? { nil }
     func review(
-        _ game: Game, depth: Int, onPly: (@Sendable (Int, Score?) -> Void)?
-    ) async -> [Score?] { [] }
+        _ game: Game, depth: Int, onPly: (@Sendable (Int, ReviewedPly) -> Void)?
+    ) async -> [ReviewedPly] { [] }
 }
 
 @MainActor @Test("a saved record opens facing the side to move")

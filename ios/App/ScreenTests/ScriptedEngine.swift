@@ -71,14 +71,19 @@ final class ScriptedEngine: Engine {
         byPosition[game.state.fen]?.best?.score ?? snapshots.last?.best?.score
     }
 
-    /// One Score per ply, walked down the script so a curve has something to be a curve about.
+    /// One result per ply, walked down the script so a curve has something to be a curve about.
+    /// The scripted Line rides along with the Score, because that is what the real pass does now
+    /// and a screen reading one must be able to be handed one (docs/adr/0020).
     func review(
-        _ game: Game, depth: Int, onPly: (@Sendable (Int, Score?) -> Void)?
-    ) async -> [Score?] {
+        _ game: Game, depth: Int, onPly: (@Sendable (Int, ReviewedPly) -> Void)?
+    ) async -> [ReviewedPly] {
         game.plies.indices.map { ply in
-            let score = snapshots[min(ply, snapshots.count - 1)].best?.score
-            onPly?(ply, score)
-            return score
+            let best = snapshots[min(ply, snapshots.count - 1)].best
+            let result = ReviewedPly(
+                score: best?.score, line: Array((best?.san ?? []).prefix(Game.Ply.lineLimit))
+            )
+            onPly?(ply, result)
+            return result
         }
     }
 }

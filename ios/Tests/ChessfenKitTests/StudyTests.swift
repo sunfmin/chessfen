@@ -478,12 +478,15 @@ private final class PositionalEngine: Engine {
     }
 
     func review(
-        _ game: Game, depth: Int, onPly: (@Sendable (Int, Score?) -> Void)?
-    ) async -> [Score?] {
+        _ game: Game, depth: Int, onPly: (@Sendable (Int, ReviewedPly) -> Void)?
+    ) async -> [ReviewedPly] {
         game.plies.indices.map { ply in
-            let score = answers[game.rewound(to: ply + 1)?.state.fen ?? ""]?.best?.score
-            onPly?(ply, score)
-            return score
+            let best = answers[game.rewound(to: ply + 1)?.state.fen ?? ""]?.best
+            let result = ReviewedPly(
+                score: best?.score, line: Array((best?.san ?? []).prefix(Game.Ply.lineLimit))
+            )
+            onPly?(ply, result)
+            return result
         }
     }
 }
@@ -514,13 +517,17 @@ private final class HeldEngine: Engine {
     func evaluate(_ game: Game, budget: SearchBudget) async -> Score? { answer.best?.score }
 
     func review(
-        _ game: Game, depth: Int, onPly: (@Sendable (Int, Score?) -> Void)?
-    ) async -> [Score?] {
-        onPly?(0, answer.best?.score)
+        _ game: Game, depth: Int, onPly: (@Sendable (Int, ReviewedPly) -> Void)?
+    ) async -> [ReviewedPly] {
+        let result = ReviewedPly(
+            score: answer.best?.score,
+            line: Array((answer.best?.san ?? []).prefix(Game.Ply.lineLimit))
+        )
+        onPly?(0, result)
         while !released.withLock({ $0 }) {
             if Task.isCancelled { break }
             try? await Task.sleep(for: .milliseconds(20))
         }
-        return game.plies.indices.map { _ in answer.best?.score }
+        return game.plies.indices.map { _ in result }
     }
 }

@@ -2,7 +2,8 @@ import Foundation
 
 /// The stored form of a Game, which is also its exported form and its imported form —
 /// there is deliberately only one (docs/adr/0010). `[FEN]` carries the recognised
-/// starting Position and `{[%eval …]}` carries a Review's scores, both being conventions
+/// starting Position and `{[%eval …]}` / `{[%line …]}` carry a Review's scores and the lines
+/// they came out of, all being conventions
 /// PGN already has.
 public struct PGN: Hashable, Sendable {
     /// Tag pairs in the order they will be written. PGN wants the seven-tag roster first.
@@ -122,6 +123,12 @@ public struct PGN: Hashable, Sendable {
             var comment: [String] = []
             if let evaluation = ply.evaluation ?? ply.importedEvaluation {
                 comment.append("[%eval \(evaluation.pgnText)]")
+            }
+            // The Line the same search produced, in the same braced convention. SAN rather than
+            // UCI: it is read back by replaying it, so either would do, and only one of the two
+            // is a thing a person opening the file in anything else can read (docs/adr/0020).
+            if !ply.line.isEmpty {
+                comment.append("[%line \(ply.line.joined(separator: " "))]")
             }
             // The player's own words about the move, in the same braced convention as the
             // engine's (docs/adr/0018). One comment carrying both rather than two, which is how
@@ -248,6 +255,13 @@ public struct PGN: Hashable, Sendable {
                 frames[last].game.setEvaluation(
                     score, atPly: frames[last].game.plies.count - 1, reviewed: isReviewed
                 )
+            case .line(let line):
+                guard !frames[last].dead else { continue }
+                // A Line standing before the first move belongs to the starting position and has
+                // nowhere to go: what reads it is a move's own consequences, and there is no move.
+                frames[last].game.setLine(
+                    line, atPly: frames[last].game.plies.count - 1, reviewed: isReviewed
+                )
             case .intent(let intent):
                 guard !frames[last].dead else { continue }
                 // An Intent belongs to a move, so one standing before the first move has
@@ -296,6 +310,7 @@ private struct Scanner {
     enum MovetextToken {
         case move(String)
         case evaluation(Score)
+        case line([String])
         case intent(Intent)
         case variationStart
         case variationEnd
@@ -342,6 +357,7 @@ private struct Scanner {
                 // anything to keep: an unknown `[%…]`, a malformed one, or somebody's prose all
                 // read the same way to a file that must still open.
                 if let score = Self.evaluation(in: comment) { tokens.append(.evaluation(score)) }
+                if let line = Self.line(in: comment) { tokens.append(.line(line)) }
                 if let intent = Self.intent(in: comment) { tokens.append(.intent(intent)) }
             case ";":
                 _ = read(while: { !$0.isNewline })
@@ -372,6 +388,10 @@ private struct Scanner {
 
     private static func evaluation(in comment: String) -> Score? {
         Self.body(of: "eval", in: comment).flatMap { Score(pgnText: $0) }
+    }
+
+    private static func line(in comment: String) -> [String]? {
+        Self.body(of: "line", in: comment).map { $0.split(separator: " ").map(String.init) }
     }
 
     private static func intent(in comment: String) -> Intent? {

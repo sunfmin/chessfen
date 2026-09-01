@@ -328,18 +328,23 @@ public final class EngineService: @unchecked Sendable {
     /// compared with each other. These can. The returned array has one entry per ply,
     /// each being the Score *after* that ply.
     ///
-    /// `onPly` reports each Score as it lands, because a Review of a long game is a wait
+    /// Each ply comes back with the Line its search produced as well as its Score. The Line is
+    /// free here and expensive anywhere else: this is the one pass that visits every position of
+    /// a Game, and a board asking for a continuation later would be starting a Stint
+    /// (docs/adr/0019, 0020).
+    ///
+    /// `onPly` reports each result as it lands, because a Review of a long game is a wait
     /// worth showing progress through rather than a spinner. It is called from the engine's
     /// queue, so anything it touches must be ready for that.
     public func review(
-        _ game: Game, depth: Int, onPly: (@Sendable (Int, Score?) -> Void)? = nil
-    ) async -> [Score?] {
+        _ game: Game, depth: Int, onPly: (@Sendable (Int, ReviewedPly) -> Void)? = nil
+    ) async -> [ReviewedPly] {
         guard !game.plies.isEmpty else { return [] }
-        var scores: [Score?] = []
+        var reviewed: [ReviewedPly] = []
         for ply in 1...game.plies.count {
             guard let position = game.rewound(to: ply) else {
-                scores.append(nil)
-                onPly?(ply - 1, nil)
+                reviewed.append(ReviewedPly(score: nil))
+                onPly?(ply - 1, ReviewedPly(score: nil))
                 continue
             }
             // A Review holds where it stands while the app is away, and a ply the app left in
@@ -359,11 +364,15 @@ public final class EngineService: @unchecked Sendable {
                 // twice the wait per ply of a walk that visits every ply of a long game.
                 for await analysis in analyse(position, budget: .depth(depth), lines: 1) { best = analysis }
             } while isPaused && !Task.isCancelled
-            scores.append(best?.best?.score)
-            onPly?(ply - 1, best?.best?.score)
+            let result = ReviewedPly(
+                score: best?.best?.score,
+                line: Array((best?.best?.san ?? []).prefix(Game.Ply.lineLimit))
+            )
+            reviewed.append(result)
+            onPly?(ply - 1, result)
             if Task.isCancelled { break }
         }
-        return scores
+        return reviewed
     }
 
     /// Forgets the transposition table and history. The honest thing to do before a Review,

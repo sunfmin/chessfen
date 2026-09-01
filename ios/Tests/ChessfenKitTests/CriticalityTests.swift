@@ -209,7 +209,7 @@ func unscoredPliesAreNotRanked() throws {
 @Test("a reviewed game with no moves ranks nothing, and says so as an empty list")
 func anEmptyGameIsNotARefusal() throws {
     var game = try played([])
-    game.applyReview([], startEvaluation: .centipawns(20), depth: 18)
+    game.applyReview([Score?](), startEvaluation: .centipawns(20), depth: 18)
     #expect(game.criticality()?.isEmpty == true)
 }
 

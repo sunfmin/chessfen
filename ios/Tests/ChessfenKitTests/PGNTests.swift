@@ -181,3 +181,105 @@ func setTagKeepsOrder() throws {
     #expect(read.tag("Event") == "啄木鸟全集")
     #expect(read.tag("Name") == nil)
 }
+
+// ---------------------------------------------------- the lines a Review kept
+
+/// The Line the Review's own search produced, kept because it is the only free copy of it there
+/// will ever be: asking again later would cost a Stint (docs/adr/0019, 0020).
+@Test("the lines a Review kept survive being written out and read back")
+func pgnRoundTripsTheReviewsLines() throws {
+    var game = try #require(Game(startFEN: start, uciMoves: ["e2e4", "e7e5", "g1f3"]))
+    game.applyReview(
+        [
+            ReviewedPly(score: .centipawns(31), line: ["e5", "Nf3", "Nc6"]),
+            ReviewedPly(score: .centipawns(-12), line: ["Nf3", "Nc6", "Bb5"]),
+            ReviewedPly(score: .centipawns(24), line: ["Nc6", "Bb5", "a6"]),
+        ],
+        startEvaluation: .centipawns(20),
+        depth: 18
+    )
+
+    let written = PGN(game: game, tags: []).text
+    #expect(written.contains("[%line e5 Nf3 Nc6]"), "SAN, in the braces, beside the eval")
+
+    let read = try PGN(parsing: written).game
+    #expect(read.plies.map(\.line) == game.plies.map(\.line))
+    #expect(read.reviewLine(atPly: 1) == ["e5", "Nf3", "Nc6"])
+    #expect(read.reviewLine(atPly: 3) == ["Nc6", "Bb5", "a6"])
+    // The eval and the line share one comment, the way every other tool writes these.
+    #expect(written.contains("{[%eval 0.31] [%line e5 Nf3 Nc6]}"))
+}
+
+@Test("a Ply with no line writes no line token, and a file written before them still opens")
+func pgnWithoutLinesStillReads() throws {
+    var game = try #require(Game(startFEN: start, uciMoves: ["e2e4", "e7e5"]))
+    game.applyReview([.centipawns(31), .centipawns(-12)], startEvaluation: nil, depth: 18)
+    let written = PGN(game: game, tags: []).text
+    #expect(!written.contains("[%line"))
+
+    // The same shape as a file this app wrote before the field existed: evals, a Review Depth,
+    // and nothing else. It opens as a reviewed game whose lines are simply not there.
+    let old = """
+        [ReviewDepth "18"]
+
+        1. e4 {[%eval +0.31]} e5 {[%eval -0.12]} *
+        """
+    let read = try PGN(parsing: old).game
+    #expect(read.isReviewed)
+    #expect(read.plies.map(\.evaluation) == [.centipawns(31), .centipawns(-12)])
+    #expect(read.plies.allSatisfy { $0.line.isEmpty })
+    #expect(read.reviewLine(atPly: 1).isEmpty)
+}
+
+/// Somebody else's engine at a Depth nobody wrote down. The Scores are kept to be shown as
+/// theirs; a Line has no such reader, so it goes the way it always went (docs/adr/0016).
+@Test("a line in a file with no Review Depth is dropped rather than believed")
+func importedLinesAreDropped() throws {
+    let theirs = """
+        1. e4 {[%eval +0.31] [%line e5 Nf3]} e5 *
+        """
+    let read = try PGN(parsing: theirs).game
+    #expect(read.plies[0].importedEvaluation == .centipawns(31))
+    #expect(read.plies[0].evaluation == nil)
+    #expect(read.plies[0].line.isEmpty, "not this app's line, and nothing here may compare it")
+    #expect(read.reviewLine(atPly: 1).isEmpty)
+}
+
+/// A cap, not a suggestion: a line is written into every copy of every file for as long as the
+/// file exists, and a Review's line stops being worth much long before it stops being long.
+@Test("a line longer than the cap is cut, wherever it comes in")
+func linesAreCapped() throws {
+    let long = (1...20).map { "N\($0)" }
+    var game = try #require(Game(startFEN: start, uciMoves: ["e2e4"]))
+    game.applyReview(
+        [ReviewedPly(score: .centipawns(31), line: long)], startEvaluation: nil, depth: 18
+    )
+    #expect(game.plies[0].line.count == Game.Ply.lineLimit)
+    #expect(game.plies[0].line.first == "N1")
+
+    let read = try PGN(parsing: """
+        [ReviewDepth "18"]
+
+        1. e4 {[%line \(long.joined(separator: " "))]} *
+        """).game
+    #expect(read.plies[0].line.count == Game.Ply.lineLimit)
+}
+
+/// Replaying a line loses everything that is *said about* a move, so every replayer puts it back
+/// through one list. A field added and only two of three call sites remembering it is exactly how
+/// this goes wrong.
+@Test("rewinding a game keeps the lines a Review wrote")
+func rewindingKeepsTheLines() throws {
+    var game = try #require(Game(startFEN: start, uciMoves: ["e2e4", "e7e5", "g1f3"]))
+    game.applyReview(
+        [
+            ReviewedPly(score: .centipawns(31), line: ["e5"]),
+            ReviewedPly(score: .centipawns(-12), line: ["Nf3"]),
+            ReviewedPly(score: .centipawns(24), line: ["Nc6"]),
+        ],
+        startEvaluation: nil,
+        depth: 18
+    )
+    let back = try #require(game.rewound(to: 2))
+    #expect(back.plies.map(\.line) == [["e5"], ["Nf3"]])
+}

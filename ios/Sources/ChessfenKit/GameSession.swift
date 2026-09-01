@@ -886,7 +886,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
                 baseline = await engine.evaluate(start, budget: .depth(depth))
             }
             if Task.isCancelled { return }
-            let scores = await engine.review(reviewed, depth: depth) { index, _ in
+            let results = await engine.review(reviewed, depth: depth) { index, _ in
                 Task { @MainActor in self?.notePassReached(index) }
             }
             guard let self, !Task.isCancelled else { return }
@@ -900,9 +900,9 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
                 reviewPass = nil
                 return
             }
-            applyReview(scores, startEvaluation: baseline, depth: depth)
+            applyReview(results, startEvaluation: baseline, depth: depth)
             if var pass = reviewPass {
-                pass.completed = scores.count
+                pass.completed = results.count
                 pass.isRunning = false
                 reviewPass = pass
             }
@@ -1301,6 +1301,12 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// numbers nothing may be compared against (docs/adr/0016).
     public func applyReview(_ scores: [Score?], startEvaluation: Score?, depth: Int) {
         game.applyReview(scores, startEvaluation: startEvaluation, depth: depth)
+        save()
+    }
+
+    /// The same, from a pass that kept the Line each Score came out of (docs/adr/0020).
+    public func applyReview(_ reviewed: [ReviewedPly], startEvaluation: Score?, depth: Int) {
+        game.applyReview(reviewed, startEvaluation: startEvaluation, depth: depth)
         save()
     }
 

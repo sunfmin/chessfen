@@ -185,18 +185,28 @@ struct EngineTests {
         )
 
         await service.clear()
-        let scores = await service.review(game, depth: 6)
-        #expect(scores.count == game.plies.count)
-        #expect(scores.allSatisfy { $0 != nil })
+        let reviewed = await service.review(game, depth: 6)
+        #expect(reviewed.count == game.plies.count)
+        #expect(reviewed.allSatisfy { $0.score != nil })
 
         // Four sensible opening moves; nobody is winning yet, and nobody is mated.
-        for score in scores.compactMap({ $0 }) {
+        for score in reviewed.compactMap({ $0.score }) {
             guard case .centipawns(let value) = score else {
                 Issue.record("an opening ply should not score as a mate")
                 continue
             }
             #expect(abs(value) < 150, "an opening ply scored \(value)")
         }
+
+        // And the Line the search produced comes back with it, which is the whole point of
+        // asking a Review for one: nothing else in the app can afford to (docs/adr/0020).
+        #expect(reviewed.allSatisfy { !$0.line.isEmpty }, "a Review that kept no lines")
+        #expect(
+            reviewed.allSatisfy { $0.line.count <= Game.Ply.lineLimit },
+            "a line longer than the cap would be written to every file for ever"
+        )
+        // SAN, not UCI: what goes in the file is what a person can read.
+        #expect(reviewed.allSatisfy { $0.line.allSatisfy { !$0.isEmpty && $0.first!.isLetter || $0.first! == "O" } })
     }
 
     @Test("a review of a game with no moves is empty rather than nil-padded")

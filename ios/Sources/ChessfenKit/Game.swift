@@ -24,6 +24,15 @@ public struct Game: Hashable, Sendable {
         /// nobody wrote down. Kept so it can be shown as theirs, and never read when a move
         /// is being judged.
         public var importedEvaluation: Score?
+        /// The engine's expected continuation from the position *after* this move, in SAN,
+        /// written by a **Review and by nothing else** — the same rule as `evaluation`, and for
+        /// the same reason: a Line from a search at some other Depth cannot be compared with the
+        /// Lines around it (docs/adr/0016, 0020).
+        ///
+        /// Empty rather than optional. "The Review had nothing to say here" and "there has been
+        /// no Review" are told apart by `reviewDepth`, which is where every other question about
+        /// provenance is already answered.
+        public var line: [String] = []
         /// The moves that were played from this ply's own starting position instead of this
         /// ply — each one an alternative to *this* move and everything that followed it.
         ///
@@ -44,6 +53,7 @@ public struct Game: Hashable, Sendable {
             san: String,
             evaluation: Score? = nil,
             importedEvaluation: Score? = nil,
+            line: [String] = [],
             variations: [[Ply]] = [],
             intent: Intent? = nil
         ) {
@@ -51,9 +61,17 @@ public struct Game: Hashable, Sendable {
             self.san = san
             self.evaluation = evaluation
             self.importedEvaluation = importedEvaluation
+            self.line = line
             self.variations = variations
             self.intent = intent
         }
+
+        /// How many Ply of a Review's Line are kept.
+        ///
+        /// Four moves each side. Past that a Line at Review Depth is a claim about a position the
+        /// opponent has had four chances to disagree with, nothing in the app reads further, and
+        /// every extra move is bytes in every file for as long as the file exists.
+        public static let lineLimit = 8
 
         /// Takes over everything that is *said about* a move rather than being the move.
         ///
@@ -64,6 +82,7 @@ public struct Game: Hashable, Sendable {
         mutating func takeAnnotations(from other: Self) {
             evaluation = other.evaluation
             importedEvaluation = other.importedEvaluation
+            line = other.line
             variations = other.variations
             intent = other.intent
         }
@@ -293,8 +312,21 @@ public struct Game: Hashable, Sendable {
     /// compared against, and making that impossible to express is cheaper than remembering
     /// not to (docs/adr/0016).
     public mutating func applyReview(_ scores: [Score?], startEvaluation: Score?, depth: Int) {
-        for (ply, score) in scores.enumerated() where plies.indices.contains(ply) {
-            plies[ply].evaluation = score
+        applyReview(
+            scores.map { ReviewedPly(score: $0) }, startEvaluation: startEvaluation, depth: depth
+        )
+    }
+
+    /// The same, from a pass that kept the Line each Score came out of.
+    ///
+    /// The Lines go in through here and through nowhere else, so "written by a Review" is a
+    /// property of the code rather than a rule somebody has to remember (docs/adr/0016, 0020).
+    public mutating func applyReview(
+        _ reviewed: [ReviewedPly], startEvaluation: Score?, depth: Int
+    ) {
+        for (ply, result) in reviewed.enumerated() where plies.indices.contains(ply) {
+            plies[ply].evaluation = result.score
+            plies[ply].line = Array(result.line.prefix(Ply.lineLimit))
         }
         self.startEvaluation = startEvaluation
         self.reviewDepth = depth
@@ -306,6 +338,13 @@ public struct Game: Hashable, Sendable {
         guard isReviewed else { return nil }
         if ply == 0 { return startEvaluation }
         return plies.indices.contains(ply - 1) ? plies[ply - 1].evaluation : nil
+    }
+
+    /// The Review's Line from the position after `ply` moves, in SAN. Empty for a Game no Review
+    /// has been over, whatever is in its fields — the same refusal `reviewScore` makes.
+    public func reviewLine(atPly ply: Int) -> [String] {
+        guard isReviewed, ply > 0, plies.indices.contains(ply - 1) else { return [] }
+        return plies[ply - 1].line
     }
 
     /// Who played the `ply`th move, counting from one. Not always White: a Game recognised
@@ -350,6 +389,14 @@ public struct Game: Hashable, Sendable {
         } else {
             plies[ply].importedEvaluation = score
         }
+    }
+
+    /// Where a PGN's `[%line]` comments land. Only for a file that carried a Review Depth: a Line
+    /// from somebody else's engine at a Depth nobody wrote down has no reader here and is dropped
+    /// on the floor, which is what happened to every Line before this field existed.
+    mutating func setLine(_ line: [String], atPly ply: Int, reviewed: Bool) {
+        guard reviewed, ply >= 0, plies.indices.contains(ply) else { return }
+        plies[ply].line = Array(line.prefix(Ply.lineLimit))
     }
 
     /// Declares what the move at `ply` was for, counting from one — or takes the declaration
