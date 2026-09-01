@@ -160,3 +160,63 @@ extension Intent {
             || abs(one.file - other.file) == abs(one.rank - other.rank)
     }
 }
+
+/// Whether a plan's one Intent held over the line it was declared about, and where.
+///
+/// The same verdicts a single-Ply Intent gets, plus the step: 「第 3 步 Nd5 的时候成立」 is a fact a
+/// player can go and look at, where 「计划成立」 is a grade. And it is the *same checker* that
+/// produced it — the claim is put to each of the mover's own moves in turn, in the position that
+/// move was played in, and the first one it holds on is the answer (docs/adr/0017, 0018).
+public struct PlanCheck: Hashable, Sendable {
+    public let verdict: IntentCheck.Verdict
+    /// Which move of the plan made the claim true, counting from one. Nil when none did.
+    public let step: Int?
+    /// That move, in SAN.
+    public let san: String?
+    /// What the board says, in the same terms the claim was made in.
+    public let note: String?
+
+    public var held: Bool { verdict == .held }
+}
+
+extension Intent {
+    /// Checks this Intent over a whole line, one move at a time.
+    ///
+    /// `line` is SAN from `before` onwards — the plan as it was played out. Only the mover's own
+    /// moves are put to the test: the opponent's replies are what the plan has to survive, not what
+    /// it claims. The claim holds if it held on one of them, and the step is reported so the player
+    /// can go and look at the move that did it.
+    ///
+    /// Nil when the line will not replay. Not `.failed`: an app that cannot tell has no business
+    /// saying somebody was wrong.
+    public func check(plan line: [String], in before: Game) -> PlanCheck? {
+        guard case .claim = self else {
+            return PlanCheck(verdict: .noClaim, step: nil, san: nil, note: nil)
+        }
+        guard !line.isEmpty else { return nil }
+
+        let mover = before.state.sideToMove
+        var walk = before
+        var last: (step: Int, san: String, check: IntentCheck)?
+        for (index, san) in line.enumerated() {
+            let position = walk
+            let isOurs = position.state.sideToMove == mover
+            guard walk.apply(san: san), let played = walk.plies.last,
+                let move = position.state.move(matching: played.uci)
+            else { return nil }
+            guard isOurs, let check = check(move, in: position) else { continue }
+            if check.held {
+                return PlanCheck(
+                    verdict: .held, step: index + 1, san: san, note: check.note
+                )
+            }
+            last = (index + 1, san, check)
+        }
+        // Nothing in the plan made it true. The note is the last of the mover's own moves, because
+        // that is the state of affairs the plan actually left behind.
+        guard let last else { return nil }
+        return PlanCheck(
+            verdict: .failed, step: last.step, san: last.san, note: last.check.note
+        )
+    }
+}

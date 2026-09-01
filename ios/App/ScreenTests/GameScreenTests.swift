@@ -471,6 +471,57 @@ struct GameScreenScreenshots {
         #expect(session.analysis == nil)
     }
 
+    /// 五步计划: five moves of your own with one reason over all of them, and that reason judged.
+    ///
+    /// docs/adr/0017 said an Intent should be able to hang off a Variation rather than a single Ply
+    /// and nothing was ever built for it. The cap is five because five is what can be checked: past
+    /// that the opponent has had enough replies that no claim about the position is falsifiable, and
+    /// a verb that cannot be wrong does not get one of the eight slots (docs/adr/0018).
+    @Test("a five-move plan is built on the board and its one reason is judged over the whole line")
+    func planBuiltAndJudged() async throws {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
+        let session = GameSession.fresh(game)
+        let engine = ScriptedEngine(Self.searching, isEndless: true)
+        session.attach(engine: engine, library: nil)
+        session.jump(toPly: 2)
+
+        session.startPlan()
+        // The oldest plan in chess: two pieces onto f7. Five plies, played on the board.
+        for uci in ["f1c4", "g8f6", "g1f3", "b8c6", "f3g5"] {
+            session.addToPlan(try #require(session.board.state.move(matching: uci)))
+        }
+        let drafting = await ScreenImage.write("game-plan-drafting") {
+            screen(session, engine: engine)
+        }
+
+        #expect(drafting.says("五步计划"))
+        #expect(drafting.says("Bc4 Nf6 Nf3 Nc6 Ng5"))
+        #expect(drafting.says("第 5/5 步"))
+        #expect(drafting.says("五步到了"), "and the reason for the cap, where a reader will find it")
+        #expect(drafting.says("说不清"), "the same eight answers a single move's reason is given in")
+        // On the board and in no Game, right up to the commit.
+        #expect(session.game.variations(atPly: 2).isEmpty)
+        #expect(engine.searchCount == 0)
+
+        // One reason, over the whole line.
+        session.choose(.attack)
+        session.aim(at: try #require(Square("f7")))
+        session.commitPlan()
+        let judged = await ScreenImage.write("game-plan-judged") { screen(session, engine: engine) }
+
+        let plan = try #require(session.game.plans(atPly: 2).first)
+        #expect(plan.sans == ["Bc4", "Nf6", "Nf3", "Nc6", "Ng5"])
+        #expect(plan.intent == .claim(.attack, try #require(Square("f7"))))
+        #expect(judged.says("攻 f7"))
+        #expect(judged.says("说对了"))
+        // Which move of the plan made it true, which is the whole difference between a plan's
+        // verdict and a single move's.
+        #expect(judged.says("第 5 步 Ng5 的时候成立"))
+        #expect(judged.says("这条线进了棋谱"))
+        #expect(session.planCheck?.held == true)
+        #expect(session.planCheck?.step == 5)
+    }
+
     /// 走马灯: the engine's stored Line played out on the main board, with the layer following each
     /// step and one sentence saying where the whole thing arrives.
     ///

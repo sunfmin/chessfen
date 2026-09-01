@@ -136,6 +136,12 @@ public struct PGN: Hashable, Sendable {
             if let intent = ply.intent {
                 comment.append("[%int \(intent.pgnText)]")
             }
+            // How far that claim reaches, when it reaches past this move. Written beside the Intent
+            // rather than inside it so a reader that knows nothing about plans still gets the verb
+            // and the target, which is the whole reason these live in `[%…]` tokens (docs/adr/0017).
+            if let span = ply.intentSpan {
+                comment.append("[%plan \(span)]")
+            }
             if !comment.isEmpty {
                 written.append("{" + comment.joined(separator: " ") + "}")
             }
@@ -267,6 +273,9 @@ public struct PGN: Hashable, Sendable {
                 // An Intent belongs to a move, so one standing before the first move has
                 // nothing to belong to — `setIntent` says so by refusing ply 0.
                 frames[last].game.setIntent(intent, atPly: frames[last].game.plies.count)
+            case .plan(let span):
+                guard !frames[last].dead else { continue }
+                frames[last].game.setIntentSpan(span, atPly: frames[last].game.plies.count)
             case .variationStart:
                 // A Variation is an alternative to the move just read, so it starts from the
                 // position that move was played in.
@@ -312,6 +321,7 @@ private struct Scanner {
         case evaluation(Score)
         case line([String])
         case intent(Intent)
+        case plan(Int)
         case variationStart
         case variationEnd
     }
@@ -359,6 +369,7 @@ private struct Scanner {
                 if let score = Self.evaluation(in: comment) { tokens.append(.evaluation(score)) }
                 if let line = Self.line(in: comment) { tokens.append(.line(line)) }
                 if let intent = Self.intent(in: comment) { tokens.append(.intent(intent)) }
+                if let span = Self.plan(in: comment) { tokens.append(.plan(span)) }
             case ";":
                 _ = read(while: { !$0.isNewline })
             case "(":
@@ -396,6 +407,10 @@ private struct Scanner {
 
     private static func intent(in comment: String) -> Intent? {
         Self.body(of: "int", in: comment).flatMap { Intent(pgnText: $0) }
+    }
+
+    private static func plan(in comment: String) -> Int? {
+        Self.body(of: "plan", in: comment).flatMap { Int($0) }
     }
 
     /// What is between `[%name ` and the next `]`, trimmed. Nil when the token is not there at

@@ -87,6 +87,7 @@ struct GameScreen: View {
                         // screen entirely — a numbered square with its sentence two scrolls away
                         // is the same "我看不懂" this layer was rebuilt to answer.
                         scanner
+                        plan
                         layers
                         study
                         report
@@ -1142,6 +1143,138 @@ struct GameScreen: View {
         session.jump(toPly: ranked.ply - 1)
     }
 
+    /// 五步计划 — one Intent over a line of your own rather than over one move.
+    ///
+    /// docs/adr/0017 said an Intent should be able to hang off a Variation and nothing was ever
+    /// built for it; this is that. The mirror of the carousel: that one shows the engine's plan
+    /// landing, this one puts your own on trial. The cap is five and its reason is on the screen,
+    /// because a cap whose reason lives only in an ADR reads as an arbitrary limit.
+    @ViewBuilder private var plan: some View {
+        if isPast {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 9) {
+                    Button {
+                        selected = nil
+                        withAnimation(.snappy(duration: 0.2)) {
+                            if session.planDraft == nil {
+                                session.startPlan()
+                            } else {
+                                session.abandonPlan()
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(
+                                systemName: session.planDraft == nil
+                                    ? "list.number" : "list.number.rtl"
+                            )
+                            .font(.caption2)
+                            Text("五步计划").font(.footnote)
+                        }
+                        .foregroundStyle(session.planDraft == nil ? Palette.inkSoft : Palette.mine)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(Palette.chipRest, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    Spacer(minLength: 0)
+                }
+                if let draft = session.planDraft { drafting(draft) }
+                if let check = session.planCheck { judged(check) }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+        }
+    }
+
+    /// The line being written, its transport, and the one reason it is all for.
+    @ViewBuilder private func drafting(_ draft: PlanDraft) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if draft.steps.isEmpty {
+                Text("在棋盘上走出你的计划，最多 5 步。走完再说这是为了什么。")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
+            } else {
+                HStack(spacing: 7) {
+                    Button { session.stepPlan(by: -1) } label: {
+                        Image(systemName: "chevron.left").font(.caption)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(draft.isAtStart)
+                    Button { session.stepPlan(by: 1) } label: {
+                        Image(systemName: "chevron.right").font(.caption)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(draft.isAtTip)
+                    Text(draft.sans.joined(separator: " "))
+                        .font(.notation)
+                        .foregroundStyle(Palette.ink)
+                    Spacer(minLength: 0)
+                    Text("第 \(draft.step)/\(draft.steps.count) 步")
+                        .font(.caption)
+                        .foregroundStyle(Palette.inkSoft)
+                }
+                if draft.isFull {
+                    Text("五步到了：再长的计划，对方回了这么多手，对错就没法判了。")
+                        .font(.caption)
+                        .foregroundStyle(Palette.inkSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                // One reason for the whole line, said in the same eight words a single move's is.
+                verbs
+                Text(reason).font(.caption).foregroundStyle(Palette.inkSoft)
+                HStack(spacing: 9) {
+                    Button("退一步") { session.undoPlanMove() }.buttonStyle(.bordered)
+                    Button("交卷") { session.commitPlan() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!session.canCommitPlan)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    /// The verdict: which move of the plan made the claim true, or the state it actually left.
+    @ViewBuilder private func judged(_ check: PlanCheck) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(session.game.plans(atPly: session.cursor).last?.intent.label ?? "")
+                    .font(.footnote.weight(.medium))
+                Text(Self.intentVerdictLabel(check.verdict))
+                    .font(.caption.bold())
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Self.intentVerdictColour(check.verdict).opacity(0.2), in: Capsule())
+                if let step = check.step, let san = check.san {
+                    Text(
+                        check.held
+                            ? "第 \(step) 步 \(san) 的时候成立"
+                            : "走到第 \(step) 步 \(san) 还是没成立"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
+                }
+                Spacer(minLength: 0)
+            }
+            if let note = check.note {
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let outcome = session.planOutcome {
+                Text(outcome.sentence)
+                    .font(.caption)
+                    .foregroundStyle(Palette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Text("这条线进了棋谱，是这一步的一个变着。")
+                .font(.caption2)
+                .foregroundStyle(Palette.inkSoft)
+        }
+    }
+
     /// 点一格问它 — the one thing on this screen allowed to speak before a Guess is committed.
     ///
     /// And it only ever speaks about the square somebody pointed at. Everything else on the layer
@@ -1785,6 +1918,14 @@ struct GameScreen: View {
     }
 
     private func tap(_ square: Square) {
+        // A verb is chosen and waiting for the Square it is about, so the board is a place to
+        // point at rather than a place to move on. One tap for the verb, one for the target — and
+        // it goes before everything else here because it is the narrowest state on the screen.
+        if session.declaringVerb != nil {
+            session.aim(at: square)
+            selected = nil
+            return
+        }
         // Armed, so the board is a place to ask about rather than a place to move on. Every tap is
         // a new question, including a tap while an answer is already up.
         if session.isScannerArmed {
@@ -1792,17 +1933,10 @@ struct GameScreen: View {
             session.scan(at: square)
             return
         }
-        // A verb is chosen and waiting for the Square it is about, so the board is a place to
-        // point at rather than a place to move on. One tap for the verb, one for the target.
-        if session.declaringVerb != nil {
-            session.aim(at: square)
-            selected = nil
-            return
-        }
         guard session.isHandTurn else { return }
 
         if let selected {
-            let moves = viewed.state.moves(from: selected).filter { $0.to == square }
+            let moves = tapPosition.state.moves(from: selected).filter { $0.to == square }
             // More than one move to the same square means a promotion, and only a promotion.
             if moves.count > 1 {
                 promotion = PromotionRequest(moves: moves)
@@ -1810,6 +1944,13 @@ struct GameScreen: View {
                 return
             }
             if let move = moves.first {
+                // A plan being written takes the move instead: it is not an answer to this
+                // position's question, it is the next move of a line (docs/adr/0017).
+                if session.planDraft != nil {
+                    session.addToPlan(move)
+                    self.selected = nil
+                    return
+                }
                 // The one difference a Drill makes to the board: while a past Ply is being
                 // studied a move is *offered* — visible, uncommitted, and yours to take back —
                 // rather than played into the game (docs/adr/0015).
@@ -1824,7 +1965,7 @@ struct GameScreen: View {
         }
 
         // Not a destination, so it is either a new selection or a deselection.
-        if let piece = pieces[square], piece.colour == viewed.state.sideToMove {
+        if let piece = boardPieces[square], piece.colour == tapPosition.state.sideToMove {
             selected = square
         } else {
             if selected != nil { Sounds.current.play(.refused) }
@@ -1860,8 +2001,13 @@ struct GameScreen: View {
 
     private var candidateMoves: [Move] {
         guard let selected, session.isHandTurn else { return [] }
-        return viewed.state.moves(from: selected)
+        return tapPosition.state.moves(from: selected)
     }
+
+    /// The position a tap is read against — the plan's tip while one is being written, and the
+    /// position being studied otherwise. Only moves go through this; everything the app *says*
+    /// still comes from `viewed`.
+    private var tapPosition: Game { session.planDraft != nil ? session.board : viewed }
 
     private var recommendation: MoveSquares? {
         session.analysis?.bestMove.flatMap { MoveSquares(uci: $0) }

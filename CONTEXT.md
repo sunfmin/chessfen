@@ -240,7 +240,11 @@ A Variation of the player's own, at most five Ply, carrying one Intent judged ov
 line instead of over its first move. The unbuilt consequence of docs/adr/0017, finally built.
 The cap is about what can be checked rather than about how far people see: past about five
 Ply the opponent has had enough replies that no claim about the position is falsifiable, and
-an Intent that cannot be told false is not one (docs/adr/0018).
+an Intent that cannot be told false is not one (docs/adr/0018). Stored as an ordinary
+Variation — the Game and the PGN already know how to hold one — with the Intent on its first
+Ply carrying how far it reaches, so nobody reads it as the reason for that one move. Judged by
+putting the claim to each of the mover's own moves in turn with the same checker a one-move
+Intent gets, and the step that made it true is named: 「第 5 步 Ng5 的时候成立」.
 _Avoid_: plan, strategy, sequence, combination, opening prep
 
 **Intent**:

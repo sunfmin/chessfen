@@ -150,6 +150,105 @@ import Testing
         return session
     }
 
+    // ---------------------------------------------------------------- 五步计划
+
+    /// One Intent over a line of the player's own, which is what docs/adr/0017 said an Intent should
+    /// be able to be and what nothing was ever built for. The mirror of the carousel: that one shows
+    /// the engine's plan landing, this one puts your own on trial.
+    @Test("a plan is built on the board, judged over the whole line, and stored as a variation")
+    func aPlanIsBuiltAndJudged() throws {
+        let session = try session(PositionalEngine([:]))
+        session.jump(toPly: 2)
+        session.startPlan()
+        let draft = try #require(session.planDraft)
+        #expect(draft.ply == 2)
+        #expect(session.showsControlChange, "the layer marks each step as the line is built")
+
+        // Five moves of White's oldest plan there is — two pieces onto f7 — played on the board
+        // and into no Game.
+        for uci in ["f1c4", "g8f6", "g1f3", "b8c6", "f3g5"] {
+            session.addToPlan(try #require(session.board.state.move(matching: uci)))
+        }
+        #expect(session.planDraft?.sans == ["Bc4", "Nf6", "Nf3", "Nc6", "Ng5"])
+        #expect(
+            session.board.plies.map(\.san) == ["e4", "e5", "Bc4", "Nf6", "Nf3", "Nc6", "Ng5"]
+        )
+        #expect(session.game.plies.map(\.san) == ["e4", "e5", "Nf3", "Nc6"], "and nothing yet")
+
+        // Stepping back is how the layer gets a future to judge a step by: at the tip there is
+        // nothing after the move, so there is nothing to say whether it mattered.
+        #expect(session.boardContinuation.isEmpty)
+        session.stepPlan(by: -2)
+        #expect(session.board.plies.map(\.san) == ["e4", "e5", "Bc4", "Nf6", "Nf3"])
+        #expect(session.boardContinuation == ["Nc6", "Ng5"])
+
+        // One reason, over the whole line, declared the same way a Guess's is.
+        #expect(!session.canCommitPlan, "a plan with no reason is not a plan")
+        session.choose(.attack)
+        session.aim(at: try #require(Square("f7")))
+        #expect(session.canCommitPlan)
+        session.commitPlan()
+
+        #expect(session.planDraft == nil)
+        let plan = try #require(session.game.plans(atPly: 2).first)
+        #expect(plan.sans == ["Bc4", "Nf6", "Nf3", "Nc6", "Ng5"])
+        #expect(plan.intent == .claim(.attack, try #require(Square("f7"))))
+        // Judged by the same checker a one-move Intent uses, and told which move did it: two
+        // pieces looking at f7 against one king is the fifth move of the plan, not its first.
+        let check = try #require(session.planCheck)
+        #expect(check.held)
+        #expect(check.step == 5)
+        #expect(check.san == "Ng5")
+        // And where the line arrived, by the same reckoning the carousel uses.
+        #expect(session.planOutcome?.steps == 5)
+    }
+
+    @Test("the plan stops at five moves, and taking one back is taking one back")
+    func aPlanIsCappedAtFive() throws {
+        let session = try session(PositionalEngine([:]))
+        session.jump(toPly: 2)
+        session.startPlan()
+        for uci in ["f1c4", "g8f6", "g1f3", "b8c6", "f3g5"] {
+            session.addToPlan(try #require(session.board.state.move(matching: uci)))
+        }
+        #expect(session.planDraft?.steps.count == 5)
+        #expect(session.planDraft?.isFull == true)
+
+        // A sixth is refused rather than rolling the first one off the front: five is what can be
+        // checked, and a plan that forgot its own first move is judged on a claim nobody made.
+        let sixth = try #require(session.board.state.move(matching: "d7d5"))
+        session.addToPlan(sixth)
+        #expect(session.planDraft?.steps.count == 5)
+
+        session.undoPlanMove()
+        #expect(session.planDraft?.steps.count == 4)
+        #expect(session.planDraft?.isFull == false)
+    }
+
+    @Test("a plan thrown away leaves nothing behind")
+    func aPlanCanBeAbandoned() throws {
+        let session = try session(PositionalEngine([:]))
+        session.jump(toPly: 2)
+        session.startPlan()
+        session.addToPlan(try #require(session.board.state.move(matching: "d2d4")))
+        session.choose(.hold)
+        session.aim(at: try #require(Square("d4")))
+
+        session.abandonPlan()
+        #expect(session.planDraft == nil)
+        #expect(session.declaredIntent == nil, "the reason goes with the line it was about")
+        #expect(session.game.variations(atPly: 2).isEmpty)
+        #expect(session.board.state.fen == session.viewed.state.fen)
+    }
+
+    @Test("there is no plan at the latest position, because there is no move to be one instead of")
+    func aPlanNeedsAMoveToBranchFrom() throws {
+        let session = try session(PositionalEngine([:]))
+        #expect(session.isAtLatest)
+        session.startPlan()
+        #expect(session.planDraft == nil, "a line played here is the game, not a plan about it")
+    }
+
     // ---------------------------------------------------------------- 走马灯
 
     /// The Line the Review already stored, played out on the main board. Nothing is written and no

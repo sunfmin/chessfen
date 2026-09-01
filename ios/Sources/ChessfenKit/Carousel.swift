@@ -140,3 +140,45 @@ public struct Walk: Hashable, Sendable {
         self.outcome = outcome
     }
 }
+
+/// A line of the player's own, while it is being written.
+///
+/// It is not a Guess and it is not a Variation yet: a Guess is one move and gets marked, a Variation
+/// is something somebody played. This is a claim being assembled — up to five moves and one Intent
+/// over the whole of them — and until it is committed it exists only on the board (docs/adr/0017).
+public struct PlanDraft: Hashable, Sendable {
+    /// One move of the plan, with the way it is written. Held as a pair so the move and its SAN
+    /// cannot drift apart, which two arrays walked in step eventually do.
+    public struct Step: Hashable, Sendable {
+        public let move: Move
+        public let san: String
+
+        public init(move: Move, san: String) {
+            self.move = move
+            self.san = san
+        }
+    }
+
+    /// The Ply the line branches from, counting like the cursor: the plan is an alternative to the
+    /// move that was played here.
+    public let ply: Int
+    public var steps: [Step] = []
+    /// How many of them are on the board. The transport moves this so the layer can be read at each
+    /// step; adding a move puts it at the tip.
+    public var step: Int = 0
+
+    public var moves: [Move] { steps.map(\.move) }
+    public var sans: [String] { steps.map(\.san) }
+    public var isFull: Bool { steps.count >= Game.Ply.planLimit }
+    public var isAtStart: Bool { step == 0 }
+    public var isAtTip: Bool { step == steps.count }
+    public var played: [String] { Array(sans.prefix(step)) }
+    /// What the plan says happens next, which is what the layer judges the current step against.
+    public var remaining: [String] { Array(sans.dropFirst(step)) }
+
+    public init(ply: Int, steps: [Step] = [], step: Int = 0) {
+        self.ply = ply
+        self.steps = steps
+        self.step = step
+    }
+}

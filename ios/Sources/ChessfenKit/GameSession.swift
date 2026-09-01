@@ -71,6 +71,9 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
             askTask?.cancel()
             isAsking = false
             walk = nil
+            planDraft = nil
+            planCheck = nil
+            planOutcome = nil
         }
     }
     /// The Game rebuilt where the cursor stands, kept until either the Game or the cursor
@@ -123,6 +126,15 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// Reveal's — so watching it costs no engine time, and nothing in it is played: the Game, the
     /// PGN and the Variations are all untouched, and leaving puts the board back exactly.
     public private(set) var walk: Walk?
+    /// A line of the player's own being built, with one Intent to come over the whole of it.
+    ///
+    /// 五步计划 (docs/adr/0017). The mirror of the carousel: that one shows the engine's plan
+    /// landing, this one puts your own on trial.
+    public private(set) var planDraft: PlanDraft?
+    /// How the last committed plan was judged, and at which step.
+    public private(set) var planCheck: PlanCheck?
+    /// Where that plan arrived, by the same reckoning the carousel uses (docs/adr/0020).
+    public private(set) var planOutcome: LineOutcome?
     /// What the engine said about the scanned position — only ever after somebody asked.
     public private(set) var scanAnswer: ScanAnswer?
     /// True while that search is running.
@@ -572,6 +584,13 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// seeing the real position, so a trial cannot start a search, cannot be played by the engine
     /// on the other side, and cannot reach the Game. It is a hypothesis on a piece of glass.
     public var board: Game {
+        if let planDraft, planDraft.step > 0 {
+            var building = viewed
+            for move in planDraft.moves.prefix(planDraft.step) {
+                guard building.apply(move) else { return viewed }
+            }
+            return building
+        }
         if let walk, walk.step > 0 {
             var ahead = viewed
             for san in walk.played {
@@ -591,6 +610,10 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// moves past it, which is the one thing a carousel must not do: the tint is how the eye finds
     /// the move that just happened.
     public var boardLastMove: MoveSquares? {
+        if let planDraft, planDraft.step > 0 {
+            let move = planDraft.moves[planDraft.step - 1]
+            return MoveSquares(uci: move.uci)
+        }
         if let walk, walk.step > 0 {
             let ahead = board
             return ahead.moveSquares(atPly: ahead.plies.count)
@@ -604,6 +627,10 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// step by step rather than re-answering the same question five times: the second net moves with
     /// the board (docs/adr/0020).
     public var boardContinuation: [String] {
+        // A plan being built is its own second net: what the layer judges each step against is the
+        // rest of *your* plan, which is the one case where no engine is needed to say whether a
+        // square mattered — you have already said what you are going to do with it (docs/adr/0020).
+        if let planDraft { return planDraft.remaining }
         if let walk { return walk.remaining }
         return viewedContinuation
     }
@@ -868,6 +895,105 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
                 isSameAsTrial: san == tried
             )
         }
+    }
+
+    // ----------------------------------------------------------------- 五步计划
+
+    /// Starts a line of the player's own from the position being looked at.
+    ///
+    /// Only at a past position, and that is not a limitation so much as what a plan *is* here: it
+    /// goes into the file as a Variation, a Variation is an alternative to a move, and at the latest
+    /// position there is no move for it to be an alternative to — a line played there is the game,
+    /// which the app already has a name for (docs/adr/0017).
+    public func startPlan() {
+        guard planDraft == nil, !isAtLatest, cursor < game.plies.count else { return }
+        endScan()
+        endWalk()
+        withdrawGuess()
+        planCheck = nil
+        planOutcome = nil
+        // The layer marks each step as the line is built, so it comes on with it — the same
+        // exception a commit and a carousel get, and for the same reason (docs/adr/0015).
+        showsControlChange = true
+        planDraft = PlanDraft(ply: cursor)
+    }
+
+    /// Adds one move to the plan, up to the cap.
+    ///
+    /// Refused at the cap rather than rolling the earliest move off the front: five is what can be
+    /// checked, and a plan that quietly forgot its first move is a plan judged on a claim nobody
+    /// made (docs/adr/0017, 0018).
+    public func addToPlan(_ move: Move) {
+        guard var draft = planDraft, !draft.isFull, draft.isAtTip else {
+            Sounds.current.play(.refused)
+            return
+        }
+        var tip = board
+        guard let legal = tip.state.move(matching: move.uci) else {
+            Sounds.current.play(.refused)
+            return
+        }
+        let san = SAN.text(for: legal, in: tip.state)
+        guard tip.apply(legal) else {
+            Sounds.current.play(.refused)
+            return
+        }
+        draft.steps.append(PlanDraft.Step(move: legal, san: san))
+        draft.step = draft.steps.count
+        planDraft = draft
+        Sounds.current.play(.move)
+    }
+
+    /// Takes the last move of the plan back off the board.
+    public func undoPlanMove() {
+        guard var draft = planDraft, !draft.steps.isEmpty else { return }
+        draft.steps.removeLast()
+        draft.step = min(draft.step, draft.steps.count)
+        planDraft = draft
+    }
+
+    /// Walks the plan being built, so the layer can be read at each step.
+    ///
+    /// The tip is the one step the layer cannot judge: the second net is what the plan does *next*,
+    /// and at the tip there is no next yet. Stepping back is how that gets answered, and it is why
+    /// the transport is here while the line is still being written.
+    public func stepPlan(by delta: Int) {
+        guard var draft = planDraft else { return }
+        let wanted = min(max(0, draft.step + delta), draft.steps.count)
+        guard wanted != draft.step else { return }
+        draft.step = wanted
+        planDraft = draft
+        Sounds.current.play(.move)
+    }
+
+    /// Whether there is a plan and a reason to commit it.
+    public var canCommitPlan: Bool {
+        guard let planDraft, !planDraft.steps.isEmpty, declaredIntent != nil else { return false }
+        return true
+    }
+
+    /// Writes the plan into the Game as a Variation with one Intent over the whole line, and judges
+    /// it by the same checker a single-Ply Intent uses.
+    public func commitPlan() {
+        guard let draft = planDraft, let intent = declaredIntent, !draft.steps.isEmpty,
+            let before = game.rewound(to: draft.ply)
+        else { return }
+        let line = draft.steps.map { (uci: $0.move.uci, san: $0.san) }
+        guard game.recordPlan(line, intent: intent, atPly: draft.ply) else { return }
+        planCheck = intent.check(plan: draft.sans, in: before)
+        planOutcome = before.outcome(of: draft.sans)
+        planDraft = nil
+        declaringVerb = nil
+        declaredIntent = nil
+        save()
+    }
+
+    /// Throws the plan away. Nothing was written, so there is nothing to undo.
+    public func abandonPlan() {
+        guard planDraft != nil else { return }
+        planDraft = nil
+        declaringVerb = nil
+        declaredIntent = nil
     }
 
     // ----------------------------------------------------------------- 走马灯
