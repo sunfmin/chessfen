@@ -306,6 +306,50 @@ import Testing
         #expect(session.planNotes.count == 1, "and one row goes with it")
     }
 
+    @Test("nothing else gets to put a second hypothesis on the board while a plan is on it")
+    func aPlanHoldsTheBoardAlone() async throws {
+        let before = try game(["e2e4", "e7e5"])
+        let engine = PositionalEngine([
+            before.state.fen: Analysis(
+                depth: 14,
+                lines: [
+                    Line(
+                        score: .centipawns(30),
+                        uciMoves: ["f1c4", "g8f6"], san: ["Bc4", "Nf6"]
+                    )
+                ]
+            )
+        ])
+        let session = try session(engine)
+        session.jump(toPly: 2)
+        session.applyReview(
+            [
+                ReviewedPly(score: .centipawns(20), line: ["e5", "Nf3"]),
+                ReviewedPly(score: .centipawns(25), line: ["Nf3", "Nc6"]),
+                ReviewedPly(score: .centipawns(30), line: ["Nc6", "Bc4"]),
+                ReviewedPly(score: .centipawns(28), line: ["Bc4", "Bc5"]),
+            ],
+            startEvaluation: nil,
+            depth: 18
+        )
+        session.startPlan()
+        await hop()
+        #expect(session.planDraft?.sans == ["Bc4", "Nf6"])
+
+        // Refused rather than closed under them: a plan holds a reason somebody typed, and the two
+        // arrows would point at two different lines.
+        session.armScanner()
+        #expect(!session.isScannerArmed)
+        session.startWalk()
+        #expect(session.walk == nil)
+        #expect(session.planDraft?.sans == ["Bc4", "Nf6"], "and the plan is where it was")
+
+        // Both come back the moment the plan is put away.
+        session.abandonPlan()
+        session.armScanner()
+        #expect(session.isScannerArmed)
+    }
+
     @Test("the plan stops at five moves, and taking one back is taking one back")
     func aPlanIsCappedAtFive() throws {
         let session = try session(PositionalEngine([:]))

@@ -1380,12 +1380,17 @@ struct GameScreen: View {
                         .font(.caption2)
                         Text("问一格").font(.footnote)
                     }
-                    .foregroundStyle(session.isScannerArmed ? Palette.mine : Palette.inkSoft)
+                    .foregroundStyle(
+                        session.planDraft != nil
+                            ? Palette.inkSoft.opacity(0.4)
+                            : (session.isScannerArmed ? Palette.mine : Palette.inkSoft)
+                    )
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
                     .background(Palette.chipRest, in: Capsule())
                 }
                 .buttonStyle(.plain)
+                .disabled(session.planDraft != nil)
                 if session.isScannerArmed, session.scan == nil {
                     Text("点棋盘上任意一格，看你哪些子能过去。")
                         .font(.caption)
@@ -1538,12 +1543,17 @@ struct GameScreen: View {
                                 .font(.caption2)
                                 Text("走马灯").font(.footnote)
                             }
-                            .foregroundStyle(session.walk == nil ? Palette.inkSoft : Palette.mine)
+                            .foregroundStyle(
+                                session.planDraft != nil
+                                    ? Palette.inkSoft.opacity(0.4)
+                                    : (session.walk == nil ? Palette.inkSoft : Palette.mine)
+                            )
                             .padding(.horizontal, 12)
                             .padding(.vertical, 7)
                             .background(Palette.chipRest, in: Capsule())
                         }
                         .buttonStyle(.plain)
+                        .disabled(session.planDraft != nil)
                     }
                     if !looseSquares.isEmpty, session.walk == nil {
                         Text("红圈：被吃的子比守的多")

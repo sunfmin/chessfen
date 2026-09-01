@@ -821,9 +821,11 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
 
     /// Arms the scanner: the next tap on the board is a question about that square.
     public func armScanner() {
-        guard !isScannerArmed else { return }
-        // One hypothesis on the board at a time: a trial inside a walked line is a position nobody
-        // can name.
+        // One hypothesis on the board at a time: a trial inside a walked line, or beside five plan
+        // arrows pointing somewhere else, is a position nobody can name. The walk is ended because
+        // nothing in it was the player's; a plan is refused instead, because a plan holds a reason
+        // they typed and closing it under them would throw that away.
+        guard !isScannerArmed, planDraft == nil else { return }
         endWalk()
         isScannerArmed = true
         scan = nil
@@ -1105,7 +1107,9 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// went and fetched a line when somebody pressed play would be spending a Stint on a picture
     /// (docs/adr/0019, 0020). Nothing to play means nothing happens and the screen says why.
     public func startWalk() {
-        guard walk == nil else { return }
+        // Not over a plan: the board would show one line and the arrows another, and the plan has a
+        // transport of its own for exactly this.
+        guard walk == nil, planDraft == nil else { return }
         let line = viewedContinuation
         guard !line.isEmpty, let outcome = viewed.outcome(of: line) else { return }
         endScan()
