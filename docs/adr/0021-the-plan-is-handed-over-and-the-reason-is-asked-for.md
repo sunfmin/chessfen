@@ -68,12 +68,35 @@ at f2, so O-O still reads 「护 f2」, which is why people castle. Nothing has 
 The *checker* is unchanged: a player who declares 护 on a quiet square is still told plainly
 whether the count went up, because that is what they claimed. Only the candidate ranking moved.
 
+**The five are a principal variation, which is a strong claim about the first move and a weak
+one about the fifth.** The opponent's moves in it are the engine's own best replies, not a
+prediction of what the person across the board will do — worth saying on the screen, because
+「对方会这么回」 read as a forecast is a lie. And the tail of a PV is soft by construction: the
+head is searched to the full Depth and the fifth ply is a by-product of the same search several
+plies shallower, so playing a move buys that ply a full search and sometimes a different idea.
+That much churn is honest and cannot be designed away.
+
+**What could be designed away was ours, and it was most of it.** Every look-ahead used to clear
+the transposition table first, because that is what every other search in a study does — the
+Depth has to mean what it says or a Reveal's number and the scanner's are not the same number
+(docs/adr/0016). Nothing in a plan shows a Score, so nothing in a plan needed it. Measured on
+Stockfish at depth 14 after 1.e4 e5, walking the engine's own line four moves:
+
+    cold   Nf3 Nc6 d4 exd4 Nxd4 → Nc6 Bb5 a6 Bxc6 dxc6 → Bb5 a6 Ba4 Nf6 O-O → a6 Ba4 Nge7 O-O Ng6
+    warm   Nf3 Nc6 d4 exd4 Nxd4 → Nc6 Bb5 a6 Ba4 Nf6   → Bb5 a6 Ba4 Nf6 O-O → a6 Ba4 Nf6 O-O b5
+
+Cold, the tail is rewritten at every step and the five on the board have nothing to do with the
+five that were there a move ago — a plan that forgets itself is not one. Warm, each answer is
+the previous one rolled forward by a move, and the times it does change are times the engine
+changed its mind.
+
 ## Consequences
 
-The engine is asked for one bounded search at the study Depth when the plan opens, which is
-the same Depth everything else in a study reports at, so a plan and a Reveal are never two
-different numbers deep. Nothing arriving is not a failure: the draft stays open and the board
-still writes the line, which is what this was before.
+The engine is asked for one bounded search at the study Depth per move walked, which is the same
+Depth everything else in a study reports at, so a plan and a Reveal are never two different
+numbers deep. It is the one search in a study that does not clear first, for the reason above.
+Nothing arriving is not a failure: the draft stays open and the board still writes the line,
+which is what this was before.
 
 A search that comes back to find moves already on the board leaves them alone. Adding to the
 line and taking moves back off it both survive, so disagreeing with the engine is one tap of

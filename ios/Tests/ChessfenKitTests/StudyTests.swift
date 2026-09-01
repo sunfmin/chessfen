@@ -263,6 +263,32 @@ import Testing
         #expect(session.planNotes.isEmpty)
     }
 
+    /// Why the five stop being five unrelated suggestions.
+    ///
+    /// Measured against Stockfish, walking its own line four moves at depth 14: cleared between
+    /// searches, the tail is rewritten at every step; left warm, each answer is the last one rolled
+    /// forward one move. Nothing in a plan shows a Score, so nothing in it needs the Depth to be
+    /// uncontaminated — and continuity is what makes it a plan (docs/adr/0021).
+    @Test("looking ahead does not throw away what the last look-ahead learned")
+    func theLookAheadKeepsItsTable() async throws {
+        let before = try game(["e2e4", "e7e5"])
+        let afterBc4 = try game(["e2e4", "e7e5", "f1c4"])
+        let engine = PositionalEngine([
+            before.state.fen: line(.centipawns(32), ["Bc4", "Nf6", "Nf3"]),
+            afterBc4.state.fen: line(.centipawns(28), ["Nf6", "Nf3", "Nc6"]),
+        ])
+        let session = try session(engine)
+        session.jump(toPly: 2)
+        session.startPlan()
+        await hop()
+        session.playInPlan(try #require(session.board.state.move(matching: "f1c4")))
+        await hop()
+
+        #expect(session.planDraft?.aheadSans == ["Nf6", "Nf3", "Nc6"])
+        #expect(engine.searchCount == 2, "one search a move, which is what it costs")
+        #expect(engine.clearCount == 0, "and none of them starts by forgetting the last one")
+    }
+
     @Test("tapping a row walks the board that far down the line")
     func aRowIsTheTransport() async throws {
         let before = try game(["e2e4", "e7e5"])

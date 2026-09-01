@@ -1225,7 +1225,7 @@ struct GameScreen: View {
                     .foregroundStyle(Palette.inkSoft)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("从这儿往下，引擎会这么走。紫色是你的，红色是对方的回应；点哪一行就走到哪一步。")
+                Text("从这儿往下，引擎会这么走。紫色是你的，红色是对方**最好的**应手 —— 不是猜你对手会怎么走；点哪一行就走到哪一步。")
                     .font(.caption2)
                     .foregroundStyle(Palette.inkSoft)
                     .fixedSize(horizontal: false, vertical: true)

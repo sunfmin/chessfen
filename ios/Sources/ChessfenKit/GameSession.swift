@@ -1009,6 +1009,21 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// same number deep. Nothing arriving is not a failure and does not close anything: the board is
     /// still a board, and walking a line out on it by hand is what this was before the engine was
     /// asked to go first.
+    ///
+    /// **The table is not cleared between look-aheads, and that is the difference between a plan and
+    /// a stream of suggestions.** Everywhere else a study searches it forgets first, so the Depth
+    /// means what it says and a Reveal's number and the scanner's are the same number (docs/adr/0016).
+    /// Nothing here shows a Score, so nothing here needs that — and clearing costs something real.
+    /// Measured on Stockfish at depth 14 after 1.e4 e5, walking the engine's own line four moves:
+    ///
+    ///     cold   Nf3 Nc6 d4 exd4 Nxd4 → Nc6 Bb5 a6 Bxc6 dxc6 → Bb5 a6 Ba4 Nf6 O-O
+    ///     warm   Nf3 Nc6 d4 exd4 Nxd4 → Nc6 Bb5 a6 Ba4 Nf6   → Bb5 a6 Ba4 Nf6 O-O
+    ///
+    /// Cold, the tail is rewritten at every step and the five on the board have nothing to do with
+    /// the five that were there a move ago. Warm, each answer is the last one rolled forward by one
+    /// move. The line still changes when the engine genuinely changes its mind — the tail of a PV is
+    /// searched shallower than its head, so playing a move buys it a ply of depth and sometimes a
+    /// different idea — but that change now means something (docs/adr/0021).
     private func lookAhead() {
         guard let engine, let draft = planDraft, draft.ahead.isEmpty else { return }
         let position = board
@@ -1018,7 +1033,6 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         isPlanning = true
         planTask?.cancel()
         planTask = Task { [weak self] in
-            await engine.clear()
             var best: Line?
             for await snapshot in engine.analyse(position, budget: .depth(depth), lines: 1) {
                 if Task.isCancelled { return }
