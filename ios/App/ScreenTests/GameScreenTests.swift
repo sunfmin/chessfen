@@ -672,6 +672,47 @@ struct GameScreenScreenshots {
         #expect(rendered.says("自己的王正站在上面"))
     }
 
+    /// An outpost, cashed in: the square, the piece that comes to it, and the walk between them.
+    /// 「松开了 d5」 is a fact about a map; 「自己的马(c3)1 步就能走进来，到了就赶不走了」 is a fact
+    /// about the game (docs/adr/0020).
+    @Test("an outpost is drawn as a route from the piece that would come to it")
+    func anOutpostIsDrawnAsARoute() async throws {
+        // Black's pawns on c5 and e5 are past d5 for ever. White's knight goes to c3, one move
+        // from standing on it, and the engine's own line walks it there.
+        var game = try #require(
+            Game(startFEN: "4k3/8/8/2p1p3/8/8/8/1N2K3 w - - 0 1", uciMoves: ["b1c3", "e8e7"])
+        )
+        game.applyReview(
+            [
+                ReviewedPly(score: .centipawns(60), line: ["Ke7", "Nd5+"]),
+                ReviewedPly(score: .centipawns(65), line: ["Nd5+"]),
+            ],
+            startEvaluation: .centipawns(40),
+            depth: 18
+        )
+        let engine = ScriptedEngine(Self.searching)
+        let session = GameSession.fresh(game)
+        session.attach(engine: engine, library: nil)
+        session.jump(toPly: 1)
+        session.setShowsControlChange(true)
+
+        let rendered = await ScreenImage.write("game-outpost") {
+            screen(session, engine: engine)
+        }
+
+        let key = session.viewed.keySquares(continuation: session.viewedContinuation)
+        #expect(key.count == 1, "one square out of everything Nc3 changed hands over")
+        let d5 = try #require(key.first)
+        #expect(d5.square == Square("d5"))
+        #expect(d5.kind == .outpost)
+        let arrival = try #require(d5.occupation, "and the board has a route to draw")
+        #expect(arrival.piece.kind == .knight)
+        #expect(arrival.moves == 1)
+        #expect(!arrival.canBeDislodged)
+        #expect(rendered.says("永久据点"))
+        #expect(rendered.says("自己的马从 c3 走 1 步就到"), "who comes, and how far away they are")
+    }
+
     @Test("the same two layers hold up in the dark")
     func boardLayersInTheDark() async throws {
         let (session, engine) = try await layered()

@@ -5,6 +5,20 @@ import CStockfish
 public enum PieceKind: Int32, Hashable, Sendable, CaseIterable {
     case pawn = 1, knight, bishop, rook, queen, king
 
+    /// What this piece is called, for a sentence with a piece in it. In the package rather than
+    /// in the app because the package writes those sentences — an Intent's verdict, a square's
+    /// reading — and two copies of six words are two copies that drift.
+    public var name: String {
+        switch self {
+        case .pawn: "兵"
+        case .knight: "马"
+        case .bishop: "象"
+        case .rook: "车"
+        case .queen: "后"
+        case .king: "王"
+        }
+    }
+
     /// The letter SAN and FEN use for a white piece of this kind.
     public var letter: Character {
         switch self {

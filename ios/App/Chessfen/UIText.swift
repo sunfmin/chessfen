@@ -46,19 +46,6 @@ extension PieceColour {
     var chinese: String { self == .white ? "白方" : "黑方" }
 }
 
-extension PieceKind {
-    var chinese: String {
-        switch self {
-        case .pawn: "兵"
-        case .knight: "马"
-        case .bishop: "象"
-        case .rook: "车"
-        case .queen: "后"
-        case .king: "王"
-        }
-    }
-}
-
 extension Controller {
     var chinese: String { self == .hand ? "手动" : "引擎" }
 }

@@ -63,7 +63,7 @@ func theLineDecidesWhichSquareMatters() throws {
     #expect(key.count == 1, "one square, out of everything that changed")
     let d5 = try #require(key.first)
     #expect(d5.square == (try square("d5")))
-    #expect(d5.kind == .hole)
+    #expect(d5.kind == .outpost, "a hole with a knight one move from it")
     #expect(d5.isGain)
     #expect(d5.mover == .white)
     #expect(d5.proof == .occupied(step: 2, san: "Nd5+"))
@@ -163,4 +163,112 @@ func theKingsOwnSquareIsSaidDifferently() throws {
     #expect(!e8.isGain)
     #expect(e8.note.contains("自己的王正站在上面"))
     #expect(!e8.note.contains("旁边"))
+}
+
+// ------------------------------------------------------- who can actually come
+
+@Test("a knight's distance to a square is counted in knight moves")
+func aRouteIsCountedInThePiecesOwnMoves() throws {
+    let board = try pieces("4k3/8/8/8/8/8/8/1N2K3 w - - 0 1")
+    let b1 = try square("b1")
+    // b1 to d5: Nb1-c3-d5. Two moves, and the route says which two squares it stands on.
+    let route = try #require(Rules.route(to: try square("d5"), from: b1, pieces: board))
+    #expect(route.count == 2)
+    #expect(route.last == (try square("d5")))
+    let viaC3 = [try square("c3"), try square("d5")]
+    let viaD2 = [try square("d2"), try square("d5")]
+    #expect(route == viaC3 || route == viaD2)
+    // A knight cannot reach the square it stands beside in one move, and a square it can is one.
+    #expect(Rules.route(to: try square("c3"), from: b1, pieces: board)?.count == 1)
+}
+
+@Test("a piece that cannot get there inside the horizon comes back as nothing")
+func aRouteHasAHorizon() throws {
+    let board = try pieces("4k3/8/8/8/8/8/8/1N2K3 w - - 0 1")
+    // The far corner is four knight moves from b1, and four moves away is not a fact about this
+    // position — so the default horizon of three refuses it, and asking for more finds it.
+    #expect(Rules.route(to: try square("h7"), from: try square("b1"), pieces: board) == nil)
+    #expect(Rules.route(to: try square("h7"), from: try square("b1"), pieces: board, horizon: 5) != nil)
+}
+
+@Test("a piece walled in by its own side goes nowhere")
+func ownPiecesAreWalls() throws {
+    // A rook on a1 behind its own pawn on a2 and its own knight on b1: no route anywhere.
+    let board = try pieces("4k3/8/8/8/8/8/P7/RN2K3 w - - 0 1")
+    #expect(Rules.route(to: try square("a5"), from: try square("a1"), pieces: board) == nil)
+    #expect(Rules.route(to: try square("d1"), from: try square("a1"), pieces: board) == nil)
+}
+
+@Test("a pawn walks forward and takes sideways, and is not a slider on a short leash")
+func pawnsMoveTheirOwnWay() throws {
+    let board = try pieces("4k3/8/8/8/3p4/8/2P5/4K3 w - - 0 1")
+    let c2 = try square("c2")
+    // Two squares from home, one thereafter.
+    #expect(Rules.route(to: try square("c4"), from: c2, pieces: board)?.count == 1)
+    // And it may go sideways only onto the black pawn.
+    #expect(Rules.route(to: try square("d4"), from: c2, pieces: board) != nil)
+    #expect(Rules.route(to: try square("b3"), from: c2, pieces: board) == nil)
+}
+
+/// The sentence a player can act on: not "you let go of d5" but "their knight is two moves from d5
+/// and no pawn of yours will ever attack it again".
+@Test("the soonest arrival names the piece, the distance, and whether it can be thrown out")
+func theSoonestArrivalIsTheOneNamed() throws {
+    let board = try pieces("4k3/8/8/2p1p3/8/8/8/1N2K3 w - - 0 1")
+    let arrival = try #require(
+        Rules.occupation(of: try square("d5"), by: .white, pieces: board)
+    )
+    #expect(arrival.piece.kind == .knight)
+    #expect(arrival.from == (try square("b1")))
+    #expect(arrival.moves == 2)
+    #expect(arrival.route.last == (try square("d5")))
+    // The black pawns on c5 and e5 are past d5 for ever, so whoever gets there stays.
+    #expect(!arrival.canBeDislodged)
+
+    // The same square with a black pawn still on c7: it can come to c6 and throw the knight out.
+    let challenged = try pieces("4k3/2p5/8/4p3/8/8/8/1N2K3 w - - 0 1")
+    let weaker = try #require(Rules.occupation(of: try square("d5"), by: .white, pieces: challenged))
+    #expect(weaker.canBeDislodged)
+}
+
+@Test("a king walking to an outpost is not a plan, so kings are left out")
+func kingsAreNotOccupiers() throws {
+    let board = try pieces("4k3/8/8/8/8/8/8/3K4 w - - 0 1")
+    #expect(Rules.occupation(of: try square("d4"), by: .white, pieces: board) == nil)
+}
+
+/// A hole nobody can reach is a weakness on paper; a hole with a knight walking towards it is the
+/// thing that actually happens to you. They are told apart, and the sentence says which.
+@Test("a hole somebody can get to is named an outpost, and the sentence says who comes")
+func aReachableHoleBecomesAnOutpost() throws {
+    let game = try #require(
+        Game(startFEN: "4k3/8/8/2p1p3/8/8/8/1N2K3 w - - 0 1", uciMoves: ["b1c3"])
+    )
+    let key = game.keySquares(continuation: ["Ke7", "Nd5+"])
+    let d5 = try #require(key.first { $0.square == (try? square("d5")) })
+    #expect(d5.kind == .outpost, "the knight that took it is one move away from standing on it")
+    let arrival = try #require(d5.occupation)
+    #expect(arrival.piece.kind == .knight)
+    #expect(arrival.moves == 1, "Nc3 is one move from d5")
+    #expect(!arrival.canBeDislodged)
+    #expect(d5.note.contains("永久据点"))
+    #expect(d5.note.contains("自己的马从 c3 走 1 步就到"))
+    #expect(!d5.note.contains("赶不走它"), "a hole already said nobody can throw anybody out")
+}
+
+/// Which side walks there is decided by which way the square went. A square you took is one you
+/// would come and use; one you let go of is one they would.
+@Test("a square let go of names one of their pieces, not one of yours")
+func theComerFollowsTheDirection() throws {
+    // White's rook leaves the first rank, so White lets go of d1 beside its own king; the piece
+    // that would come and use d1 is a black one.
+    let game = try #require(
+        Game(startFEN: "3rk3/8/8/8/8/8/8/R3K3 w - - 0 1", uciMoves: ["a1a5"])
+    )
+    let key = game.keySquares(continuation: ["Rd2", "Ra8", "Rd1+"])
+    let d1 = try #require(key.first { $0.square == (try? square("d1")) })
+    #expect(!d1.isGain)
+    let arrival = try #require(d1.occupation)
+    #expect(arrival.piece.colour == .black, "the square was let go of, so they are the ones coming")
+    #expect(d1.note.contains("对方的车"))
 }

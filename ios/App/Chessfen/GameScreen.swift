@@ -239,7 +239,7 @@ struct GameScreen: View {
             "升变成什么？", isPresented: .constant(promotion != nil), titleVisibility: .visible
         ) {
             ForEach(promotion?.moves ?? [], id: \.uci) { move in
-                Button(move.promotion?.chinese ?? move.uci) {
+                Button(move.promotion?.name ?? move.uci) {
                     if session.isStudying {
                         session.offer(move)
                     } else {

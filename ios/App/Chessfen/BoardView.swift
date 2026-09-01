@@ -301,6 +301,15 @@ struct BoardView: View {
             }
         }
 
+        // The route to the first 要害格, when somebody can actually walk to it. One route and not
+        // three: it is the answer to "and then what happens", and three answers at once is the
+        // scattering this layer was rebuilt to stop being.
+        if let first = key.first, let occupation = first.occupation {
+            drawRoute(
+                occupation, cell: cell,
+                colour: first.isGain ? Palette.mine : Palette.alarm, into: &context
+            )
+        }
         // The player's first, so that where the two agree the engine's is the one on top and the
         // board does not read as though only one arrow was drawn.
         if let mine { drawArrow(mine, cell: cell, colour: Palette.mine, into: &context) }
@@ -413,6 +422,44 @@ struct BoardView: View {
                 with: .color(Palette.ink.opacity(0.45))
             )
         }
+    }
+
+    /// The walk a piece would take to the square, one dash per move.
+    ///
+    /// Dashed rather than solid, and thinner than an arrow, because it is not a move anybody is
+    /// recommending — it is how far away something is. The ring is on the piece that would come,
+    /// so the sentence under the board ("对方的马(g1)3 步就能走进来") has something to point at.
+    private func drawRoute(
+        _ occupation: Occupation, cell: CGFloat, colour: Color,
+        into context: inout GraphicsContext
+    ) {
+        func centre(_ square: Square) -> CGPoint {
+            let position = self.cell(of: square)
+            return CGPoint(
+                x: (CGFloat(position.column) + 0.5) * cell,
+                y: (CGFloat(position.row) + 0.5) * cell
+            )
+        }
+        var path = Path()
+        path.move(to: centre(occupation.from))
+        for step in occupation.route { path.addLine(to: centre(step)) }
+        context.stroke(
+            path,
+            with: .color(colour.opacity(0.8)),
+            style: StrokeStyle(
+                lineWidth: cell * 0.07, lineCap: .round, lineJoin: .round,
+                dash: [cell * 0.12, cell * 0.11]
+            )
+        )
+        let start = centre(occupation.from)
+        let radius = cell * 0.34
+        context.stroke(
+            Path(ellipseIn: CGRect(
+                x: start.x - radius, y: start.y - radius, width: radius * 2, height: radius * 2
+            )),
+            with: .color(colour.opacity(0.8)),
+            lineWidth: cell * 0.06
+        )
     }
 
     private func drawArrow(

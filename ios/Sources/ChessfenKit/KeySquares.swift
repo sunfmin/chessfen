@@ -16,6 +16,9 @@ public struct KeySquare: Hashable, Sendable {
         /// A square no pawn of the side that would have to challenge it can ever attack again.
         /// The difference between a square you lent out and one you gave away.
         case hole
+        /// A hole somebody can actually get to. The difference between a weakness on paper and a
+        /// weakness with a knight walking towards it, which is the difference a player can act on.
+        case outpost
     }
 
     /// How the engine's Line showed the square mattered. Both are facts about moves, not opinions
@@ -35,6 +38,9 @@ public struct KeySquare: Hashable, Sendable {
     /// Whether the move took a grip on the square or let go of it, from the mover's point of view.
     public let isGain: Bool
     public let proof: Proof
+    /// Who can come and stand here, and whether they could be thrown out again. Nil when nobody
+    /// can reach it soon enough for the answer to be about this position.
+    public let occupation: Occupation?
     /// One sentence over facts the rules code can check, in the style an Intent is judged in.
     public let note: String
 }
@@ -62,7 +68,8 @@ extension KeySquare.Kind {
         switch self {
         case .ownKing: 0
         case .enemyKing: 1
-        case .hole: 2
+        case .outpost: 2
+        case .hole: 3
         }
     }
 }
@@ -127,9 +134,14 @@ extension Game {
         )
 
         // ---- the rules net: which of the squares that changed hands could matter at all
-        var candidates: [Square: (kind: KeySquare.Kind, isGain: Bool)] = [:]
+        var candidates: [Square: (kind: KeySquare.Kind, isGain: Bool, by: Occupation?)] = [:]
         for (squares, isGain) in [(change.gained, true), (change.lost, false)] {
             for square in squares {
+                // A square you took is one *you* would come and use; one you let go of is one
+                // *they* would. Who walks there is the whole difference between an outpost and a
+                // weakness, and it is decided by which way the square went.
+                let comer = isGain ? mover : mover.opposite
+                let occupation = Rules.occupation(of: square, by: comer, pieces: pieces)
                 let kind: KeySquare.Kind?
                 if ownRing.contains(square) {
                     kind = .ownKing
@@ -138,13 +150,13 @@ extension Game {
                 } else if Rules.isHole(
                     at: square, for: isGain ? mover.opposite : mover, pieces: pieces
                 ) {
-                    // A square you took that they can never challenge is an outpost; one you gave
-                    // up that you can never challenge is a weakness. Same test, opposite side.
-                    kind = .hole
+                    // A hole nobody can get to is a weakness on paper. A hole with a piece walking
+                    // towards it is the thing that actually happens to you.
+                    kind = occupation != nil ? .outpost : .hole
                 } else {
                     kind = nil
                 }
-                if let kind { candidates[square] = (kind, isGain) }
+                if let kind { candidates[square] = (kind, isGain, occupation) }
             }
         }
         guard !candidates.isEmpty else { return [] }
@@ -184,12 +196,14 @@ extension Game {
                     mover: mover,
                     isGain: candidate.isGain,
                     proof: proof,
+                    occupation: candidate.by,
                     note: Self.note(
                         square: square, kind: candidate.kind, isGain: candidate.isGain,
                         proof: proof,
                         isTheKingsOwnSquare: kings[
                             candidate.kind == .ownKing ? mover : mover.opposite
-                        ] == square
+                        ] == square,
+                        arrival: candidate.by
                     )
                 )
             )
@@ -214,7 +228,7 @@ extension Game {
     /// thing whichever side is reading.
     private static func note(
         square: Square, kind: KeySquare.Kind, isGain: Bool, proof: KeySquare.Proof,
-        isTheKingsOwnSquare: Bool
+        isTheKingsOwnSquare: Bool, arrival: Occupation?
     ) -> String {
         let what: String =
             switch (kind, isGain, isTheKingsOwnSquare) {
@@ -232,10 +246,10 @@ extension Game {
                 "\(square) 管住了，就在对方王的旁边——攻势从这里开始"
             case (.enemyKing, false, _):
                 "\(square) 松开了，对方王边少了一分压力"
-            case (.hole, true, _):
-                "\(square) 成了永久据点：对方的兵再也赶不走停在这儿的子"
-            case (.hole, false, _):
-                "\(square) 成了永久弱格：自己的兵再也管不回来"
+            case (.hole, true, _), (.outpost, true, _):
+                "\(square) 成了永久据点：对方的兵再也管不到这格"
+            case (.hole, false, _), (.outpost, false, _):
+                "\(square) 成了永久弱格：自己的兵再也管不回这格"
             }
         let because: String =
             switch proof {
@@ -244,6 +258,165 @@ extension Game {
             case .persisted(let plies):
                 "走完引擎这 \(plies) 步，它还是这样"
             }
-        return "\(what)。\(because)。"
+        // Claim, mechanism, evidence — in that order, and the engine's word closes it.
+        return "\(what)。\(walk(arrival, kind: kind, isGain: isGain))\(because)。"
+    }
+
+    /// The clause that turns a square into something that happens: which piece comes and how far
+    /// away it is.
+    ///
+    /// Said only when somebody can actually get there — a sentence about a piece four moves away is
+    /// a sentence about a different position. Whether it could be thrown out again is said only
+    /// for the king-ring kinds: a hole is *defined* by nothing being able to throw anybody out, so
+    /// saying it twice is saying it once and wasting a line.
+    private static func walk(_ arrival: Occupation?, kind: KeySquare.Kind, isGain: Bool) -> String {
+        guard let arrival else { return "" }
+        let whose = isGain ? "自己的" : "对方的"
+        let stay =
+            switch (kind, arrival.canBeDislodged) {
+            case (.ownKing, false), (.enemyKing, false): "，兵赶不走它"
+            case (.ownKing, true), (.enemyKing, true): "，不过兵还能把它赶走"
+            default: ""
+            }
+        return "\(whose)\(arrival.piece.kind.name)从 \(arrival.from) 走 \(arrival.moves) 步就到\(stay)。"
+    }
+}
+
+/// Who can actually come and stand on a square, how soon, and whether they could be thrown out.
+///
+/// "You let go of d5" is a fact about a map. "Their knight is three moves from d5 and no pawn of
+/// yours will ever attack it again" is a fact about the game, and it is the one a player can do
+/// something about. This is the second half of the 然后呢 (docs/adr/0020).
+public struct Occupation: Hashable, Sendable {
+    public let piece: Piece
+    public let from: Square
+    public let target: Square
+    /// How many moves that piece needs, counting from one.
+    public let moves: Int
+    /// Where it goes, one square per move, ending on the target. What the board draws as a route,
+    /// and what makes the claim checkable: a route a player can follow is a route they can argue
+    /// with.
+    public let route: [Square]
+    /// Whether a pawn of the other side can ever attack the target. False is what makes a square
+    /// an outpost rather than a stop: whoever gets there stays.
+    public let canBeDislodged: Bool
+}
+
+extension Rules {
+    /// How far one piece is from a square, ignoring everything the other side does.
+    ///
+    /// The approximation is deliberate and has to be said out loud: this walks one piece over the
+    /// board as it stands, treating its own side's pieces as walls and the other side's as squares
+    /// it may land on. Nobody replies. What it answers is "how far away is that knight", which is
+    /// the question a player actually asks about an outpost — not "can this be forced", which is a
+    /// search and would cost a Stint (docs/adr/0019).
+    ///
+    /// Nil when the piece cannot get there within `horizon` moves. Three by default: a piece four
+    /// moves away from a square is not a fact about this position.
+    public static func route(
+        to target: Square, from origin: Square, pieces: [Square: Piece], horizon: Int = 3
+    ) -> [Square]? {
+        guard let piece = pieces[origin], origin != target else { return nil }
+        var seen: Set<Square> = [origin]
+        var edge: [(square: Square, path: [Square])] = [(origin, [])]
+        for _ in 0..<horizon {
+            var next: [(square: Square, path: [Square])] = []
+            for (square, path) in edge {
+                for step in steps(of: piece, from: square, pieces: pieces) {
+                    if step == target { return path + [step] }
+                    guard !seen.contains(step) else { continue }
+                    // A square with somebody on it can be landed on and not walked through: what
+                    // happens after a capture is a different position, and this one is not it.
+                    seen.insert(step)
+                    if pieces[step] == nil { next.append((step, path + [step])) }
+                }
+            }
+            edge = next
+            if edge.isEmpty { break }
+        }
+        return nil
+    }
+
+    /// Where one piece may move in one move, by geometry alone: no checks, no pins, no turn order.
+    private static func steps(
+        of piece: Piece, from square: Square, pieces: [Square: Piece]
+    ) -> [Square] {
+        func free(_ file: Int, _ rank: Int) -> Square? {
+            guard (0..<8).contains(file), (0..<8).contains(rank) else { return nil }
+            let there = Square(file: file, rank: rank)
+            return pieces[there]?.colour == piece.colour ? nil : there
+        }
+        func slide(_ directions: [(Int, Int)]) -> [Square] {
+            var found: [Square] = []
+            for (df, dr) in directions {
+                var file = square.file + df
+                var rank = square.rank + dr
+                while let there = free(file, rank) {
+                    found.append(there)
+                    if pieces[there] != nil { break }
+                    file += df
+                    rank += dr
+                }
+            }
+            return found
+        }
+        let straight = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+        let slanted = [(1, 1), (1, -1), (-1, 1), (-1, -1)]
+        switch piece.kind {
+        case .knight:
+            return [(1, 2), (2, 1), (2, -1), (1, -2), (-1, -2), (-2, -1), (-2, 1), (-1, 2)]
+                .compactMap { free(square.file + $0.0, square.rank + $0.1) }
+        case .bishop: return slide(slanted)
+        case .rook: return slide(straight)
+        case .queen: return slide(straight + slanted)
+        case .king: return (straight + slanted).compactMap { free(square.file + $0.0, square.rank + $0.1) }
+        case .pawn:
+            // Forwards onto an empty square, sideways onto an occupied one. A pawn's two ways of
+            // moving are the reason it cannot be treated as a slider with a short leash.
+            let ahead = piece.colour == .white ? 1 : -1
+            var found: [Square] = []
+            if (0..<8).contains(square.rank + ahead) {
+                let one = Square(file: square.file, rank: square.rank + ahead)
+                if pieces[one] == nil {
+                    found.append(one)
+                    let home = piece.colour == .white ? 1 : 6
+                    if square.rank == home {
+                        let two = Square(file: square.file, rank: square.rank + ahead * 2)
+                        if pieces[two] == nil { found.append(two) }
+                    }
+                }
+                for file in [square.file - 1, square.file + 1] where (0..<8).contains(file) {
+                    let take = Square(file: file, rank: square.rank + ahead)
+                    if let other = pieces[take], other.colour != piece.colour { found.append(take) }
+                }
+            }
+            return found
+        }
+    }
+
+    /// The soonest any piece of `colour` can come and stand on `square`, with what would happen to
+    /// it when it got there. Nil when nobody can inside the horizon.
+    ///
+    /// Kings are left out. A king walking to an outpost is not a plan.
+    public static func occupation(
+        of square: Square, by colour: PieceColour, pieces: [Square: Piece], horizon: Int = 3
+    ) -> Occupation? {
+        var best: Occupation?
+        for (origin, piece) in pieces
+        where piece.colour == colour && piece.kind != .king && origin != square {
+            guard let route = route(to: square, from: origin, pieces: pieces, horizon: horizon),
+                best == nil || route.count < best!.moves
+            else { continue }
+            best = Occupation(
+                piece: piece,
+                from: origin,
+                target: square,
+                moves: route.count,
+                route: route,
+                canBeDislodged: !isHole(at: square, for: colour.opposite, pieces: pieces)
+            )
+            if route.count == 1 { break }
+        }
+        return best
     }
 }
