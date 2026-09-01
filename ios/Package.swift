@@ -37,6 +37,9 @@ let stockfishDefines: [CXXSetting] = [
 
 let package = Package(
     name: "chessfen",
+    // The language the words were written in first. Every other one falls back to it, and a
+    // package with localized resources has to name one (docs/adr/0019).
+    defaultLocalization: "zh-Hans",
     platforms: [.iOS("26.0"), .macOS("26.0")],
     products: [
         .library(name: "ChessfenKit", targets: ["ChessfenKit"]),
@@ -52,7 +55,15 @@ let package = Package(
             publicHeadersPath: "include",
             cxxSettings: stockfishDefines
         ),
-        .target(name: "ChessfenKit", dependencies: ["CStockfish"]),
+        .target(
+            name: "ChessfenKit",
+            dependencies: ["CStockfish"],
+            // Eight folders of words, one per language, and every word the app says comes out of
+            // them — the screens' as much as the package's own (docs/adr/0019). A folder rather
+            // than a String Catalog because `swift build` copies an `.xcstrings` without
+            // compiling it, so a catalog would work in Xcode and say nothing from the terminal.
+            resources: [.process("Resources")]
+        ),
         .executableTarget(name: "chessfen-cli", dependencies: ["ChessfenKit"]),
         .testTarget(
             name: "ChessfenKitTests",

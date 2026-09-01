@@ -175,7 +175,7 @@ struct BoardView: View {
             )
         }
         .aspectRatio(1, contentMode: .fit)
-        .accessibilityLabel("棋盘")
+        .accessibilityLabel(localized("board"))
         .onAppear { tracked.settle(to: pieces) }
         .onChange(of: pieces) { _, placement in
             // Snappy rather than smooth: a move should land, not glide. Long enough to see

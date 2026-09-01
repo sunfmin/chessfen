@@ -41,25 +41,31 @@ public enum PGNImport {
         public var alert: (title: String, message: String) {
             switch self {
             case .notALink:
-                ("不是链接", "这里要的是一个网址,比如一个公开的 lichess 研究链接。")
+                (localized("import.notALink.title"), localized("import.notALink.message"))
             case .privateStudy:
-                ("这个棋谱不公开", "它没有对外公开,所以下载不下来。目前只能导入公开的棋谱。")
+                (localized("import.privateStudy.title"), localized("import.privateStudy.message"))
             case .privateGame:
-                ("这局棋不公开", "lichess 说这局不对外开放,下载不下来。")
+                (localized("import.privateGame.title"), localized("import.privateGame.message"))
             case .missingGame:
-                ("找不到这局棋", "lichess 上没有这局 —— 链接可能不对,或者这局已经被删了。")
+                (localized("import.missingGame.title"), localized("import.missingGame.message"))
             case .unknownPlayer:
-                ("没有这个用户", "lichess 上找不到这个用户名。注意大小写不影响,但拼写要对。")
+                (
+                    localized("import.unknownPlayer.title"),
+                    localized("import.unknownPlayer.message")
+                )
             case .notAPlayer:
-                ("这不是用户名", "填一个 lichess 用户名,比如 DrNykterstein。")
+                (localized("import.notAPlayer.title"), localized("import.notAPlayer.message"))
             case .notPGN:
-                ("不是棋谱", "这个链接下载下来的内容不是 PGN 棋谱。")
+                (localized("import.notPGN.title"), localized("import.notPGN.message"))
             case .noReadableGames:
-                ("没有能读出来的棋局", "下载下来的棋谱里,没有一局能读出来。")
+                (
+                    localized("import.noReadableGames.title"),
+                    localized("import.noReadableGames.message")
+                )
             case .http(let code):
-                ("下载失败", "服务器回了一个 HTTP \(code)。")
+                (localized("import.http.title"), localized("import.http.message", code))
             case .network(let detail):
-                ("网络不通", "下载的时候网络出错了:\(detail)")
+                (localized("import.network.title"), localized("import.network.message", detail))
             }
         }
 
@@ -139,10 +145,13 @@ public enum PGNImport {
         /// The one sentence the screen shows. Each clause only when it happened — a
         /// clean import should say one thing and stop.
         public var message: String {
-            var parts = ["导入 \(imported) 局到「\(collection)」"]
-            if skipped > 0 { parts.append("跳过 \(skipped) 局已有的") }
-            if unreadable > 0 { parts.append("另有 \(unreadable) 局没能读出来") }
-            return parts.joined(separator: ",") + "。"
+            var parts = [localized("import.done", plural: imported, collection)]
+            if skipped > 0 { parts.append(localized("import.done.skipped", plural: skipped)) }
+            if unreadable > 0 {
+                parts.append(localized("import.done.unreadable", plural: unreadable))
+            }
+            return parts.joined(separator: localized("clause.separator"))
+                + localized("sentence.end")
         }
     }
 
@@ -396,9 +405,9 @@ public enum PGNImport {
         }
         let white = pgn.tag("White") ?? "?"
         let black = pgn.tag("Black") ?? "?"
-        if white != "?" || black != "?" { return "\(white) 对 \(black)" }
+        if white != "?" || black != "?" { return localized("import.name.players", white, black) }
         if let date = pgn.tag("Date"), !date.isEmpty, date != "????.??.??" { return date }
-        return "第 \(ordinal) 章"
+        return localized("import.name.chapter", ordinal)
     }
 
     /// A game named by who played it and when — nil when the file does not say who.
@@ -410,7 +419,7 @@ public enum PGNImport {
         let white = pgn.tag("White") ?? "?"
         let black = pgn.tag("Black") ?? "?"
         guard white != "?" || black != "?" else { return nil }
-        var name = "\(white) 对 \(black)"
+        var name = localized("import.name.players", white, black)
         let date = [pgn.tag("UTCDate"), pgn.tag("Date")]
             .compactMap { $0 }
             .first { !$0.isEmpty && $0 != "????.??.??" }
@@ -503,7 +512,7 @@ public struct URLSessionPGNFetcher: PGNFetching, Sendable {
             throw PGNImport.Error.network(error.localizedDescription)
         }
         guard let http = response as? HTTPURLResponse else {
-            throw PGNImport.Error.network("不是 HTTP 响应")
+            throw PGNImport.Error.network(localized("import.network.notHTTP"))
         }
         guard (200..<300).contains(http.statusCode) else {
             throw PGNImport.Error.from(status: http.statusCode, url: url)
@@ -565,40 +574,47 @@ public struct URLSessionPGNFetcher: PGNFetching, Sendable {
             return
         }
         let name = user.trimmingCharacters(in: .whitespacesAndNewlines)
-        await run([url], suggesting: "\(name.hasPrefix("@") ? String(name.dropFirst()) : name) 的对局")
+        let bare = name.hasPrefix("@") ? String(name.dropFirst()) : name
+        await run([url], suggesting: localized("import.collection.player", bare))
     }
 
     private func run(_ candidates: [URL], suggesting suggested: String?) async {
         phase = .fetching
         let fetching = fetcher
+        // The language goes with it. What comes back off this task is not only a download: it
+        // names the games and the collection, and a detached task starts outside whatever
+        // language was scoped around this one (docs/adr/0019).
+        let language = Speech.language
         phase = await Task.detached(priority: .userInitiated) { () -> Phase in
-            var lastError: PGNImport.Error = .notPGN
-            for candidate in candidates {
-                let text: String
-                do {
-                    text = try await fetching.fetch(candidate)
-                } catch let failure as PGNImport.Error {
-                    lastError = failure
-                    continue
-                } catch {
-                    lastError = .network(error.localizedDescription)
-                    continue
-                }
-                let (chapters, unreadable) = PGNImport.chapters(in: text)
-                guard let first = chapters.first else {
-                    lastError = unreadable > 0 ? .noReadableGames : .notPGN
-                    continue
-                }
-                return .ready(
-                    PGNImport.ImportPlan(
-                        suggestedCollection: suggested
-                            ?? PGNImport.suggestedCollection(for: first.pgn),
-                        chapters: chapters,
-                        unreadable: unreadable
+            await Speech.speaking(language) { () -> Phase in
+                var lastError: PGNImport.Error = .notPGN
+                for candidate in candidates {
+                    let text: String
+                    do {
+                        text = try await fetching.fetch(candidate)
+                    } catch let failure as PGNImport.Error {
+                        lastError = failure
+                        continue
+                    } catch {
+                        lastError = .network(error.localizedDescription)
+                        continue
+                    }
+                    let (chapters, unreadable) = PGNImport.chapters(in: text)
+                    guard let first = chapters.first else {
+                        lastError = unreadable > 0 ? .noReadableGames : .notPGN
+                        continue
+                    }
+                    return .ready(
+                        PGNImport.ImportPlan(
+                            suggestedCollection: suggested
+                                ?? PGNImport.suggestedCollection(for: first.pgn),
+                            chapters: chapters,
+                            unreadable: unreadable
+                        )
                     )
-                )
+                }
+                return .failed(lastError)
             }
-            return .failed(lastError)
         }.value
     }
 

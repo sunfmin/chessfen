@@ -433,12 +433,12 @@ struct BoardCameraScreen: View {
         .statusBarHidden()
         .task {
             guard await BoardCamera.authorised() else {
-                trouble = "要用相机才能拍棋盘。到「设置 - 棋镜」里打开相机权限。"
+                trouble = localized("camera.denied")
                 return
             }
             ready = await camera.start(lens: lens)
             if !ready.running {
-                trouble = "这台设备上找不到可用的相机。从相册或文件里挑一张棋盘图吧。"
+                trouble = localized("camera.missing")
             }
         }
         .onDisappear { camera.stop() }
@@ -468,8 +468,8 @@ struct BoardCameraScreen: View {
                 // saying 微距 would be a promise about focus distance the hardware cannot keep.
                 if ready.macro {
                     HStack(spacing: 0) {
-                        lensChip("微距", .macro)
-                        lensChip("标准", .standard)
+                        lensChip(localized("camera.lens.macro"), .macro)
+                        lensChip(localized("camera.lens.standard"), .standard)
                     }
                     .background(.black.opacity(0.35), in: Capsule())
                 }

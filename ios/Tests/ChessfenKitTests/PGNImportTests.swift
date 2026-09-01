@@ -193,7 +193,10 @@ func unreadableChaptersAreCounted() throws {
 
 // ------------------------------------------------------------------ naming
 
-@Test("the chapter name chain runs ChapterName, Event, players, Date, then position")
+@Test(
+    "the chapter name chain runs ChapterName, Event, players, Date, then position",
+    .speaking(.chinese)
+)
 func nameFallbackChain() throws {
     func pgn(
         chapterName: String? = nil, event: String = "?", white: String = "?",
@@ -405,7 +408,7 @@ func reimportSkipsByName() async throws {
 
 // ------------------------------------------------------------ imported games
 
-@Test("the imported origin round-trips through the Source tag")
+@Test("the imported origin round-trips through the Source tag", .speaking(.chinese))
 func importedOriginReadsBack() throws {
     let entry = GameLibrary.Entry(
         url: URL(filePath: "/games/x.pgn"),
@@ -416,7 +419,7 @@ func importedOriginReadsBack() throws {
         modified: Date()
     )
     #expect(entry.origin == .imported)
-    #expect(entry.origin.chinese == "导入")
+    #expect(entry.origin.label == "导入")
     #expect(entry.origin.symbol == "link")
 
     let untagged = GameLibrary.Entry(
@@ -529,7 +532,7 @@ func sitePagesAreNotGames() throws {
 }
 
 @MainActor
-@Test("one game link imports that game, named by who played it and when")
+@Test("one game link imports that game, named by who played it and when", .speaking(.chinese))
 func oneGameImports() async throws {
     let session = ImportSession(
         fetcher: ScriptedFetcher([exportOfOneGame: .success(oneLichessGame)])
@@ -587,7 +590,7 @@ func recentGamesURL() throws {
 }
 
 @MainActor
-@Test("a username and a count land that many recent games in one collection")
+@Test("a username and a count land that many recent games in one collection", .speaking(.chinese))
 func recentGamesImport() async throws {
     let url = try #require(PGNImport.recentGamesURL(user: "sunfmin", count: 2))
     let session = ImportSession(
@@ -659,7 +662,7 @@ func oneBrokenGameIsNotFatal() async throws {
     #expect(plan.unreadable == 1, "counted, and the report says so")
 }
 
-@Test("an HTTP status becomes the failure that names what happened")
+@Test("an HTTP status becomes the failure that names what happened", .speaking(.chinese))
 func statusesAreNamed() throws {
     let game = try #require(URL(string: exportOfOneGame))
     let study = try #require(URL(string: "https://lichess.org/study/HgiqcIqW.pgn"))

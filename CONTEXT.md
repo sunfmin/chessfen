@@ -234,3 +234,21 @@ One time a Failure Mode happened: the Game's file, the Ply, and one sentence abo
 board said. The unit a count is made of, and the way back — a Failure Mode that could not
 name the moves it was counted from would be a grade with extra steps.
 _Avoid_: instance, hit, event, record, entry
+
+### The words
+
+**Language**:
+One of the eight the app speaks — Chinese, English, French, Japanese, Korean, German,
+Spanish, Portuguese. Chinese is the one it was written in and the one every other falls
+back to key by key, so an untranslated sentence appears in Chinese rather than as a key
+(docs/adr/0019).
+_Avoid_: locale (that is the Foundation object dates and numbers are formatted with),
+translation, region
+
+**Speech**:
+Which Language the app is talking in right now: the one the person chose, or failing that
+the best match for the phone's own list. Not the system's resolution but ours, because the
+choice is the app's to keep — a phone in English held by somebody who reads chess in
+Chinese is the ordinary case — and because a test can then scope one language around
+itself without disturbing another running beside it.
+_Avoid_: current locale, language setting, i18n

@@ -44,9 +44,9 @@ public enum BoardIntake {
         /// The one alert the unreadable case shows, also used by the platform failures
         /// that never made a picture and so never made an `Intake` (the camera, the
         /// clipboard).
-        public static let unreadableAlert: (title: String, message: String) = (
-            "打不开图片", "这张图片打不开。"
-        )
+        public static var unreadableAlert: (title: String, message: String) {
+            (localized("intake.unreadable.title"), localized("intake.unreadable.message"))
+        }
 
         /// The alert a screen shows when this outcome has to become a message, nil for
         /// the outcomes that open somewhere instead. One wording per case, owned here
@@ -56,7 +56,7 @@ public enum BoardIntake {
         public var alert: (title: String, message: String)? {
             switch self {
             case .noBoard:
-                ("没认出棋盘", "这张图里没找到棋盘。把棋盘拍满一点，或者换个正面的角度。")
+                (localized("intake.noBoard.title"), localized("intake.noBoard.message"))
             case .unreadable:
                 Self.unreadableAlert
             case .played, .needsEditing:

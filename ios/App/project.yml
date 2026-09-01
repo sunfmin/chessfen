@@ -9,6 +9,11 @@ options:
     iOS: "26.0"
   createIntermediateGroups: true
   generateEmptyDirectories: true
+  # The language the app was written in, and the one every other falls back to. The eight it
+  # speaks are the eight `Chessfen/*.lproj` folders below — the words themselves live in the
+  # package (docs/adr/0019); what is here is only what the system reads out of the bundle
+  # before the app has run: the name under the icon and the two permission sentences.
+  developmentLanguage: zh-Hans
 
 packages:
   ChessfenKit:

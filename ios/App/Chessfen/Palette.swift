@@ -299,8 +299,8 @@ struct EvalBar: View {
         // that is only half there.
         .overlay(Capsule().stroke(Palette.walnut.opacity(0.35), lineWidth: 0.5))
         .animation(.easeOut(duration: 0.35), value: fraction)
-        .accessibilityLabel("优势条")
-        .accessibilityValue(finish?.chinese ?? score?.displayText ?? "未知")
+        .accessibilityLabel(localized("standing.bar"))
+        .accessibilityValue(finish?.label ?? score?.displayText ?? localized("standing.unknown"))
     }
 }
 
@@ -313,10 +313,10 @@ extension EvalBar.Finish {
         }
     }
 
-    var chinese: String {
+    var label: String {
         switch self {
-        case .won(let colour): "\(colour.chinese)胜"
-        case .drawn: "和棋"
+        case .won(let colour): localized("standing.won", colour.label)
+        case .drawn: localized("standing.drawn")
         }
     }
 
