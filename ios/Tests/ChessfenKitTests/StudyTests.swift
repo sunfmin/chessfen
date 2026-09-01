@@ -150,6 +150,107 @@ import Testing
         return session
     }
 
+    // ---------------------------------------------------------------- the scanner
+
+    /// The scanner is the one thing allowed to talk before a Guess is in, and it only ever talks
+    /// about the square somebody pointed at (docs/adr/0015, 0020).
+    @Test("pointing at a square answers about it, and the trial never reaches the game")
+    func theScannerAnswersAboutOneSquare() throws {
+        let engine = PositionalEngine([:])
+        let session = try session(engine)
+
+        // Nothing is being asked, so nothing is being answered.
+        #expect(session.scan == nil)
+        session.scan(at: try #require(Square("d4")))
+        #expect(session.scan == nil, "and a tap on the board is not a question until it is armed")
+
+        session.armScanner()
+        session.scan(at: try #require(Square("d4")))
+        let scan = try #require(session.scan)
+        #expect(scan.arrivals.map(\.san) == ["d4", "Nd4"], "the pawn before the knight")
+
+        session.tryOut(try #require(scan.arrivals.first?.move))
+        let trial = try #require(session.trial)
+        #expect(trial.san == "d4")
+        // On the glass and nowhere else: the board draws it, the position being studied does not
+        // know about it, and the Game is untouched.
+        #expect(session.board.state.fen != session.viewed.state.fen)
+        #expect(session.board.plies.map(\.san).last == "d4")
+        #expect(session.viewed.plies.map(\.san).last == "Nc6")
+        #expect(session.game.plies.map(\.san) == ["e4", "e5", "Nf3", "Nc6"])
+        #expect(session.game.variations(atPly: 4).isEmpty)
+
+        // And leaving restores the board exactly.
+        session.endScan()
+        #expect(session.scan == nil)
+        #expect(session.trial == nil)
+        #expect(session.board.state.fen == session.viewed.state.fen)
+    }
+
+    @Test("the engine says nothing about the scanned square until it is asked")
+    func theScannerAsksTheEngineLast() async throws {
+        let asked = try game()
+        let engine = PositionalEngine([
+            asked.state.fen: Analysis(
+                depth: 14,
+                selectiveDepth: 18,
+                lines: [
+                    Line(
+                        score: .centipawns(30), uciMoves: ["f1c4"], san: ["Bc4", "Bc5", "c3"]
+                    )
+                ],
+                nodes: 1_000_000,
+                nodesPerSecond: 1_000_000,
+                timeMilliseconds: 500
+            )
+        ])
+        let session = try session(engine)
+        session.armScanner()
+        session.scan(at: try #require(Square("d4")))
+        session.tryOut(try #require(session.scan?.arrivals.first?.move))
+        await hop()
+
+        // The order is the whole design: the trial's own assessment is on screen and the engine
+        // has not been asked for anything.
+        #expect(session.trial?.gains.isEmpty == false)
+        #expect(session.scanAnswer == nil)
+        #expect(engine.searchCount == 0, "no search at all, not a search whose answer was hidden")
+
+        session.askEngine()
+        await hop()
+
+        let answer = try #require(session.scanAnswer)
+        #expect(engine.searchCount == 1)
+        #expect(answer.best == "Bc4")
+        #expect(answer.depth == 14)
+        #expect(answer.score == .centipawns(30))
+        #expect(answer.isSameAsTrial == false)
+        // And its reason is in the same seven verbs the trial's is.
+        #expect(try #require(answer.reading).opening.san == "Bc4")
+    }
+
+    @Test("moving the question, or answering it, closes the scanner")
+    func theScannerGoesWithTheQuestion() throws {
+        let session = try session(PositionalEngine([:]))
+        session.armScanner()
+        session.scan(at: try #require(Square("d4")))
+        session.tryOut(try #require(session.scan?.arrivals.first?.move))
+        #expect(session.trial != nil)
+
+        session.jump(toPly: 2)
+        #expect(session.scan == nil, "a question about a square is a question about a position")
+        #expect(session.trial == nil)
+        #expect(!session.isScannerArmed)
+
+        // And a Guess ends the asking, because a trial under a Guess is two hypotheses at once.
+        session.armScanner()
+        session.scan(at: try #require(Square("d4")))
+        session.offer(try move("d2d4", in: session))
+        #expect(session.guess?.san == "d4")
+        #expect(session.scan == nil)
+        #expect(!session.isScannerArmed)
+    }
+
     /// The engine gives a number and a sequence of moves and never a reason. The Reveal carries the
     /// reason anyway, read out of that same sequence with the same rules code that judges the
     /// player's own claim — so 「我说的是攻 c5，引擎那步是为了攻 e5」 is a comparison and not a
@@ -498,8 +599,13 @@ import Testing
 private final class PositionalEngine: Engine {
     private let answers: [String: Analysis]
     private let cleared = Mutex(0)
+    private let searches = Mutex(0)
 
     init(_ answers: [String: Analysis]) { self.answers = answers }
+
+    /// How many searches have been asked for at all. The scanner's whole claim is that the engine
+    /// says nothing until somebody taps, and a count is the only way to hold it to that.
+    var searchCount: Int { searches.withLock { $0 } }
 
     /// How many times the search was told to forget what it knew — a study's Scores are only at
     /// the Depth they claim if nothing deeper was learned first.
@@ -511,6 +617,7 @@ private final class PositionalEngine: Engine {
     func clear() async { cleared.withLock { $0 += 1 } }
 
     func analyse(_ game: Game, budget: SearchBudget, lines: Int) -> AsyncStream<Analysis> {
+        searches.withLock { $0 += 1 }
         let answer = answers[game.state.fen]
         return AsyncStream { continuation in
             if let answer { continuation.yield(answer) }

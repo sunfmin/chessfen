@@ -101,6 +101,11 @@ struct BoardView: View {
     /// somebody is studying: on the position they are about to move in, this layer would be the
     /// blunder-check done on their behalf, which is the one thing it exists to teach.
     var loose: Set<Square> = []
+    /// Where a scanned square can be reached from: pieces of the side to move, dashed.
+    ///
+    /// Dashed and in the player's own colour, because a way in is a possibility and not a move —
+    /// the solid marks on this board all belong to something that happened (docs/adr/0020).
+    var ways: Set<Square> = []
     /// The one to three squares the move is actually about, in order, most important first.
     ///
     /// Not every square that changed hands. Ten squares in two colours is a diff, and a player
@@ -297,6 +302,7 @@ struct BoardView: View {
                     drawDestination(in: box, isCapture: captures.contains(square), into: &context)
                 }
                 if loose.contains(square) { drawLoose(in: box, into: &context) }
+                if ways.contains(square) { drawWay(in: box, into: &context) }
                 if aim == square { drawAim(in: box, into: &context) }
             }
         }
@@ -396,6 +402,16 @@ struct BoardView: View {
             Path(ellipseIn: box.insetBy(dx: box.width * 0.10, dy: box.width * 0.10)),
             with: .color(Palette.alarm.opacity(0.95)),
             lineWidth: box.width * 0.055
+        )
+    }
+
+    /// A piece that could go to the square somebody pointed at. Dashed, so it cannot be mistaken
+    /// for a claim or for a move that was played.
+    private func drawWay(in box: CGRect, into context: inout GraphicsContext) {
+        context.stroke(
+            Path(ellipseIn: box.insetBy(dx: box.width * 0.08, dy: box.width * 0.08)),
+            with: .color(Palette.mine.opacity(0.9)),
+            style: StrokeStyle(lineWidth: box.width * 0.06, dash: [box.width * 0.12, box.width * 0.09])
         )
     }
 

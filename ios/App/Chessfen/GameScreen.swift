@@ -86,6 +86,7 @@ struct GameScreen: View {
                         // under the Reveal until the Reveal grew tall enough to push it off the
                         // screen entirely — a numbered square with its sentence two scrolls away
                         // is the same "我看不懂" this layer was rebuilt to answer.
+                        scanner
                         layers
                         study
                         report
@@ -1141,6 +1142,136 @@ struct GameScreen: View {
         session.jump(toPly: ranked.ply - 1)
     }
 
+    /// 点一格问它 — the one thing on this screen allowed to speak before a Guess is committed.
+    ///
+    /// And it only ever speaks about the square somebody pointed at. Everything else on the layer
+    /// waits for the commit, because a warning painted unprompted is the blunder check performed on
+    /// the player's behalf, which is the one thing they are here to learn to do (docs/adr/0015).
+    /// The order inside it is the whole design: which of your pieces can get there, then what the
+    /// move you picked is worth in your own terms, and the engine's opinion last and only on a tap.
+    /// Reversed, it is a hint button (docs/adr/0020).
+    @ViewBuilder private var scanner: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 9) {
+                Button {
+                    withAnimation(.snappy(duration: 0.2)) {
+                        if session.isScannerArmed {
+                            session.endScan()
+                        } else {
+                            session.armScanner()
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(
+                            systemName: session.isScannerArmed
+                                ? "hand.point.up.left.fill" : "hand.point.up.left"
+                        )
+                        .font(.caption2)
+                        Text("问一格").font(.footnote)
+                    }
+                    .foregroundStyle(session.isScannerArmed ? Palette.mine : Palette.inkSoft)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(Palette.chipRest, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                if session.isScannerArmed, session.scan == nil {
+                    Text("点棋盘上任意一格，看你哪些子能过去。")
+                        .font(.caption)
+                        .foregroundStyle(Palette.inkSoft)
+                }
+                Spacer(minLength: 0)
+            }
+            if let scan = session.scan { scanned(scan) }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+    }
+
+    /// The ways in, then the trial, then the engine — in that order and never another.
+    @ViewBuilder private func scanned(_ scan: Scan) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if scan.isEmpty {
+                Text("\(scan.target)：你一个子也过不去。")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
+            } else if let trial = session.trial {
+                Text("\(trial.san)：")
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(Palette.ink)
+                ForEach(trial.gains, id: \.self) { line in
+                    sentence(line, colour: Palette.mine)
+                }
+                ForEach(trial.costs, id: \.self) { line in
+                    sentence(line, colour: Palette.alarm)
+                }
+                HStack(spacing: 9) {
+                    Button("换一个") { session.takeBackTrial() }.buttonStyle(.bordered)
+                    if session.scanAnswer == nil, !session.isAsking {
+                        // Last, and on a tap. Before this button is pressed the engine has not been
+                        // asked anything at all — not asked and hidden, not asked (docs/adr/0015).
+                        Button("引擎怎么说") { session.askEngine() }.buttonStyle(.bordered)
+                    }
+                    Spacer(minLength: 0)
+                }
+                if session.isAsking {
+                    Text("引擎在算…").font(.caption).foregroundStyle(Palette.inkSoft)
+                }
+                if let answer = session.scanAnswer { engineAnswer(answer) }
+            } else {
+                Text("\(scan.target)：\(scan.arrivals.count) 个子能过去。")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
+                // Cheapest first, because the cheapest way in is the one worth weighing first.
+                HStack(spacing: 7) {
+                    ForEach(scan.arrivals, id: \.san) { arrival in
+                        Button(arrival.san) { session.tryOut(arrival.move) }
+                            .buttonStyle(.bordered)
+                            .font(.notation)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private func engineAnswer(_ answer: ScanAnswer) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(answer.isSameAsTrial ? "引擎也走" : "引擎走")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
+                Text(answer.best).font(.notation).foregroundStyle(Palette.ink)
+                ScoreCell(score: answer.score)
+                Spacer(minLength: 0)
+            }
+            if let reading = answer.reading {
+                Text(
+                    reading.opening.intent == .unclear
+                        ? "引擎那步为什么好，这里说不清。"
+                        : "引擎那步是为了 \(reading.sentence)"
+                )
+                .font(.caption)
+                .foregroundStyle(Palette.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            Text("深度 \(answer.depth)").font(.caption2).foregroundStyle(Palette.inkSoft)
+        }
+    }
+
+    private func sentence(_ text: String, colour: Color) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Circle().fill(colour).frame(width: 6, height: 6)
+                .padding(.top, 5)
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(Palette.ink)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     /// The one control the two board layers have between them.
     ///
     /// Only for a position already played into: on the live position there is nothing here to
@@ -1539,7 +1670,7 @@ struct GameScreen: View {
 
     private var board: some View {
         BoardView(
-            pieces: pieces,
+            pieces: boardPieces,
             orientation: session.orientation,
             lastMove: session.lastMove,
             checks: viewed.state.checkSquares,
@@ -1547,17 +1678,19 @@ struct GameScreen: View {
             // first move — which is what replaces the old gate: the reading's own uncertainty is
             // visible where it matters, and 改棋子 is one tap away (docs/adr/0011).
             suspects: session.unconfirmedSquares,
-            selected: selected ?? session.declaredIntent?.target,
+            selected: selected ?? session.scan?.target ?? session.declaredIntent?.target,
             destinations: Set(candidateMoves.map(\.to)),
             captures: Set(candidateMoves.filter(\.isCapture).map(\.to)),
             recommendation: recommendation,
             mine: myArrow,
             aim: session.declaredIntent?.target,
             loose: looseSquares,
+            ways: session.trial == nil ? (session.scan?.origins ?? []) : [],
             key: keySquares,
             // Tappable while a verb is waiting for its target, too: the board is the only place a
             // claim's target can be said, which is the whole reason a verb has one.
-            isInteractive: session.isHandTurn || session.declaringVerb != nil,
+            isInteractive: session.isHandTurn || session.declaringVerb != nil
+                || session.isScannerArmed,
             onTap: tap
         )
     }
@@ -1577,6 +1710,13 @@ struct GameScreen: View {
     }
 
     private func tap(_ square: Square) {
+        // Armed, so the board is a place to ask about rather than a place to move on. Every tap is
+        // a new question, including a tap while an answer is already up.
+        if session.isScannerArmed {
+            selected = nil
+            session.scan(at: square)
+            return
+        }
         // A verb is chosen and waiting for the Square it is about, so the board is a place to
         // point at rather than a place to move on. One tap for the verb, one for the target.
         if session.declaringVerb != nil {
@@ -1636,6 +1776,13 @@ struct GameScreen: View {
         BoardRenderer.placement(viewed.state.fen) ?? [:]
     }
 
+    /// What the board draws — the trial's position when one is being tried out, and the studied
+    /// one otherwise. Only the board reads this: the engine, the record and the Review all go on
+    /// seeing the real position, which is what keeps a trial a hypothesis (docs/adr/0020).
+    private var boardPieces: [Square: Piece] {
+        BoardRenderer.placement(session.board.state.fen) ?? [:]
+    }
+
     private var candidateMoves: [Move] {
         guard let selected, session.isHandTurn else { return [] }
         return viewed.state.moves(from: selected)
@@ -1657,6 +1804,7 @@ struct GameScreen: View {
 
     /// The player's own move, drawn in their own colour beside the engine's.
     private var myArrow: MoveSquares? {
+        if let trial = session.trial { return MoveSquares(uci: trial.move.uci) }
         guard let guess = session.guess else { return nil }
         return MoveSquares(from: guess.move.from, to: guess.move.to)
     }

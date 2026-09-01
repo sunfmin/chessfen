@@ -257,6 +257,24 @@ skipped: a Game with twenty-five of them is itself the whole diagnosis, and it i
 engine could have produced.
 _Avoid_: unknown, none, skip, unsure
 
+**扫描器**:
+Pointing at one square and being answered about that square — the only help the app gives
+before a Guess is committed (docs/adr/0015). Every piece of yours that can legally reach it
+lights up; pick one and it is played as a Trial, with what it buys and what it costs said in
+fixed templates over facts the rules code counted. The engine comes last and only on a tap,
+because the order is the design: your own reading first, the engine's afterwards. Reversed it
+is a hint button. Outside a Drill it is the whole of the layer — nothing draws itself, you ask.
+问一格 on screen.
+_Avoid_: hint, suggestion, assistant, analysis mode, what-if
+
+**Trial**:
+One move played as a hypothesis and nowhere else: the board draws it, the engine and the
+record never see it, and leaving the scanner restores the position exactly. Distinct from a
+Guess, which is committed, judged and recorded, and from a Variation, which somebody actually
+played. Nothing a Trial says is prose about the position — every sentence is a template over a
+number the rules code computed, so the app can be told it was wrong.
+_Avoid_: preview, sandbox, temporary move, simulation
+
 **Line Reading**:
 What the engine's Line is *for*, in the same seven verbs an Intent declares in — read out of
 the moves rather than declared by anybody, because an engine gives a number and a sequence of

@@ -62,6 +62,14 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
             revealTask?.cancel()
             revealTask = nil
             isRevealing = false
+            // A question about a square is a question about *this* position, so the scanner goes
+            // with the cursor as well. Same home, same reason.
+            isScannerArmed = false
+            scan = nil
+            trial = nil
+            scanAnswer = nil
+            askTask?.cancel()
+            isAsking = false
         }
     }
     /// The Game rebuilt where the cursor stands, kept until either the Game or the cursor
@@ -94,6 +102,26 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     public private(set) var isRevealing = false
     /// The uniform-depth pass over the whole Game, while there is one running or just finished.
     public private(set) var reviewPass: ReviewPass?
+
+    // ----------------------------------------------------------------- the scanner
+
+    /// Whether the board is waiting to be pointed at.
+    ///
+    /// Armed by a tap and by nothing else. The scanner is the only thing the layer is allowed to
+    /// say before a Guess is committed, and it only ever answers about the square somebody chose
+    /// (docs/adr/0015, 0020) — so arming it is a deliberate act and never a state the screen
+    /// arrives in.
+    public private(set) var isScannerArmed = false
+    /// The square that was pointed at, and every piece of the side to move that can reach it.
+    public private(set) var scan: Scan?
+    /// The move being tried out: on the board, in no Game, and gone the moment the scanner closes.
+    public private(set) var trial: Trial?
+    /// What the engine said about the scanned position — only ever after somebody asked.
+    public private(set) var scanAnswer: ScanAnswer?
+    /// True while that search is running.
+    public private(set) var isAsking = false
+    private var askTask: Task<Void, Never>?
+
     private var revealTask: Task<Void, Never>?
     private var reviewTask: Task<Void, Never>?
     /// The Analysis of the position being looked at, replaced each time the engine reports a
@@ -531,6 +559,18 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         return game.reviewLine(atPly: cursor)
     }
 
+    /// The position the board should draw — the trial's, when one is being tried out.
+    ///
+    /// Deliberately *not* `viewed`: the engine, the record, the Review and every other reader go on
+    /// seeing the real position, so a trial cannot start a search, cannot be played by the engine
+    /// on the other side, and cannot reach the Game. It is a hypothesis on a piece of glass.
+    public var board: Game {
+        guard let trial else { return viewed }
+        var hypothetical = viewed
+        guard hypothetical.apply(trial.move) else { return viewed }
+        return hypothetical
+    }
+
     public var isAtLatest: Bool { cursor >= game.plies.count }
 
     /// The move that led to the position on screen.
@@ -628,6 +668,8 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// three public paths differ only in the clock and who may be moving, and having them each
     /// hand-roll this is how one of them eventually forgets a line of it.
     private func commit(_ move: Move, by mover: Mover) {
+        // A move actually played answers the question the scanner was asking, whoever played it.
+        endScan()
         // The clock. Only a hand move at the latest position stops it: Mirrored Time is the
         // length of a *player's* last turn, and neither an engine move nor a move asked of it
         // was the player thinking (docs/adr/0009).
@@ -686,6 +728,9 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// nothing, or the honest first guess never gets made.
     public func offer(_ move: Move) {
         guard isStudying, guess == nil, reveal == nil else { return }
+        // A move being offered ends the asking: the scanner is what you use *before* committing,
+        // and a trial left on the board under a Guess would be two hypotheses at once.
+        endScan()
         let position = viewed
         guard position.state.move(matching: move.uci) != nil else {
             Sounds.current.play(.refused)
@@ -694,6 +739,94 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         guess = Guess(ply: cursor + 1, move: move, san: SAN.text(for: move, in: position.state))
         storedViewed = nil
         Sounds.current.play(.move)
+    }
+
+    // ----------------------------------------------------------------- point at a square
+
+    /// Arms the scanner: the next tap on the board is a question about that square.
+    public func armScanner() {
+        guard !isScannerArmed else { return }
+        isScannerArmed = true
+        scan = nil
+        trial = nil
+        scanAnswer = nil
+    }
+
+    /// Asks about one square: which of your pieces can legally get there.
+    ///
+    /// Only while armed, and only about the position being looked at. A scan makes no move, starts
+    /// no search and writes nothing — the answer is a list of your own legal moves, which is a fact
+    /// the player could count themselves and the app is merely quicker at.
+    public func scan(at square: Square) {
+        guard isScannerArmed else { return }
+        trial = nil
+        scanAnswer = nil
+        askTask?.cancel()
+        isAsking = false
+        scan = viewed.scan(at: square)
+        Sounds.current.play(scan?.isEmpty == false ? .move : .refused)
+    }
+
+    /// Plays one of the scanned moves as a hypothesis and says what it buys and costs.
+    public func tryOut(_ move: Move) {
+        guard let scan, scan.arrivals.contains(where: { $0.move == move }) else { return }
+        scanAnswer = nil
+        askTask?.cancel()
+        isAsking = false
+        trial = viewed.tryOut(move)
+        Sounds.current.play(trial == nil ? .refused : .move)
+    }
+
+    /// Takes the trial back off the board, keeping the question.
+    public func takeBackTrial() {
+        guard trial != nil || scanAnswer != nil else { return }
+        askTask?.cancel()
+        isAsking = false
+        trial = nil
+        scanAnswer = nil
+    }
+
+    /// Closes the scanner and leaves nothing behind.
+    public func endScan() {
+        askTask?.cancel()
+        isAsking = false
+        isScannerArmed = false
+        scan = nil
+        trial = nil
+        scanAnswer = nil
+    }
+
+    /// Asks the engine what it would play here, and reads its answer through the seven verbs.
+    ///
+    /// Last, and only on a tap. The whole design is in the order: you point at a square, you hear
+    /// what your own move is worth in your own terms, and only then do you find out what the engine
+    /// thought. Reversed, it is a hint button (docs/adr/0015). One bounded search at the study
+    /// Depth, so it is the same number the Reveal would show and not a live search's whatever.
+    public func askEngine() {
+        guard let engine, scan != nil, !isAsking, scanAnswer == nil else { return }
+        let position = viewed
+        let depth = studyDepth
+        let tried = trial?.san
+        isAsking = true
+        askTask?.cancel()
+        askTask = Task { [weak self] in
+            await engine.clear()
+            var best: Line?
+            for await snapshot in engine.analyse(position, budget: .depth(depth), lines: 1) {
+                if Task.isCancelled { return }
+                best = snapshot.best ?? best
+            }
+            guard let self, !Task.isCancelled else { return }
+            isAsking = false
+            guard let best, let san = best.san.first else { return }
+            scanAnswer = ScanAnswer(
+                depth: depth,
+                best: san,
+                score: best.score,
+                reading: position.reading(of: best.san),
+                isSameAsTrial: san == tried
+            )
+        }
     }
 
     /// Takes the offered move back off the board, and any reveal with it.

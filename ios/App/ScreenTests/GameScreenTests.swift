@@ -471,6 +471,84 @@ struct GameScreenScreenshots {
         #expect(session.analysis == nil)
     }
 
+    /// 点一格问它, in three pictures and in the one order that matters.
+    ///
+    /// The scanner is the only thing on this screen allowed to speak before a Guess is committed,
+    /// and it answers about the square somebody pointed at and about nothing else (docs/adr/0015).
+    /// The engine comes last and on a tap: you point at a square, you hear what your own move is
+    /// worth in your own terms, and only then do you find out what the engine thought. Reversed, it
+    /// is a hint button (docs/adr/0020).
+    @Test("the scanner lights the ways in, weighs the one you pick, and asks the engine last")
+    func scannerWalkthrough() async throws {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
+        let asked = try #require(
+            Game(startFEN: PGN.standardStartFEN, uciMoves: Array(Self.italian.prefix(6)))
+        )
+        let engine = ScriptedEngine(
+            Self.searching,
+            isEndless: true,
+            byPosition: [
+                asked.state.fen: Self.opinion(
+                    .centipawns(45), best: ("e1g1", "O-O"), then: ["d6", "d4"]
+                )
+            ]
+        )
+        let session = GameSession.fresh(game)
+        session.attach(engine: engine, library: nil)
+        session.jump(toPly: 6)
+
+        // One — armed, and pointed at d4. Two pieces can get there and the board rings both.
+        session.armScanner()
+        session.scan(at: try #require(Square("d4")))
+        let lit = await ScreenImage.write("game-scan-asked") { screen(session, engine: engine) }
+
+        #expect(session.scan?.origins == Set([try #require(Square("d2")), try #require(Square("f3"))]))
+        #expect(lit.says("d4：2 个子能过去。"))
+        #expect(lit.says("Nd4"))
+        // And nothing else on the layer has drawn itself: no legend, no Score, no search at all.
+        #expect(!lit.says("引擎还没算过这一步"))
+        #expect(!lit.says("引擎那步是为了"), "and no answer, because nothing was asked")
+        #expect(!lit.says("深度 14"))
+        #expect(session.analysis == nil)
+        #expect(engine.searchCount == 0, "not asked and hidden — not asked")
+
+        // Two — the pawn tried out. What it buys and what it costs, in that order, both of them
+        // facts anybody can go and count on the board.
+        session.tryOut(try #require(session.scan?.arrivals.first?.move))
+        let tried = await ScreenImage.write("game-scan-trial") { screen(session, engine: engine) }
+
+        #expect(session.trial?.san == "d4")
+        #expect(tried.says("攻 c5"), "what it is for, in the same verbs a player declares in")
+        #expect(tried.says("站不住：兵从 e5 就能吃它"), "and what it costs, with the taker named")
+        #expect(tried.says("引擎怎么说"), "the engine is behind a tap, and the tap has not happened")
+        #expect(!tried.says("引擎那步是为了"))
+        #expect(session.scanAnswer == nil)
+        #expect(engine.searchCount == 0)
+        // The trial is on the glass and in no Game.
+        #expect(session.board.plies.map(\.san).last == "d4")
+        #expect(session.game.plies.map(\.san) == ["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5", "c3", "Nf6"])
+
+        // Three — and now the engine, because somebody asked it.
+        session.askEngine()
+        await hop()
+        let answered = await ScreenImage.write("game-scan-engine") { screen(session, engine: engine) }
+
+        #expect(engine.searchCount == 1)
+        #expect(session.scanAnswer?.best == "O-O")
+        #expect(answered.says("引擎走"))
+        #expect(answered.says("O-O"))
+        #expect(answered.says("+0.45"))
+        #expect(answered.says("深度 14"))
+        // Its reason in the same seven words the trial's was written in.
+        #expect(answered.says("引擎那步是为了"))
+        #expect(answered.says("护 f2"))
+
+        // And leaving takes all of it off, board included.
+        session.endScan()
+        #expect(session.board.state.fen == session.viewed.state.fen)
+        #expect(session.game.variations(atPly: 6).isEmpty)
+    }
+
     /// Committing a guess: your move, the engine's, and the one actually played, at one Depth.
     @Test("committing a guess shows it against the engine's move and the one that was played")
     func studyAfterTheReveal() async throws {
