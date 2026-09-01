@@ -1307,18 +1307,91 @@ struct GameScreen: View {
                         .background(Palette.chipRest, in: Capsule())
                     }
                     .buttonStyle(.plain)
-                    if !looseSquares.isEmpty {
+                    // 走马灯, and only where there is a line to play: the app never goes and
+                    // fetches one to fill the button in (docs/adr/0019, 0020).
+                    if !session.viewedContinuation.isEmpty {
+                        Button {
+                            selected = nil
+                            withAnimation(.snappy(duration: 0.2)) {
+                                if session.walk == nil {
+                                    session.startWalk()
+                                } else {
+                                    session.endWalk()
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(
+                                    systemName: session.walk == nil
+                                        ? "play.rectangle" : "play.rectangle.fill"
+                                )
+                                .font(.caption2)
+                                Text("走马灯").font(.footnote)
+                            }
+                            .foregroundStyle(session.walk == nil ? Palette.inkSoft : Palette.mine)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(Palette.chipRest, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if !looseSquares.isEmpty, session.walk == nil {
                         Text("红圈：被吃的子比守的多")
                             .font(.caption)
                             .foregroundStyle(Palette.inkSoft)
                     }
                     Spacer(minLength: 0)
                 }
+                if let walk = session.walk { transport(walk) }
                 if session.showsControlChange { controlLegend }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.top, 10)
+        }
+    }
+
+    /// The transport, and where the whole line arrives.
+    ///
+    /// Both halves matter and the second one is the point: a carousel that only recites moves leaves
+    /// a beginner watching five plies go by and unable to say what changed. The sentence compares
+    /// the end of the line with its start, out of the same fixed templates over checkable facts as
+    /// the rest of the layer (docs/adr/0020).
+    @ViewBuilder private func transport(_ walk: Walk) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 7) {
+                Button { session.stepWalk(by: -walk.step) } label: {
+                    Image(systemName: "backward.end").font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .disabled(walk.isAtStart)
+                Button { session.stepWalk(by: -1) } label: {
+                    Image(systemName: "chevron.left").font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .disabled(walk.isAtStart)
+                Button { session.stepWalk(by: 1) } label: {
+                    Image(systemName: "chevron.right").font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .disabled(walk.isAtEnd)
+                Text("第 \(walk.step)/\(walk.line.count) 步")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
+                if walk.step > 0 {
+                    Text(walk.line[walk.step - 1])
+                        .font(.notation)
+                        .foregroundStyle(Palette.ink)
+                }
+                Spacer(minLength: 0)
+            }
+            Text(walk.outcome.sentence)
+                .font(.caption)
+                .foregroundStyle(Palette.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("这几步没有走进棋谱，退出就回到原来的位置。")
+                .font(.caption2)
+                .foregroundStyle(Palette.inkSoft)
         }
     }
 
@@ -1672,7 +1745,7 @@ struct GameScreen: View {
         BoardView(
             pieces: boardPieces,
             orientation: session.orientation,
-            lastMove: session.lastMove,
+            lastMove: session.boardLastMove,
             checks: viewed.state.checkSquares,
             // The doubtful squares stay ringed on the board being played on, right up until the
             // first move — which is what replaces the old gate: the reading's own uncertainty is
@@ -1689,8 +1762,10 @@ struct GameScreen: View {
             key: keySquares,
             // Tappable while a verb is waiting for its target, too: the board is the only place a
             // claim's target can be said, which is the whole reason a verb has one.
-            isInteractive: session.isHandTurn || session.declaringVerb != nil
-                || session.isScannerArmed,
+            // Not while a line is being walked: the pieces on screen are five moves from where the
+            // game is, and a tap would be a move made in a position nobody is standing in.
+            isInteractive: (session.isHandTurn || session.declaringVerb != nil
+                || session.isScannerArmed) && session.walk == nil,
             onTap: tap
         )
     }
@@ -1812,7 +1887,7 @@ struct GameScreen: View {
     /// Every piece hanging in the position on screen.
     private var looseSquares: Set<Square> {
         guard isPast else { return [] }
-        return viewed.loosePieces ?? []
+        return session.board.loosePieces ?? []
     }
 
     /// What the move on the board did to the control of the squares — the guess when there is one,
@@ -1830,7 +1905,9 @@ struct GameScreen: View {
     /// Reveal already produced. No line, no claim.
     private var keySquares: [KeySquare] {
         guard isPast, session.showsControlChange else { return [] }
-        return viewed.keySquares(continuation: session.viewedContinuation)
+        // Whatever the board is showing, read against whatever that position still expects — which
+        // is how the layer follows a walked line step by step (docs/adr/0020).
+        return session.board.keySquares(continuation: session.boardContinuation)
     }
 
     /// How the game on screen ended, if it has.

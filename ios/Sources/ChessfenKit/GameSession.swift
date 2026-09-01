@@ -70,6 +70,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
             scanAnswer = nil
             askTask?.cancel()
             isAsking = false
+            walk = nil
         }
     }
     /// The Game rebuilt where the cursor stands, kept until either the Game or the cursor
@@ -116,6 +117,12 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     public private(set) var scan: Scan?
     /// The move being tried out: on the board, in no Game, and gone the moment the scanner closes.
     public private(set) var trial: Trial?
+    /// The Line being played out on the board, when one is.
+    ///
+    /// 走马灯 (docs/adr/0020). The Line is the one somebody already paid for — a Review's or a
+    /// Reveal's — so watching it costs no engine time, and nothing in it is played: the Game, the
+    /// PGN and the Variations are all untouched, and leaving puts the board back exactly.
+    public private(set) var walk: Walk?
     /// What the engine said about the scanned position — only ever after somebody asked.
     public private(set) var scanAnswer: ScanAnswer?
     /// True while that search is running.
@@ -565,10 +572,40 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// seeing the real position, so a trial cannot start a search, cannot be played by the engine
     /// on the other side, and cannot reach the Game. It is a hypothesis on a piece of glass.
     public var board: Game {
+        if let walk, walk.step > 0 {
+            var ahead = viewed
+            for san in walk.played {
+                guard ahead.apply(san: san) else { return viewed }
+            }
+            return ahead
+        }
         guard let trial else { return viewed }
         var hypothetical = viewed
         guard hypothetical.apply(trial.move) else { return viewed }
         return hypothetical
+    }
+
+    /// The move that led to whatever the board is showing — the walked one, mid-walk.
+    ///
+    /// Without this the board tints the squares of the real last Ply while showing a position five
+    /// moves past it, which is the one thing a carousel must not do: the tint is how the eye finds
+    /// the move that just happened.
+    public var boardLastMove: MoveSquares? {
+        if let walk, walk.step > 0 {
+            let ahead = board
+            return ahead.moveSquares(atPly: ahead.plies.count)
+        }
+        return lastMove
+    }
+
+    /// The Line the layer should read against whatever the board is showing.
+    ///
+    /// Mid-walk that is what the Line still expects, which is why the 要害格 layer follows the plan
+    /// step by step rather than re-answering the same question five times: the second net moves with
+    /// the board (docs/adr/0020).
+    public var boardContinuation: [String] {
+        if let walk { return walk.remaining }
+        return viewedContinuation
     }
 
     public var isAtLatest: Bool { cursor >= game.plies.count }
@@ -731,6 +768,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         // A move being offered ends the asking: the scanner is what you use *before* committing,
         // and a trial left on the board under a Guess would be two hypotheses at once.
         endScan()
+        endWalk()
         let position = viewed
         guard position.state.move(matching: move.uci) != nil else {
             Sounds.current.play(.refused)
@@ -746,6 +784,9 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// Arms the scanner: the next tap on the board is a question about that square.
     public func armScanner() {
         guard !isScannerArmed else { return }
+        // One hypothesis on the board at a time: a trial inside a walked line is a position nobody
+        // can name.
+        endWalk()
         isScannerArmed = true
         scan = nil
         trial = nil
@@ -827,6 +868,43 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
                 isSameAsTrial: san == tried
             )
         }
+    }
+
+    // ----------------------------------------------------------------- 走马灯
+
+    /// Starts playing the stored Line out on the board.
+    ///
+    /// The Line is whichever one somebody already paid for — the Review's for this Ply, or the one
+    /// a committed Guess's search produced. No search is started to play a carousel: an app that
+    /// went and fetched a line when somebody pressed play would be spending a Stint on a picture
+    /// (docs/adr/0019, 0020). Nothing to play means nothing happens and the screen says why.
+    public func startWalk() {
+        guard walk == nil else { return }
+        let line = viewedContinuation
+        guard !line.isEmpty, let outcome = viewed.outcome(of: line) else { return }
+        endScan()
+        // Watching the squares change hands is the whole point of playing it, so the layer comes on
+        // with it — the same one exception a commit gets, and for the same reason (docs/adr/0015).
+        showsControlChange = true
+        walk = Walk(line: line, step: 0, outcome: outcome)
+        Sounds.current.play(.move)
+    }
+
+    /// Steps the Line forward or back. Clamped at both ends rather than wrapping: a carousel that
+    /// silently starts again is a carousel you cannot read the end of.
+    public func stepWalk(by delta: Int) {
+        guard var walking = walk else { return }
+        let wanted = min(max(0, walking.step + delta), walking.line.count)
+        guard wanted != walking.step else { return }
+        walking.step = wanted
+        walk = walking
+        Sounds.current.play(.move)
+    }
+
+    /// Puts the board back where it was.
+    public func endWalk() {
+        guard walk != nil else { return }
+        walk = nil
     }
 
     /// Takes the offered move back off the board, and any reveal with it.

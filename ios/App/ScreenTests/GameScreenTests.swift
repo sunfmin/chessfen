@@ -471,6 +471,55 @@ struct GameScreenScreenshots {
         #expect(session.analysis == nil)
     }
 
+    /// 走马灯: the engine's stored Line played out on the main board, with the layer following each
+    /// step and one sentence saying where the whole thing arrives.
+    ///
+    /// The sentence is the point. Without it a carousel recites four moves, the position is
+    /// different at the end, and the difference is exactly what a beginner cannot see (docs/adr/0020).
+    @Test("the carousel walks the stored line, the layer follows, and one sentence says where it went")
+    func carouselMidLine() async throws {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
+        let session = GameSession.fresh(game)
+        let engine = ScriptedEngine(Self.searching, isEndless: true)
+        session.attach(engine: engine, library: nil)
+        // The Line the Review stored on ply 6 — the only place a carousel gets one from, because no
+        // search is started to play one (docs/adr/0019).
+        session.applyReview(
+            game.plies.indices.map { ply in
+                ReviewedPly(
+                    score: .centipawns(20),
+                    line: ply == 5 ? ["Nxe5", "Nxe5", "d4", "Bd6"] : []
+                )
+            },
+            startEvaluation: nil,
+            depth: 18
+        )
+        session.jump(toPly: 6)
+        session.startWalk()
+        session.stepWalk(by: 2)
+
+        let rendered = await ScreenImage.write("game-carousel") { screen(session, engine: engine) }
+
+        // Two of four plies on the board, and the board is showing them.
+        #expect(session.board.plies.map(\.san).suffix(2) == ["Nxe5", "Nxe5"])
+        #expect(rendered.says("第 2/4 步"))
+        #expect(rendered.says("走马灯"))
+        // The layer redrew for the position the walk is standing in, not the one the game is in.
+        #expect(session.boardContinuation == ["d4", "Bd6"])
+        #expect(rendered.says("f7"))
+        // And where the whole line arrives, in one sentence over facts anybody can count.
+        #expect(rendered.says("4 步之后，你吃了对方 1 个兵，自己丢了 1 个马"))
+        #expect(rendered.says("这几步没有走进棋谱"))
+        // Nothing was written and nothing was searched for.
+        #expect(session.game.plies.map(\.san) == ["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5", "c3", "Nf6"])
+        #expect(session.game.variations(atPly: 6).isEmpty)
+        #expect(engine.searchCount == 0)
+
+        // And leaving puts the board back exactly where it was.
+        session.endWalk()
+        #expect(session.board.state.fen == session.viewed.state.fen)
+    }
+
     /// 点一格问它, in three pictures and in the one order that matters.
     ///
     /// The scanner is the only thing on this screen allowed to speak before a Guess is committed,

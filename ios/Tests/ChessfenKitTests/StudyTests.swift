@@ -150,6 +150,114 @@ import Testing
         return session
     }
 
+    // ---------------------------------------------------------------- 走马灯
+
+    /// The Line the Review already stored, played out on the main board. Nothing is written and no
+    /// search is started: watching a plan happen is worth a picture, not a Stint (docs/adr/0019, 0020).
+    private func reviewedSession(_ engine: any Engine) throws -> GameSession {
+        let session = try session(engine)
+        session.applyReview(
+            [
+                ReviewedPly(score: .centipawns(30), line: ["e5", "Nf3", "Nc6"]),
+                ReviewedPly(score: .centipawns(20), line: ["Nf3", "Nc6", "Bb5"]),
+                ReviewedPly(score: .centipawns(25), line: ["Nc6", "Bb5", "a6"]),
+                ReviewedPly(score: .centipawns(22), line: ["Bb5", "a6", "Ba4"]),
+            ],
+            startEvaluation: nil,
+            depth: 18
+        )
+        return session
+    }
+
+    @Test("the stored line plays out on the board, and the game never hears about it")
+    func theCarouselPlaysTheStoredLine() throws {
+        let engine = PositionalEngine([:])
+        let session = try reviewedSession(engine)
+        session.jump(toPly: 2)
+
+        session.startWalk()
+        let walk = try #require(session.walk)
+        #expect(walk.line == ["Nf3", "Nc6", "Bb5"], "the line the Review stored, not a new one")
+        #expect(walk.isAtStart)
+        #expect(session.board.state.fen == session.viewed.state.fen, "step 0 is where it started")
+        #expect(session.showsControlChange, "and the layer comes on with it")
+
+        session.stepWalk(by: 1)
+        #expect(session.board.plies.map(\.san) == ["e4", "e5", "Nf3"])
+        #expect(session.boardContinuation == ["Nc6", "Bb5"], "the layer reads what is still ahead")
+        #expect(session.boardLastMove?.to == (try #require(Square("f3"))))
+
+        session.stepWalk(by: 2)
+        #expect(session.walk?.isAtEnd == true)
+        #expect(session.board.plies.map(\.san) == ["e4", "e5", "Nf3", "Nc6", "Bb5"])
+        // And none of it reached the Game: no ply, no Variation, no search.
+        #expect(session.game.plies.map(\.san) == ["e4", "e5", "Nf3", "Nc6"])
+        #expect(session.game.variations(atPly: 2).isEmpty)
+        #expect(engine.searchCount == 0, "the line was already paid for")
+
+        session.endWalk()
+        #expect(session.walk == nil)
+        #expect(session.board.state.fen == session.viewed.state.fen)
+        #expect(session.boardContinuation == ["Nf3", "Nc6", "Bb5"])
+    }
+
+    @Test("the transport stops at both ends instead of wrapping")
+    func theCarouselClampsAtBothEnds() throws {
+        let session = try reviewedSession(PositionalEngine([:]))
+        session.jump(toPly: 2)
+        session.startWalk()
+
+        session.stepWalk(by: 9)
+        #expect(session.walk?.step == 3, "three plies in the line, and no fourth")
+        session.stepWalk(by: -9)
+        #expect(session.walk?.step == 0)
+    }
+
+    @Test("where the whole line arrived is said once, and is about the line and not the step")
+    func theCarouselSaysWhereItArrived() throws {
+        let session = try reviewedSession(PositionalEngine([:]))
+        session.jump(toPly: 2)
+        session.startWalk()
+        let outcome = try #require(session.walk?.outcome)
+
+        #expect(outcome.steps == 3)
+        #expect(outcome.sentence.hasPrefix("3 步之后，"))
+        // The same sentence at every step: it is about where the line ends up, and stepping through
+        // it does not change where that is.
+        session.stepWalk(by: 2)
+        #expect(session.walk?.outcome == outcome)
+    }
+
+    @Test("with no line stored there is nothing to play, and nothing happens")
+    func theCarouselNeedsALine() throws {
+        let session = try session(PositionalEngine([:]))
+        session.jump(toPly: 2)
+        #expect(session.viewedContinuation.isEmpty)
+
+        session.startWalk()
+        #expect(session.walk == nil, "no line, no carousel — and no search to go and get one")
+        #expect(!session.showsControlChange)
+    }
+
+    @Test("asking about a square, or moving the question, takes the carousel off the board")
+    func theCarouselGoesWithTheQuestion() throws {
+        let session = try reviewedSession(PositionalEngine([:]))
+        session.jump(toPly: 2)
+        session.startWalk()
+        session.stepWalk(by: 1)
+
+        // One hypothesis on the board at a time.
+        session.armScanner()
+        #expect(session.walk == nil)
+
+        session.endScan()
+        session.startWalk()
+        session.stepWalk(by: 1)
+        session.jump(toPly: 1)
+        #expect(session.walk == nil)
+        #expect(session.board.state.fen == session.viewed.state.fen)
+    }
+
     // ---------------------------------------------------------------- the scanner
 
     /// The scanner is the one thing allowed to talk before a Guess is in, and it only ever talks
