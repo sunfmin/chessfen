@@ -36,6 +36,13 @@ public struct Reveal: Hashable, Sendable {
     /// What the engine would play here. Nil when the engine could not be asked.
     public let best: String?
     public let bestScore: Score?
+    /// What the engine expects to happen *after* the move that was offered, in SAN.
+    ///
+    /// Free, and only free here: the search that scored the Guess produced these moves and used
+    /// to drop them. It is what lets the board say which of the squares the Guess changed hands
+    /// over actually mattered, which is a question about where the game goes next
+    /// (docs/adr/0020). Empty when the search could not be made.
+    public let guessLine: [String]
 
     /// What the player said the move was for, and whether that claim actually held.
     ///

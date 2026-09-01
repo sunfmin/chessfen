@@ -17,7 +17,12 @@ struct GameScreenScreenshots {
 
     /// One position's worth of opinion: a Score, and optionally the move the engine would play.
     /// What a study needs, as against a search that deepens.
-    static func opinion(_ score: Score, best: (uci: String, san: String)? = nil) -> Analysis {
+    /// `then` is the rest of the Line in SAN. A Line of one move was enough while the only thing
+    /// read off it was the arrow; the board now reads the continuation to say which squares a move
+    /// mattered over, so a fake engine has to be able to have one (docs/adr/0020).
+    static func opinion(
+        _ score: Score, best: (uci: String, san: String)? = nil, then: [String] = []
+    ) -> Analysis {
         Analysis(
             depth: 14,
             selectiveDepth: 18,
@@ -25,7 +30,7 @@ struct GameScreenScreenshots {
                 Line(
                     score: score,
                     uciMoves: best.map { [$0.uci] } ?? [],
-                    san: best.map { [$0.san] } ?? []
+                    san: best.map { [$0.san] + then } ?? []
                 )
             ],
             nodes: 4_000_000,
@@ -594,7 +599,9 @@ struct GameScreenScreenshots {
             isEndless: true,
             byPosition: [
                 asked.state.fen: Self.opinion(.centipawns(30), best: ("d2d3", "d3")),
-                guessed.state.fen: Self.opinion(.centipawns(25)),
+                guessed.state.fen: Self.opinion(
+                    .centipawns(25), best: ("e5f3", "Nf3"), then: ["Qf6", "d3", "d6"]
+                ),
             ]
         )
         let session = GameSession.fresh(game)
@@ -610,7 +617,10 @@ struct GameScreenScreenshots {
         return (session, engine)
     }
 
-    @Test("a studied position rings what is hanging and shows what the move changed")
+    /// Before the Guess is committed the layer has nothing to say, and says *that* rather than
+    /// falling back on the diff it used to print. Drawing the reading here would be handing over
+    /// the answer to the question being asked (docs/adr/0015, 0020).
+    @Test("a studied position rings what is hanging and holds the reading until the guess is in")
     func boardLayers() async throws {
         let (session, engine) = try await layered()
 
@@ -623,19 +633,43 @@ struct GameScreenScreenshots {
         let loose = try #require(session.viewed.loosePieces)
         #expect(loose.contains(try #require(Square("e5"))), "the knight White left there")
         #expect(session.showsControlChange)
-        let change = try #require(session.viewed.lastMoveControlChange)
-        #expect(!change.isEmpty)
         #expect(session.guess?.san == "Qg5", "the player's own arrow has something to draw")
         #expect(session.declaredIntent?.target == Square("e5"), "and the claim has a target to ring")
-        #expect(rendered.says("这步改了什么"))
+        #expect(rendered.says("这步的要害"))
         #expect(rendered.says("红圈"), "with the one mark that needs a word said in one")
-        // And the layer's own words, which it went without for far too long: a wash on nine
-        // squares in one colour is a thing nobody can read, so the two directions are told apart
-        // and both are named, in the name of the side whose move it was.
-        #expect(rendered.says("管住了"), "what the move took a grip on")
-        #expect(rendered.says("松开了"), "and what it let go of, which is the half that was missing")
-        #expect(rendered.says("\(change.gained.count) 格"))
-        #expect(rendered.says("\(change.lost.count) 格"))
+        // Nothing is ranked, because nothing has been paid for: the engine has not been let speak
+        // about this position yet, and the panel says which of the two silences it is.
+        #expect(session.viewedContinuation.isEmpty)
+        #expect(session.viewed.keySquares(continuation: session.viewedContinuation).isEmpty)
+        #expect(rendered.says("先交卷"))
+        #expect(!rendered.says("管住了 6 格"), "the old diff is gone, not merely quieter")
+    }
+
+    /// And the moment it *is* committed: one square, numbered, with a sentence saying what it
+    /// cost — which is the whole of what this layer was rebuilt for.
+    @Test("committing the guess brings up the reading by itself, one square with a sentence")
+    func keySquaresAfterTheGuessIsIn() async throws {
+        let (session, engine) = try await layered()
+        session.setShowsControlChange(false)
+        session.commitGuess()
+        await hop()
+
+        let rendered = await ScreenImage.write("game-key-squares") {
+            screen(session, engine: engine)
+        }
+
+        // Turned on by the commit and by nothing else: nobody pressed the button here.
+        #expect(session.showsControlChange, "the one moment the layer may appear by itself")
+        #expect(!session.viewedContinuation.isEmpty, "the reveal kept the line its search produced")
+
+        let key = session.viewed.keySquares(continuation: session.viewedContinuation)
+        #expect(key.count == 1, "one square, out of everything Qg5 changed hands over")
+        let only = try #require(key.first)
+        #expect(only.square == Square("e8"))
+        #expect(only.kind == .ownKing)
+        #expect(!only.isGain, "she walked away from the square her own king stands on")
+        #expect(rendered.says(only.note))
+        #expect(rendered.says("自己的王正站在上面"))
     }
 
     @Test("the same two layers hold up in the dark")
@@ -646,7 +680,7 @@ struct GameScreenScreenshots {
             screen(session, engine: engine)
         }
 
-        #expect(rendered.says("这步改了什么"))
+        #expect(rendered.says("这步的要害"))
         #expect(rendered.says("你走 Qg5"))
         #expect(rendered.says("攻 e5"), "the claim, in the player's own words")
     }

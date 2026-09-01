@@ -82,9 +82,13 @@ struct GameScreen: View {
                 // a scroll again.
                 ScrollView {
                     VStack(spacing: 0) {
+                        // First, because it is the legend for marks that are on the board. It sat
+                        // under the Reveal until the Reveal grew tall enough to push it off the
+                        // screen entirely — a numbered square with its sentence two scrolls away
+                        // is the same "我看不懂" this layer was rebuilt to answer.
+                        layers
                         study
                         report
-                        layers
                         questions
                         series
                         corrections
@@ -1129,11 +1133,11 @@ struct GameScreen: View {
     /// Only for a position already played into: on the live position there is nothing here to
     /// turn on, because there is nothing the app is willing to point at.
     ///
-    /// **A wash on nine squares means nothing without a sentence.** The layer used to be one
-    /// colour and no words at all, next to a legend belonging to the *other* layer — so what it
-    /// drew was a scattering of violet squares that nobody could read, in the same violet as the
-    /// player's own arrow and their claim's ring. It says who now holds what, and it says it in
-    /// the names of the two sides, because "gained" is somebody's gain.
+    /// **It names squares now instead of counting them.** It used to paint every square the move
+    /// changed hands over — nine or ten of them, two colours, a legend with the totals in it. That
+    /// is a diff, and the question it left was 「我管住了这些格，然后呢？」 So the rules propose and
+    /// the engine's own line disposes, and what reaches the board is one square, sometimes two,
+    /// never more than three, each with a sentence saying what it costs or buys (docs/adr/0020).
     @ViewBuilder private var layers: some View {
         if isPast {
             VStack(alignment: .leading, spacing: 6) {
@@ -1149,7 +1153,7 @@ struct GameScreen: View {
                                     ? "square.grid.3x3.fill" : "square.grid.3x3"
                             )
                             .font(.caption2)
-                            Text("这步改了什么").font(.footnote)
+                            Text("这步的要害").font(.footnote)
                         }
                         .foregroundStyle(
                             session.showsControlChange ? Palette.mine : Palette.inkSoft
@@ -1174,51 +1178,52 @@ struct GameScreen: View {
         }
     }
 
-    /// What the two washes mean, in the names of the sides they are about.
+    /// One numbered sentence per square drawn, and the reason there is nothing when there is
+    /// nothing.
     ///
-    /// Said with the colours themselves rather than only in words — a swatch beside its sentence
-    /// is how somebody checks a colour they are unsure of without leaving the board. And it says
-    /// nothing at all when the move changed nothing, which happens and is worth knowing: a move
-    /// that took no square off anybody is the honest answer to 这步改了什么.
+    /// The number is the join: the same figure is on the square. The colour is the join too — the
+    /// mover's own violet for a square taken, the alarm colour for one let go — so a swatch is not
+    /// needed beside every line, only the badge that is already there.
+    ///
+    /// Three ways for this to be empty, and they are different pieces of news, so they are three
+    /// different sentences. A player told "nothing here" who is actually being told "nobody has
+    /// asked the engine yet" learns the wrong thing.
     @ViewBuilder private var controlLegend: some View {
-        if let change = controlChange {
-            let mover = change.mover.chinese
-            if change.isEmpty {
-                Text("这步没改变任何格子的归属。")
-                    .font(.caption)
-                    .foregroundStyle(Palette.inkSoft)
-            } else {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 12) {
-                        swatch(Palette.mine, "\(mover)管住了 \(change.gained.count) 格")
-                        swatch(Palette.alarm, "松开了 \(change.lost.count) 格")
-                        Spacer(minLength: 0)
-                    }
-                    // The one place where letting go of a square is not a matter of taste. Said
-                    // only when it happened, because a line that reads "0 格贴着王" every other
-                    // move is a line nobody reads by the third one.
-                    if !change.nearKing.isEmpty {
-                        Text("其中 \(change.nearKing.count) 格贴着\(mover)自己的王——对方的攻势从这里进来。")
+        let key = keySquares
+        if !key.isEmpty {
+            VStack(alignment: .leading, spacing: 5) {
+                ForEach(Array(key.enumerated()), id: \.element.square) { rank, square in
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("\(rank + 1)")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 16, height: 16)
+                            .background(square.isGain ? Palette.mine : Palette.alarm, in: Circle())
+                        Text(square.note)
                             .font(.caption)
-                            .foregroundStyle(Palette.alarm)
+                            .foregroundStyle(Palette.ink)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
-        }
-    }
-
-    /// A colour, drawn the way the board draws it, beside what it means. The same tint and the
-    /// same edge, or it is a legend for a different picture.
-    private func swatch(_ colour: Color, _ label: String) -> some View {
-        HStack(spacing: 5) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(colour.opacity(0.24))
-                .frame(width: 12, height: 12)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 2).stroke(colour.opacity(0.9), lineWidth: 1.5)
-                )
-            Text(label).font(.caption).foregroundStyle(Palette.inkSoft)
+        } else if session.viewedContinuation.isEmpty {
+            // Not "nothing happened": nobody has paid for a line over this position yet, and the
+            // way to buy one is a Review or a committed Guess (docs/adr/0019, 0020).
+            Text(session.guess == nil
+                ? "引擎还没算过这一步。打开上面的「引擎意见」让它把全局重算一遍，这里就有话说了。"
+                : "先交卷。交卷之前引擎不开口，这里也就还没有话说。")
+                .font(.caption)
+                .foregroundStyle(Palette.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if controlChange?.isEmpty == true {
+            Text("这步没改变任何格子的归属。")
+                .font(.caption)
+                .foregroundStyle(Palette.inkSoft)
+        } else {
+            Text("这步换手的格子，引擎接下来几步一个也没用上——就这一步而言，它们都不是要害。")
+                .font(.caption)
+                .foregroundStyle(Palette.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -1536,7 +1541,7 @@ struct GameScreen: View {
             mine: myArrow,
             aim: session.declaredIntent?.target,
             loose: looseSquares,
-            control: controlChange,
+            key: keySquares,
             // Tappable while a verb is waiting for its target, too: the board is the only place a
             // claim's target can be said, which is the whole reason a verb has one.
             isInteractive: session.isHandTurn || session.declaringVerb != nil,
@@ -1655,6 +1660,16 @@ struct GameScreen: View {
     private var controlChange: ControlChange? {
         guard isPast, session.showsControlChange else { return nil }
         return viewed.lastMoveControlChange
+    }
+
+    /// The one to three squares this move is actually about (docs/adr/0020).
+    ///
+    /// The rules net is in the package; what the screen supplies is the engine's expected
+    /// continuation, and it never starts a search to get one — it is whichever line a Review or a
+    /// Reveal already produced. No line, no claim.
+    private var keySquares: [KeySquare] {
+        guard isPast, session.showsControlChange else { return [] }
+        return viewed.keySquares(continuation: session.viewedContinuation)
     }
 
     /// How the game on screen ended, if it has.

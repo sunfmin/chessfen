@@ -76,6 +76,10 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// (docs/adr/0015): a board wearing every layer at once is a board nobody reads, and the
     /// answer to "what did that move do" is worth more when somebody asked for it. On the session
     /// rather than in the screen so that it cannot come back from a Game the player has left.
+    ///
+    /// One exception, and it is the one moment it is allowed: committing a Guess turns it on. At
+    /// that moment the engine is already speaking, so the tap it would cost buys nothing
+    /// (docs/adr/0020).
     public private(set) var showsControlChange = false
     /// The verb chosen, waiting for the Square it is about. A claim with no target is not a claim
     /// yet, which is why this is not an Intent.
@@ -513,6 +517,20 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         return rebuilt
     }
 
+    /// What the engine expects to happen from the position on screen, in SAN.
+    ///
+    /// Three cases and one rule — the app never starts a search to answer this, so the answer is
+    /// whichever line somebody already paid for (docs/adr/0019, 0020):
+    ///
+    /// - a Guess that has been committed: the line the Reveal's own search produced;
+    /// - a Guess still being held: nothing, because the engine has not been let speak yet
+    ///   (docs/adr/0015), and the layer says so rather than guessing;
+    /// - anything else: the Review's line for this position, empty until there has been a Review.
+    public var viewedContinuation: [String] {
+        if guess != nil { return reveal?.guessLine ?? [] }
+        return game.reviewLine(atPly: cursor)
+    }
+
     public var isAtLatest: Bool { cursor >= game.plies.count }
 
     /// The move that led to the position on screen.
@@ -759,6 +777,11 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         let ply = guess.ply
         let offered = guess.san
 
+        // The one moment the layer is allowed to appear by itself. Before a Guess is committed
+        // it would be the blunder-check performed on the player's behalf (docs/adr/0015); at the
+        // commit the engine is already talking, and hiding the reading behind another tap buys
+        // nothing (docs/adr/0020).
+        showsControlChange = true
         isRevealing = true
         revealTask?.cancel()
         revealTask = Task { [weak self] in
@@ -772,7 +795,15 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
                 if Task.isCancelled { return }
                 best = snapshot.best ?? best
             }
-            let guessScore = await engine.evaluate(guessed, budget: .depth(depth))
+            // Analysed rather than merely evaluated: `evaluate` throws the Line away, and the
+            // Line after the Guess is what the board reads to say which squares mattered. Same
+            // search, same Depth, one more thing kept (docs/adr/0020).
+            var afterGuess: Line?
+            for await snapshot in engine.analyse(guessed, budget: .depth(depth), lines: 1) {
+                if Task.isCancelled { return }
+                afterGuess = snapshot.best ?? afterGuess
+            }
+            let guessScore = afterGuess?.score
             // The move that was played needs no search when it *is* the guess, and none when the
             // file already holds it at this very Depth.
             let playedScore: Score?
@@ -797,6 +828,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
                 playedScore: playedScore,
                 best: best?.san.first,
                 bestScore: best?.score,
+                guessLine: Array((afterGuess?.san ?? []).prefix(Game.Ply.lineLimit)),
                 intent: declared,
                 intentCheck: check
             )

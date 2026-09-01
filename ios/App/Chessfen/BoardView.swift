@@ -101,10 +101,13 @@ struct BoardView: View {
     /// somebody is studying: on the position they are about to move in, this layer would be the
     /// blunder-check done on their behalf, which is the one thing it exists to teach.
     var loose: Set<Square> = []
-    /// What the move being looked at did to the map of who holds what, from the point of view of
-    /// whoever played it. Two sets and not one: a move's gains and its costs drawn in the same
-    /// colour are a scattering of squares with nothing to say about any of them.
-    var control: ControlChange?
+    /// The one to three squares the move is actually about, in order, most important first.
+    ///
+    /// Not every square that changed hands. Ten squares in two colours is a diff, and a player
+    /// cannot act on a diff — so the rules propose and the engine disposes, and what reaches the
+    /// board is what survived both (docs/adr/0020). Numbered, because each one has a sentence
+    /// under the board and a square with no number cannot be matched to one.
+    var key: [KeySquare] = []
     var coordinates = true
     var isInteractive = true
     var onTap: ((Square) -> Void)?
@@ -247,15 +250,17 @@ struct BoardView: View {
                 if moved.contains(square) {
                     context.fill(Path(box), with: .color(Self.lastMoveWash))
                 }
-                // What the move did to the squares, under the pieces, because it is about the
-                // squares. Two colours for two opposite facts: the mover's own violet for the
-                // squares it took a grip on, the alarm colour for the ones it let go of.
-                if let control {
-                    if control.gained.contains(square) {
-                        markSquare(box, Palette.mine, cell: cell, into: &context)
-                    } else if control.lost.contains(square) {
-                        markSquare(box, Palette.alarm, cell: cell, into: &context)
-                    }
+                // What the move was about, under the pieces, because it is about the squares.
+                // Two colours for two opposite facts: the mover's own violet for a square it took
+                // a grip on, the alarm colour for one it let go of.
+                if let rank = key.firstIndex(where: { $0.square == square }) {
+                    markSquare(
+                        box,
+                        key[rank].isGain ? Palette.mine : Palette.alarm,
+                        number: rank + 1,
+                        cell: cell,
+                        into: &context
+                    )
                 }
                 if checks.contains(square) { drawCheck(in: box, into: &context) }
                 if coordinates {
@@ -314,7 +319,8 @@ struct BoardView: View {
     /// A square, not a circle. The rings on this board are marks about *pieces* — what is hanging,
     /// what a claim is about — and these are marks about squares, some of which are empty.
     private func markSquare(
-        _ box: CGRect, _ colour: Color, cell: CGFloat, into context: inout GraphicsContext
+        _ box: CGRect, _ colour: Color, number: Int, cell: CGFloat,
+        into context: inout GraphicsContext
     ) {
         let width = max(1.5, cell * 0.055)
         context.fill(Path(box), with: .color(colour.opacity(0.24)))
@@ -322,6 +328,23 @@ struct BoardView: View {
             Path(box.insetBy(dx: width / 2, dy: width / 2)),
             with: .color(colour.opacity(0.9)),
             lineWidth: width
+        )
+        // The number is what joins the square to its sentence. Solid rather than tinted: it has
+        // to read over a piece standing on the square, which is the commonest case there is.
+        let radius = cell * 0.15
+        let centre = CGPoint(x: box.maxX - radius - width, y: box.minY + radius + width)
+        context.fill(
+            Path(ellipseIn: CGRect(
+                x: centre.x - radius, y: centre.y - radius, width: radius * 2, height: radius * 2
+            )),
+            with: .color(colour)
+        )
+        context.draw(
+            Text("\(number)")
+                .font(.system(size: radius * 1.5, weight: .bold))
+                .foregroundStyle(.white),
+            at: centre,
+            anchor: .center
         )
     }
 

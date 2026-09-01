@@ -96,11 +96,11 @@ xcodebuild test -project Chessfen.xcodeproj -scheme Chessfen \
 open out/game-in-play.png
 ```
 
-Eleven pictures land in `ios/App/out`: a game under way, a board straight off a photograph, one
+Twelve pictures land in `ios/App/out`: a game under way, a board straight off a photograph, one
 filed into a collection, a reopened game, the engine on its own clock, an engine that has run
 its Stint out, the app playing itself, a Variation offered where it branches, a mate, practice,
-and the whole screen at night. They
-are not in the repository — they are written to be looked at, and they are rewritten by every
+one square named as this move's 要害 with the sentence that says why, and the whole screen at
+night. They are not in the repository — they are written to be looked at, and they are rewritten by every
 run.
 
 The only thing faked is the search. `Engine` is a protocol the app's `EngineService` conforms
