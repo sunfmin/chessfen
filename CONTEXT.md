@@ -240,10 +240,11 @@ A Variation at most five Ply long, carrying one Intent judged over the whole lin
 over its first move. The unbuilt consequence of docs/adr/0017, finally built. The cap is about
 what can be checked rather than about how far people see: past about five Ply the opponent has
 had enough replies that no claim about the position is falsifiable, and an Intent that cannot
-be told false is not one (docs/adr/0018). The moves come from the engine's own best line on one
-tap and the *reason* is the player's — a blank five-move canvas asked for the easy half, and
-the half no engine does for you is saying what a line is for (docs/adr/0021). Still editable:
-退一步 and the board are how you disagree with it. Stored as an ordinary Variation — the Game
+be told false is not one (docs/adr/0018). Opening it draws the engine's best five on the board
+and leaves the board live: you move on it — the engine's move or your own — and the five are
+recomputed from wherever that leaves you (docs/adr/0021). What you *walked* is the plan; what
+is drawn ahead of you is advice and is never committed. Walking past five is free; it is 交卷
+the cap closes. Stored as an ordinary Variation — the Game
 and the PGN already know how to hold one — with the Intent on its first Ply carrying how far it
 reaches, so nobody reads it as the reason for that one move. Judged by putting the claim to
 each of the mover's own moves in turn with the same checker a one-move Intent gets, and the
@@ -251,12 +252,13 @@ step that made it true is named: 「第 5 步 Ng5 的时候成立」.
 _Avoid_: plan, strategy, sequence, combination, opening prep
 
 **Plan Note**:
-One row of a 五步计划: what a single Ply of the line is for, and what it gives away. Every Ply
-goes through the same reader the scanner's Trial and the engine's own move go through, so the
-plan is read in the same seven verbs the player will have to make their claim in. The
-opponent's replies are read from the opponent's seat, which is what makes them threats rather
-than filler — a plan whose answers are left blank is a plan nobody checked. Numbered to match
-the arrow on the board, because five unlabelled lines across a board is a scribble.
+One row of a 五步计划: what a single Ply of the engine's next five is for, and what it gives
+away. Every Ply goes through the same reader the scanner's Trial and the engine's own move go
+through, so the line is read in the same seven verbs the player will have to make their claim
+in. The opponent's replies are read from the opponent's seat, which is what makes them threats
+rather than filler — a line whose answers are left blank is a line nobody checked. Numbered to
+match the arrow on the board, because five unlabelled lines across a board is a scribble, and
+tapping one walks the board that far: the row is the transport.
 _Avoid_: annotation, comment, explanation, commentary
 
 **Intent**:

@@ -595,9 +595,9 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// seeing the real position, so a trial cannot start a search, cannot be played by the engine
     /// on the other side, and cannot reach the Game. It is a hypothesis on a piece of glass.
     public var board: Game {
-        if let planDraft, planDraft.step > 0 {
+        if let planDraft, !planDraft.isEmpty {
             var building = viewed
-            for move in planDraft.moves.prefix(planDraft.step) {
+            for move in planDraft.moves {
                 guard building.apply(move) else { return viewed }
             }
             return building
@@ -621,8 +621,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// moves past it, which is the one thing a carousel must not do: the tint is how the eye finds
     /// the move that just happened.
     public var boardLastMove: MoveSquares? {
-        if let planDraft, planDraft.step > 0 {
-            let move = planDraft.moves[planDraft.step - 1]
+        if let planDraft, let move = planDraft.moves.last {
             return MoveSquares(uci: move.uci)
         }
         if let walk, walk.step > 0 {
@@ -912,17 +911,16 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
 
     // ----------------------------------------------------------------- 五步计划
 
-    /// Puts a five-move plan on the board, and asks the engine to fill it in.
+    /// Opens the board as a place to try a line out, with the engine's next five drawn on it.
     ///
     /// Only at a past position, and that is not a limitation so much as what a plan *is* here: it
     /// goes into the file as a Variation, a Variation is an alternative to a move, and at the latest
     /// position there is no move for it to be an alternative to — a line played there is the game,
     /// which the app already has a name for (docs/adr/0017).
     ///
-    /// The line arrives from the engine rather than from the player, and that is the one place on
-    /// this screen where the engine goes first (docs/adr/0021). What it does not hand over is the
-    /// claim: the reason is still declared, still in the seven verbs, and still judged move by move
-    /// — so what changed is which half of the exercise the app does, not whether there is one.
+    /// The five moves arrive from the engine rather than from the player, and that is the one place
+    /// on this screen where the engine goes first (docs/adr/0021). What it does not hand over is the
+    /// claim: the reason is still declared, still in the seven verbs, and still judged move by move.
     public func startPlan() {
         guard planDraft == nil, !isAtLatest, cursor < game.plies.count else { return }
         endScan()
@@ -931,22 +929,91 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         planCheck = nil
         planOutcome = nil
         planNotes = []
-        // The layer marks each step as the line is walked, so it comes on with it — the same
+        // The layer marks each square as the line is walked, so it comes on with it — the same
         // exception a commit and a carousel get, and for the same reason (docs/adr/0015).
         showsControlChange = true
         planDraft = PlanDraft(ply: cursor)
-        fillPlan()
+        lookAhead()
     }
 
-    /// Asks the engine for its best line and writes the first five plies of it into the draft.
+    /// Plays one move into the plan — any legal move, the engine's or one of your own.
+    ///
+    /// Deviating is the point. The five on the board are what the engine would do; playing something
+    /// else and watching the next five change is the only way to find out what your idea was worth,
+    /// and an app that only let you tap along the engine's line would be a replay button.
+    ///
+    /// Walking past five is allowed and 交卷 is not: exploring is free, and it is the *claim* the cap
+    /// is about (docs/adr/0018).
+    public func playInPlan(_ move: Move) {
+        guard planDraft != nil else {
+            Sounds.current.play(.refused)
+            return
+        }
+        var tip = board
+        guard let legal = tip.state.move(matching: move.uci) else {
+            Sounds.current.play(.refused)
+            return
+        }
+        let san = SAN.text(for: legal, in: tip.state)
+        guard tip.apply(legal), var draft = planDraft else {
+            Sounds.current.play(.refused)
+            return
+        }
+        draft.steps.append(PlanDraft.Step(move: legal, san: san))
+        // Stale the moment a move is played: the five that were drawn were five from the *old*
+        // position, and leaving them up for the length of a search would be five arrows pointing
+        // at a board that has moved.
+        draft.ahead = []
+        planDraft = draft
+        planNotes = []
+        Sounds.current.play(.move)
+        lookAhead()
+    }
+
+    /// Plays the first `steps` moves of what the engine is showing.
+    ///
+    /// What the carousel's play button was, folded into the rows: tapping row three means "take me
+    /// three moves down this line", and what you get is the position, not a recital.
+    public func followPlan(through steps: Int) {
+        guard let draft = planDraft, steps > 0, steps <= draft.ahead.count else { return }
+        for step in draft.ahead.prefix(steps) {
+            guard planDraft != nil else { return }
+            var tip = board
+            guard let legal = tip.state.move(matching: step.move.uci) else { break }
+            let san = SAN.text(for: legal, in: tip.state)
+            guard var walking = planDraft else { return }
+            walking.steps.append(PlanDraft.Step(move: legal, san: san))
+            planDraft = walking
+        }
+        guard var draft = planDraft else { return }
+        draft.ahead = []
+        planDraft = draft
+        planNotes = []
+        Sounds.current.play(.move)
+        lookAhead()
+    }
+
+    /// Takes the last move back off the board and looks ahead again from where that leaves you.
+    public func undoPlanMove() {
+        guard var draft = planDraft, !draft.steps.isEmpty else { return }
+        draft.steps.removeLast()
+        draft.ahead = []
+        planDraft = draft
+        planNotes = []
+        lookAhead()
+    }
+
+    /// Asks the engine what it would play from the tip of the walk, and reads every ply of it.
     ///
     /// One bounded search at the study Depth, so the plan and everything else a study says are the
-    /// same number deep. Nothing arriving is not a failure and does not clear the draft: the board
-    /// is still yours to walk the line out on, which is what this was before the engine was asked.
-    private func fillPlan() {
-        guard let engine, let draft = planDraft, draft.steps.isEmpty else { return }
-        let position = viewed
+    /// same number deep. Nothing arriving is not a failure and does not close anything: the board is
+    /// still a board, and walking a line out on it by hand is what this was before the engine was
+    /// asked to go first.
+    private func lookAhead() {
+        guard let engine, let draft = planDraft, draft.ahead.isEmpty else { return }
+        let position = board
         let ply = draft.ply
+        let walked = draft.steps.count
         let depth = studyDepth
         isPlanning = true
         planTask?.cancel()
@@ -959,10 +1026,10 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
             }
             guard let self, !Task.isCancelled else { return }
             isPlanning = false
-            // Whoever moved in the meantime keeps what they did: a search that came back to find
-            // moves already on the board has been overtaken, and overwriting them would throw away
-            // the one thing here that was the player's.
-            guard var draft = planDraft, draft.ply == ply, draft.steps.isEmpty, let best
+            // Overtaken: another move went on the board while this search was running, and five
+            // arrows out of a position nobody is standing in are worse than none.
+            guard var draft = planDraft, draft.ply == ply, draft.steps.count == walked,
+                draft.ahead.isEmpty, let best
             else { return }
             var tip = position
             for san in best.san.prefix(Game.Ply.planLimit) {
@@ -971,113 +1038,68 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
                     let move = at.state.move(matching: played.uci)
                 else { break }
                 // Written the way this package writes it, not the way the engine adapter did: the
-                // notation under the board and the notation on the rows have to be the same string
-                // or they read as two different moves.
-                draft.steps.append(
+                // notation on the rows and the notation everywhere else have to be one string.
+                draft.ahead.append(
                     PlanDraft.Step(move: move, san: SAN.text(for: move, in: at.state))
                 )
             }
-            // At the head of the line and not at its end: the five arrows point forward from the
-            // position being studied, and a board already five moves along is a board none of them
-            // are about.
-            draft.step = 0
             planDraft = draft
             readPlan()
         }
     }
 
-    /// Reads every step of the draft — what it is for, and what it costs. Cheap enough to redo
-    /// whenever the line changes, and stored rather than derived so a view body never pays for it.
+    /// Reads every move the engine is showing — what it is for, and what it costs. Stored rather
+    /// than derived so a view body never pays for it.
     private func readPlan() {
-        guard let draft = planDraft, !draft.steps.isEmpty,
-            let before = game.rewound(to: draft.ply)
-        else {
+        guard let draft = planDraft, !draft.ahead.isEmpty else {
             planNotes = []
             return
         }
-        planNotes = before.readPlan(of: draft.sans) ?? []
+        // Read as the player, not as whoever happens to move at the tip: after one move of your own
+        // the engine's five open with the opponent's reply, and 「你的」 has to go on meaning yours.
+        planNotes = board.readPlan(of: draft.aheadSans, as: viewed.state.sideToMove) ?? []
     }
 
-    /// The plan as the board draws it: one numbered arrow per move, the played ones marked.
+    /// The five the engine is showing, as the board draws them: one numbered arrow each.
     ///
     /// The sides alternate, so whose move a step is follows from its number — a legal line has no
-    /// other shape.
+    /// other shape. What you already walked is not drawn: those moves happened, and the tint under
+    /// the last one is how the board says so everywhere else.
     public var planArrows: [PlanArrow] {
         guard let planDraft else { return [] }
-        return planDraft.steps.enumerated().map { index, step in
+        // Whose move step one is depends on how far you have walked, so the parity is measured
+        // against the player and not against the head of the line.
+        let opensOnYours = board.state.sideToMove == viewed.state.sideToMove
+        return planDraft.ahead.enumerated().map { index, step in
             PlanArrow(
                 step: index + 1,
                 move: MoveSquares(from: step.move.from, to: step.move.to),
-                isYours: index.isMultiple(of: 2),
-                isPlayed: index < planDraft.step
+                isYours: index.isMultiple(of: 2) == opensOnYours,
+                isPlayed: false
             )
         }
     }
 
-    /// Adds one move to the plan, up to the cap.
-    ///
-    /// Refused at the cap rather than rolling the earliest move off the front: five is what can be
-    /// checked, and a plan that quietly forgot its first move is a plan judged on a claim nobody
-    /// made (docs/adr/0017, 0018).
-    public func addToPlan(_ move: Move) {
-        guard var draft = planDraft, !draft.isFull, draft.isAtTip else {
-            Sounds.current.play(.refused)
-            return
-        }
-        var tip = board
-        guard let legal = tip.state.move(matching: move.uci) else {
-            Sounds.current.play(.refused)
-            return
-        }
-        let san = SAN.text(for: legal, in: tip.state)
-        guard tip.apply(legal) else {
-            Sounds.current.play(.refused)
-            return
-        }
-        draft.steps.append(PlanDraft.Step(move: legal, san: san))
-        draft.step = draft.steps.count
-        planDraft = draft
-        readPlan()
-        Sounds.current.play(.move)
-    }
-
-    /// Takes the last move of the plan back off the board.
-    public func undoPlanMove() {
-        guard var draft = planDraft, !draft.steps.isEmpty else { return }
-        draft.steps.removeLast()
-        draft.step = min(draft.step, draft.steps.count)
-        planDraft = draft
-        readPlan()
-    }
-
-    /// Walks the plan being built, so the layer can be read at each step.
-    ///
-    /// The tip is the one step the layer cannot judge: the second net is what the plan does *next*,
-    /// and at the tip there is no next yet. Stepping back is how that gets answered, and it is why
-    /// the transport is here while the line is still being written.
-    public func stepPlan(by delta: Int) {
-        guard var draft = planDraft else { return }
-        let wanted = min(max(0, draft.step + delta), draft.steps.count)
-        guard wanted != draft.step else { return }
-        draft.step = wanted
-        planDraft = draft
-        Sounds.current.play(.move)
-    }
-
-    /// Whether there is a plan and a reason to commit it.
+    /// Whether there is a line and a reason to commit, and it is short enough to be told false.
     public var canCommitPlan: Bool {
-        guard let planDraft, !planDraft.steps.isEmpty, declaredIntent != nil else { return false }
+        guard let planDraft, !planDraft.isEmpty, !planDraft.isTooLong, declaredIntent != nil
+        else { return false }
         return true
     }
 
-    /// Writes the plan into the Game as a Variation with one Intent over the whole line, and judges
-    /// it by the same checker a single-Ply Intent uses.
+    /// Writes the walked line into the Game as a Variation with one Intent over the whole of it, and
+    /// judges it by the same checker a single-Ply Intent uses.
+    ///
+    /// What is written is what you *played*, never what the engine was showing when you stopped: a
+    /// plan is a claim about moves somebody made.
     public func commitPlan() {
-        guard let draft = planDraft, let intent = declaredIntent, !draft.steps.isEmpty,
+        guard let draft = planDraft, let intent = declaredIntent, !draft.isEmpty, !draft.isTooLong,
             let before = game.rewound(to: draft.ply)
         else { return }
         let line = draft.steps.map { (uci: $0.move.uci, san: $0.san) }
         guard game.recordPlan(line, intent: intent, atPly: draft.ply) else { return }
+        planTask?.cancel()
+        isPlanning = false
         planCheck = intent.check(plan: draft.sans, in: before)
         planOutcome = before.outcome(of: draft.sans)
         planDraft = nil

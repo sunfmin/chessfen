@@ -141,14 +141,19 @@ public struct Walk: Hashable, Sendable {
     }
 }
 
-/// A line of the player's own, while it is being written.
+/// A line being walked out on the board, and what the engine says comes next.
 ///
-/// It is not a Guess and it is not a Variation yet: a Guess is one move and gets marked, a Variation
-/// is something somebody played. This is a claim being assembled — up to five moves and one Intent
-/// over the whole of them — and until it is committed it exists only on the board (docs/adr/0017).
+/// Two halves, and keeping them apart is the whole of it. `steps` is what you actually played —
+/// that is the plan, it is what gets an Intent and what gets judged. `ahead` is the engine's best
+/// five from wherever you have got to: advice, recomputed after every move, never committed, and
+/// never mistaken for something you claimed (docs/adr/0017, 0021).
+///
+/// The board is always at the tip of `steps`. There is no scrubbing back and forth, because there
+/// is nothing to scrub: the position on the glass is the position you walked to, and the way back
+/// is to take a move off.
 public struct PlanDraft: Hashable, Sendable {
-    /// One move of the plan, with the way it is written. Held as a pair so the move and its SAN
-    /// cannot drift apart, which two arrays walked in step eventually do.
+    /// One move, with the way it is written. Held as a pair so the move and its SAN cannot drift
+    /// apart, which two arrays walked in step eventually do.
     public struct Step: Hashable, Sendable {
         public let move: Move
         public let san: String
@@ -162,24 +167,34 @@ public struct PlanDraft: Hashable, Sendable {
     /// The Ply the line branches from, counting like the cursor: the plan is an alternative to the
     /// move that was played here.
     public let ply: Int
+    /// What you walked. This is the plan.
     public var steps: [Step] = []
-    /// How many of them are on the board. The transport moves this so the layer can be read at each
-    /// step; adding a move puts it at the tip.
-    public var step: Int = 0
+    /// What the engine would play from the tip, at most five. This is not.
+    public var ahead: [Step] = []
 
     public var moves: [Move] { steps.map(\.move) }
     public var sans: [String] { steps.map(\.san) }
-    public var isFull: Bool { steps.count >= Game.Ply.planLimit }
-    public var isAtStart: Bool { step == 0 }
-    public var isAtTip: Bool { step == steps.count }
-    public var played: [String] { Array(sans.prefix(step)) }
-    /// What the plan says happens next, which is what the layer judges the current step against.
-    public var remaining: [String] { Array(sans.dropFirst(step)) }
+    public var aheadSans: [String] { ahead.map(\.san) }
 
-    public init(ply: Int, steps: [Step] = [], step: Int = 0) {
+    public var isEmpty: Bool { steps.isEmpty }
+    /// Whether the walk has gone past what a claim can be checked over.
+    ///
+    /// Not a stop: walking on is exploring and there is nothing wrong with it. It is 交卷 that the
+    /// cap is about — past five Ply the opponent has had enough replies that no claim about the
+    /// position is falsifiable (docs/adr/0018).
+    public var isFull: Bool { steps.count >= Game.Ply.planLimit }
+    public var isTooLong: Bool { steps.count > Game.Ply.planLimit }
+
+    /// What the board shows: everything walked, always.
+    public var played: [String] { sans }
+    /// What the layer reads each square against — the engine's next five, which is exactly the
+    /// second net docs/adr/0020 asks for and the one case where it costs nothing to have one.
+    public var remaining: [String] { aheadSans }
+
+    public init(ply: Int, steps: [Step] = [], ahead: [Step] = []) {
         self.ply = ply
         self.steps = steps
-        self.step = step
+        self.ahead = ahead
     }
 }
 
@@ -188,7 +203,7 @@ public struct PlanDraft: Hashable, Sendable {
 /// The row under a numbered arrow. A line handed over as five moves is five moves — the thing a
 /// club player cannot do with it is say why each one is there, which is the whole of what they
 /// were going to have to learn. So every Ply goes through the same reader a single hypothesis
-/// does: the verb it answers to, what it buys, and what it costs (docs/adr/0020).
+/// does: the verb it answers to, what it buys, and what it costs (docs/adr/0020, 0021).
 public struct PlanNote: Hashable, Sendable {
     /// Counting from one, the way the arrow on the board and the row under it are numbered.
     public let step: Int
@@ -210,8 +225,7 @@ public struct PlanArrow: Hashable, Sendable {
     public let step: Int
     public let move: MoveSquares
     public let isYours: Bool
-    /// Whether the board is already past this move. Drawn anyway, and quieter: the arrows are the
-    /// shape of the whole plan, and a plan with its first moves rubbed out has no shape.
+    /// Whether the board is already past this move.
     public let isPlayed: Bool
 
     public init(step: Int, move: MoveSquares, isYours: Bool, isPlayed: Bool) {
@@ -225,11 +239,16 @@ public struct PlanArrow: Hashable, Sendable {
 extension Game {
     /// Every Ply of a line, read in the position it is actually played in.
     ///
+    /// `player` is whose side 「你」 means, and it is a parameter rather than `state.sideToMove`
+    /// because a line does not always start on your move. Walk one move of a plan and the next five
+    /// begin with the opponent's reply; read from the head of that line, every row would come back
+    /// with its colours swapped, and the board would draw your queen as theirs.
+    ///
     /// Nil when the line will not replay from here — an honest refusal, in the same shape
     /// `outcome(of:)` and `Intent.check(plan:)` already refuse in.
-    public func readPlan(of line: [String]) -> [PlanNote]? {
+    public func readPlan(of line: [String], as player: PieceColour? = nil) -> [PlanNote]? {
         guard !line.isEmpty else { return nil }
-        let mover = state.sideToMove
+        let mover = player ?? state.sideToMove
         var walk = self
         var notes: [PlanNote] = []
         for (index, san) in line.enumerated() {

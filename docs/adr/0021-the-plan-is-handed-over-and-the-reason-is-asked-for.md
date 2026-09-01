@@ -13,12 +13,27 @@ a few hundred milliseconds. Saying what a line is *for* — and being told when 
 about it — is the part no engine does for you and the part a club player has never once been
 made to practise.
 
-**So the engine writes the moves and the player owes the reason.** One tap fills the plan in
-from the engine's own best line, capped at five plies; the board draws all five as numbered
-arrows, yours in your colour and the replies in the other; and every step gets a row saying
-what that move is for and what it gives away. What is still asked for, and still marked, is
-one Intent over the whole line, in the same seven verbs a single move's reason is declared
-in, checked move by move by the same checker (docs/adr/0018).
+**So the engine writes the moves and the player owes the reason.** One tap draws the engine's
+best five on the board as numbered arrows, yours in your colour and the replies in the other,
+and every one of them gets a row saying what that move is for and what it gives away. What is
+still asked for, and still marked, is one Intent over the line, in the same seven verbs a
+single move's reason is declared in, checked move by move by the same checker (docs/adr/0018).
+
+**And the board stays live, which is the difference between a plan and a replay button.** The
+first build of this asked the player to write five moves and was a wall. Handing them five
+frozen moves to scrub back and forth through was the opposite mistake: nothing they did to it
+was theirs, and the transport made the board a filmstrip. So the five are advice, not the
+plan. You move on the board — the engine's next move, or anything else legal — and the moment
+you do, the five are recomputed from where that leaves you. Tapping row three walks three
+moves down the line, which is the carousel's play button folded into the rows and the last
+reason to have two controls that did the same thing.
+
+**What you walked is the plan; what is drawn is not.** Those are two different lists and
+keeping them apart is the whole of the design. `steps` is what you played and is what gets an
+Intent, gets judged, and goes into the PGN. `ahead` is what the engine would do from the tip,
+is recomputed constantly, and is never committed — because a plan is a claim about moves
+somebody made, and being shown a move is not making it. Walking past five plies is allowed and
+costs nothing; it is 交卷 that the cap closes, and it says so on the screen.
 
 **This is the one place on the study screen where the engine speaks first.** That is a real
 exception to docs/adr/0015 and it is narrower than it looks. The rule there is that the
@@ -71,6 +86,17 @@ those two are one move each and this is a shape.
 A plan still branches from a past Ply and still goes into the PGN as a Variation with its
 Intent and its span on the first ply, exactly as docs/adr/0017 asked. Nothing about the
 storage changed; what changed is who writes the moves.
+
+There are now four ways to put a position on the board and exactly one layer that reads it.
+The four — the Drill's offered move, the scanner's trial, the carousel, and a plan — are
+mutually exclusive by construction, because two hypotheses at once is a position nobody can
+name. 要害格 is not a fifth: it draws on whatever those four put up, which is why walking a
+plan makes the layer follow it. The plan is the only one of the four you can move on.
+
+The scanner is still refused while a plan is open, and that is now the loose end rather than a
+decision: inside a live board, 「这一格我能不能去」 is exactly the question to ask before the
+next move. It stays out because the scanner reads `viewed` and a plan's board is not `viewed`,
+which is a wiring problem and not a design one.
 
 > docs/adr/0015 — the engine is silent by default, and the player answers first. This ADR
 > takes one exception to it and says why the Drill and the scanner keep it.

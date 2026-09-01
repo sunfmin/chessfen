@@ -148,11 +148,11 @@ func anUnplayablePlanIsRefused() throws {
     #expect(claim.check(plan: ["Qh8"], in: game) == nil)
 }
 
-@Test("a draft knows how long it is allowed to be, and what it still has to say")
+@Test("a draft keeps what you walked apart from what the engine is showing")
 func aDraftTracksItself() throws {
     var draft = PlanDraft(ply: 2)
+    #expect(draft.isEmpty)
     #expect(!draft.isFull)
-    #expect(draft.isAtStart)
 
     var walk = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: ["e2e4", "e7e5"]))
     for uci in ["d2d4", "e5d4", "d1d4"] {
@@ -160,15 +160,27 @@ func aDraftTracksItself() throws {
         draft.steps.append(PlanDraft.Step(move: move, san: SAN.text(for: move, in: walk.state)))
         _ = walk.apply(move)
     }
-    #expect(draft.sans == ["d4", "exd4", "Qxd4"])
-    draft.step = 1
-    #expect(draft.played == ["d4"])
-    #expect(draft.remaining == ["exd4", "Qxd4"], "what the layer judges this step against")
-    #expect(!draft.isAtTip)
+    let next = try #require(walk.state.move(matching: "b8c6"))
+    draft.ahead = [PlanDraft.Step(move: next, san: SAN.text(for: next, in: walk.state))]
 
-    draft.step = 3
-    #expect(draft.isAtTip)
-    #expect(draft.remaining.isEmpty, "and at the tip there is no next move to judge it by")
+    // What you walked is the plan; the board shows all of it, always.
+    #expect(draft.sans == ["d4", "exd4", "Qxd4"])
+    #expect(draft.played == ["d4", "exd4", "Qxd4"])
+    // What the engine is showing is what the layer reads each square against, and is not the plan.
+    #expect(draft.aheadSans == ["Nc6"])
+    #expect(draft.remaining == ["Nc6"])
+
+    // The cap is about the claim, not the walk: it is 交卷 that isTooLong closes, and it takes six.
+    #expect(!draft.isFull)
+    #expect(!draft.isTooLong)
+    for uci in ["b8c6", "g1f3", "g8f6"] {
+        let move = try #require(walk.state.move(matching: uci))
+        draft.steps.append(PlanDraft.Step(move: move, san: SAN.text(for: move, in: walk.state)))
+        _ = walk.apply(move)
+    }
+    #expect(draft.steps.count == 6)
+    #expect(draft.isFull)
+    #expect(draft.isTooLong)
 }
 
 // ------------------------------------------------------- and what each step of it is for

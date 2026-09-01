@@ -44,6 +44,11 @@ import Testing
         )
     }
 
+    /// A whole Line at one Depth, for the searches whose product is a line rather than a Score.
+    private func line(_ score: Score, _ san: [String]) -> Analysis {
+        Analysis(depth: 14, selectiveDepth: 18, lines: [Line(score: score, uciMoves: [], san: san)])
+    }
+
     private func move(_ uci: String, in session: GameSession) throws -> Move {
         try #require(session.viewed.state.move(matching: uci))
     }
@@ -167,7 +172,7 @@ import Testing
         // Five moves of White's oldest plan there is — two pieces onto f7 — played on the board
         // and into no Game.
         for uci in ["f1c4", "g8f6", "g1f3", "b8c6", "f3g5"] {
-            session.addToPlan(try #require(session.board.state.move(matching: uci)))
+            session.playInPlan(try #require(session.board.state.move(matching: uci)))
         }
         #expect(session.planDraft?.sans == ["Bc4", "Nf6", "Nf3", "Nc6", "Ng5"])
         #expect(
@@ -175,12 +180,9 @@ import Testing
         )
         #expect(session.game.plies.map(\.san) == ["e4", "e5", "Nf3", "Nc6"], "and nothing yet")
 
-        // Stepping back is how the layer gets a future to judge a step by: at the tip there is
-        // nothing after the move, so there is nothing to say whether it mattered.
+        // The layer's second net is whatever the engine is showing from the tip, and this engine
+        // shows nothing — so it is empty, and nothing pretends otherwise.
         #expect(session.boardContinuation.isEmpty)
-        session.stepPlan(by: -2)
-        #expect(session.board.plies.map(\.san) == ["e4", "e5", "Bc4", "Nf6", "Nf3"])
-        #expect(session.boardContinuation == ["Nc6", "Ng5"])
 
         // One reason, over the whole line, declared the same way a Guess's is.
         #expect(!session.canCommitPlan, "a plan with no reason is not a plan")
@@ -203,25 +205,19 @@ import Testing
         #expect(session.planOutcome?.steps == 5)
     }
 
-    /// The whole of what changed in docs/adr/0021: the line arrives filled in.
+    /// The whole of what docs/adr/0021 is about: the board is a place to try a line out, and the
+    /// engine keeps five moves ahead of wherever you have got to.
     ///
     /// A blank five-move canvas was a wall — the player who could already write the line down did
-    /// not need the feature, and everyone else got an empty box. So the engine writes the moves and
-    /// the player still owes the reason, which is the half that gets marked.
-    @Test("tapping the plan fills it in from the engine, with a reason for every step")
-    func aPlanArrivesFromTheEngine() async throws {
+    /// not need the feature. A frozen five-move line was a replay button. What is left is a board
+    /// you can move on, five arrows that recompute after every move, and one reason you still owe.
+    @Test("the engine shows five ahead, you walk, and it shows five ahead of that")
+    func aPlanIsWalkedAndTheEngineKeepsUp() async throws {
         let before = try game(["e2e4", "e7e5"])
+        let afterBc4 = try game(["e2e4", "e7e5", "f1c4"])
         let engine = PositionalEngine([
-            before.state.fen: Analysis(
-                depth: 14,
-                lines: [
-                    Line(
-                        score: .centipawns(30),
-                        uciMoves: ["f1c4", "g8f6", "g1f3", "b8c6", "f3g5", "d7d5"],
-                        san: ["Bc4", "Nf6", "Nf3", "Nc6", "Ng5", "d5"]
-                    )
-                ]
-            )
+            before.state.fen: line(.centipawns(32), ["Bc4", "Nf6", "Nf3", "Nc6", "Ng5", "d5"]),
+            afterBc4.state.fen: line(.centipawns(28), ["Nf6", "Nf3", "Nc6"]),
         ])
         let session = try session(engine)
         session.jump(toPly: 2)
@@ -230,80 +226,143 @@ import Testing
         await hop()
 
         #expect(!session.isPlanning)
-        // Five and not six: the cap is what makes the claim checkable, and a line longer than it
-        // is cut here rather than refused at the door (docs/adr/0017, 0018).
-        #expect(session.planDraft?.sans == ["Bc4", "Nf6", "Nf3", "Nc6", "Ng5"])
-        #expect(session.planDraft?.isFull == true)
-        // At the head of the line: the five arrows point forward from the position being studied,
-        // and a board already five moves along is a board none of them are about.
-        #expect(session.planDraft?.step == 0)
+        // Five and not six: the cap is what makes a claim checkable, and a longer line is cut here.
+        #expect(session.planDraft?.aheadSans == ["Bc4", "Nf6", "Nf3", "Nc6", "Ng5"])
+        #expect(session.planDraft?.isEmpty == true, "nothing walked yet, so there is no plan yet")
         #expect(session.board.state.fen == session.viewed.state.fen)
-
-        // One row per move, each read in the position it is played in — and the opponent's replies
-        // read from their seat, because a plan whose answers are blank is a plan nobody checked.
+        // One row per move, each read in the position it is played in — and the replies read from
+        // their seat, because a plan whose answers are blank is a plan nobody checked.
         #expect(session.planNotes.map(\.san) == ["Bc4", "Nf6", "Nf3", "Nc6", "Ng5"])
         #expect(session.planNotes.map(\.isYours) == [true, false, true, false, true])
         #expect(session.planNotes.last?.intent == .claim(.attack, try #require(Square("f7"))))
-        #expect(session.planNotes.last?.costs.isEmpty == false, "and what it gives away")
-
-        // Numbered arrows, in the player's colour and the opponent's, and none of them walked yet.
         #expect(session.planArrows.map(\.step) == [1, 2, 3, 4, 5])
-        #expect(session.planArrows.map(\.isYours) == [true, false, true, false, true])
-        #expect(session.planArrows.allSatisfy { !$0.isPlayed })
-        #expect(session.planArrows.first?.move.to == (try #require(Square("c4"))))
 
-        // Walking it marks the arrows behind you, and the board follows.
-        session.stepPlan(by: 2)
-        #expect(session.planArrows.map(\.isPlayed) == [true, true, false, false, false])
-        #expect(session.board.plies.map(\.san) == ["e4", "e5", "Bc4", "Nf6"])
+        // Walk one. The board moves, and the five are recomputed from where that leaves you.
+        session.playInPlan(try #require(session.board.state.move(matching: "f1c4")))
+        #expect(session.planDraft?.ahead.isEmpty == true, "stale arrows come down at once")
+        #expect(session.planNotes.isEmpty)
+        await hop()
 
-        // And the reason is still the player's, still in the seven verbs, still judged.
-        #expect(!session.canCommitPlan, "a line handed over is not a claim")
+        #expect(session.planDraft?.sans == ["Bc4"], "what you walked is the plan")
+        #expect(session.board.plies.map(\.san) == ["e4", "e5", "Bc4"])
+        #expect(session.planDraft?.aheadSans == ["Nf6", "Nf3", "Nc6"], "and five ahead of that")
+        #expect(session.planNotes.map(\.san) == ["Nf6", "Nf3", "Nc6"])
+        // One move in, the engine's five open with the opponent's reply — and 「你的」 goes on
+        // meaning yours, or the board draws your own queen in the colour of a threat.
+        #expect(session.planNotes.map(\.isYours) == [false, true, false])
+        #expect(session.planArrows.map(\.isYours) == [false, true, false])
+
+        // And the reason is still the player's, over what they walked, still judged.
+        #expect(session.canCommitPlan == false, "a line walked is not yet a claim")
+        session.choose(.hold)
+        session.aim(at: try #require(Square("d5")))
+        #expect(session.canCommitPlan)
+        session.commitPlan()
+        #expect(session.game.plans(atPly: 2).first?.sans == ["Bc4"], "what you played, not what was shown")
+        #expect(session.planCheck?.held == true)
+        #expect(session.planNotes.isEmpty)
+    }
+
+    @Test("tapping a row walks the board that far down the line")
+    func aRowIsTheTransport() async throws {
+        let before = try game(["e2e4", "e7e5"])
+        let engine = PositionalEngine([
+            before.state.fen: line(.centipawns(32), ["Bc4", "Nf6", "Nf3", "Nc6", "Ng5"])
+        ])
+        let session = try session(engine)
+        session.jump(toPly: 2)
+        session.startPlan()
+        await hop()
+
+        session.followPlan(through: 3)
+        #expect(session.planDraft?.sans == ["Bc4", "Nf6", "Nf3"])
+        #expect(session.board.plies.map(\.san) == ["e4", "e5", "Bc4", "Nf6", "Nf3"])
+        #expect(session.planDraft?.ahead.isEmpty == true, "and it looks ahead again from there")
+    }
+
+    @Test("walking off the engine's line is allowed, and the next five are about where you went")
+    func youCanLeaveTheEnginesLine() async throws {
+        let before = try game(["e2e4", "e7e5"])
+        let afterD4 = try game(["e2e4", "e7e5", "d2d4"])
+        let engine = PositionalEngine([
+            before.state.fen: line(.centipawns(32), ["Bc4", "Nf6", "Nf3"]),
+            afterD4.state.fen: line(.centipawns(10), ["exd4", "Qxd4"]),
+        ])
+        let session = try session(engine)
+        session.jump(toPly: 2)
+        session.startPlan()
+        await hop()
+
+        // Not one of the five, and refused by nothing: deviating is the whole reason the board is
+        // live rather than a replay button.
+        session.playInPlan(try #require(session.board.state.move(matching: "d2d4")))
+        await hop()
+        #expect(session.planDraft?.sans == ["d4"])
+        #expect(session.planDraft?.aheadSans == ["exd4", "Qxd4"])
+
+        // And back out of it, which looks ahead again from where that leaves you.
+        session.undoPlanMove()
+        await hop()
+        #expect(session.planDraft?.isEmpty == true)
+        #expect(session.planDraft?.aheadSans == ["Bc4", "Nf6", "Nf3"])
+    }
+
+    @Test("exploring past five is free, and only 交卷 is not")
+    func theCapIsAboutTheClaimAndNotTheWalk() async throws {
+        let engine = PositionalEngine([:])
+        let session = try session(engine)
+        session.jump(toPly: 2)
+        session.startPlan()
+        for uci in ["f1c4", "g8f6", "g1f3", "b8c6", "f3g5", "d7d5"] {
+            session.playInPlan(try #require(session.board.state.move(matching: uci)))
+        }
+        #expect(session.planDraft?.steps.count == 6, "walking on is exploring, and that is free")
+        #expect(session.planDraft?.isTooLong == true)
+
         session.choose(.attack)
         session.aim(at: try #require(Square("f7")))
+        #expect(!session.canCommitPlan, "but a claim over six plies cannot be told false")
         session.commitPlan()
-        #expect(session.planCheck?.held == true)
-        #expect(session.planCheck?.step == 5)
-        #expect(session.planNotes.isEmpty, "and the rows go with the draft they described")
+        #expect(session.game.variations(atPly: 2).isEmpty)
+
+        session.undoPlanMove()
+        #expect(session.canCommitPlan)
+        session.commitPlan()
+        #expect(session.game.plans(atPly: 2).first?.steps == 5)
     }
 
     @Test("a search that comes back to find moves already on the board leaves them alone")
     func theEnginesLineNeverOverwritesYourOwn() async throws {
         let before = try game(["e2e4", "e7e5"])
         let engine = PositionalEngine([
-            before.state.fen: Analysis(
-                depth: 14,
-                lines: [
-                    Line(
-                        score: .centipawns(30),
-                        uciMoves: ["f1c4", "g8f6"], san: ["Bc4", "Nf6"]
-                    )
-                ]
-            )
+            before.state.fen: line(.centipawns(30), ["Bc4", "Nf6"])
         ])
         let session = try session(engine)
         session.jump(toPly: 2)
         session.startPlan()
         // In before the answer is: the one thing on this screen that was the player's own.
-        session.addToPlan(try #require(session.board.state.move(matching: "d2d4")))
+        session.playInPlan(try #require(session.board.state.move(matching: "d2d4")))
         await hop()
 
-        #expect(session.planDraft?.sans == ["d4"], "overtaken, and what was written stands")
-        #expect(session.planNotes.map(\.san) == ["d4"])
+        #expect(session.planDraft?.sans == ["d4"], "overtaken, and what was walked stands")
+        #expect(
+            session.planDraft?.aheadSans.isEmpty == true,
+            "and the five that were about the old position are not drawn over the new one"
+        )
     }
 
-    @Test("no engine and no line is not a dead end: the board still writes the plan")
+    @Test("no line from the engine is not a dead end: the board is still a board")
     func aPlanWithoutAnEngineIsStillAPlan() async throws {
         let session = try session(PositionalEngine([:]))
         session.jump(toPly: 2)
         session.startPlan()
         await hop()
 
-        #expect(session.planDraft?.steps.isEmpty == true)
+        #expect(session.planDraft?.ahead.isEmpty == true)
         #expect(!session.isPlanning)
-        session.addToPlan(try #require(session.board.state.move(matching: "d2d4")))
+        session.playInPlan(try #require(session.board.state.move(matching: "d2d4")))
         #expect(session.planDraft?.sans == ["d4"])
-        #expect(session.planNotes.count == 1, "and one row goes with it")
+        #expect(session.board.plies.map(\.san) == ["e4", "e5", "d4"])
     }
 
     @Test("nothing else gets to put a second hypothesis on the board while a plan is on it")
@@ -334,7 +393,7 @@ import Testing
         )
         session.startPlan()
         await hop()
-        #expect(session.planDraft?.sans == ["Bc4", "Nf6"])
+        #expect(session.planDraft?.aheadSans == ["Bc4", "Nf6"])
 
         // Refused rather than closed under them: a plan holds a reason somebody typed, and the two
         // arrows would point at two different lines.
@@ -342,7 +401,7 @@ import Testing
         #expect(!session.isScannerArmed)
         session.startWalk()
         #expect(session.walk == nil)
-        #expect(session.planDraft?.sans == ["Bc4", "Nf6"], "and the plan is where it was")
+        #expect(session.planDraft?.aheadSans == ["Bc4", "Nf6"], "and the plan is where it was")
 
         // Both come back the moment the plan is put away.
         session.abandonPlan()
@@ -350,34 +409,12 @@ import Testing
         #expect(session.isScannerArmed)
     }
 
-    @Test("the plan stops at five moves, and taking one back is taking one back")
-    func aPlanIsCappedAtFive() throws {
-        let session = try session(PositionalEngine([:]))
-        session.jump(toPly: 2)
-        session.startPlan()
-        for uci in ["f1c4", "g8f6", "g1f3", "b8c6", "f3g5"] {
-            session.addToPlan(try #require(session.board.state.move(matching: uci)))
-        }
-        #expect(session.planDraft?.steps.count == 5)
-        #expect(session.planDraft?.isFull == true)
-
-        // A sixth is refused rather than rolling the first one off the front: five is what can be
-        // checked, and a plan that forgot its own first move is judged on a claim nobody made.
-        let sixth = try #require(session.board.state.move(matching: "d7d5"))
-        session.addToPlan(sixth)
-        #expect(session.planDraft?.steps.count == 5)
-
-        session.undoPlanMove()
-        #expect(session.planDraft?.steps.count == 4)
-        #expect(session.planDraft?.isFull == false)
-    }
-
     @Test("a plan thrown away leaves nothing behind")
     func aPlanCanBeAbandoned() throws {
         let session = try session(PositionalEngine([:]))
         session.jump(toPly: 2)
         session.startPlan()
-        session.addToPlan(try #require(session.board.state.move(matching: "d2d4")))
+        session.playInPlan(try #require(session.board.state.move(matching: "d2d4")))
         session.choose(.hold)
         session.aim(at: try #require(Square("d4")))
 

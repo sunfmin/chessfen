@@ -1188,68 +1188,71 @@ struct GameScreen: View {
         }
     }
 
-    /// The five moves, what each one is for, and the one reason they are all for.
+    /// The board as a place to try a line out: what you walked, what the engine says next, and the
+    /// one reason it is all for.
     @ViewBuilder private func drafting(_ draft: PlanDraft) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            if draft.steps.isEmpty {
-                if session.isPlanning {
-                    HStack(spacing: 7) {
-                        ProgressView().controlSize(.mini)
-                        Text("引擎在算这五步…").font(.caption).foregroundStyle(Palette.inkSoft)
-                    }
-                } else {
-                    // Not an error and not a dead end: the board is still there, and walking the
-                    // line out by hand is what this was before the engine was asked to do it.
-                    Text("引擎没给出线路。在棋盘上自己走出来也行，最多 5 步。")
+            // What you actually played. This is the plan — the rows below are advice.
+            if draft.isEmpty {
+                Text("在棋盘上随便走。走一步，下面就重算一次后面五步。")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                HStack(spacing: 7) {
+                    Text("你走的")
                         .font(.caption)
                         .foregroundStyle(Palette.inkSoft)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Text(draft.sans.joined(separator: " "))
+                        .font(.notation)
+                        .foregroundStyle(Palette.mine)
+                    Spacer(minLength: 0)
+                    Button("退一步") { session.undoPlanMove() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                 }
+            }
+
+            if session.isPlanning {
+                HStack(spacing: 7) {
+                    ProgressView().controlSize(.mini)
+                    Text("引擎在算后面五步…").font(.caption).foregroundStyle(Palette.inkSoft)
+                }
+            } else if session.planNotes.isEmpty {
+                // Not an error and not a dead end: the board is still a board.
+                Text("引擎没给出线路。自己在棋盘上走也行。")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("棋盘上 1–5 号箭头就是这五步。紫色是你的，红色是对方的回应。")
+                Text("从这儿往下，引擎会这么走。紫色是你的，红色是对方的回应；点哪一行就走到哪一步。")
                     .font(.caption2)
                     .foregroundStyle(Palette.inkSoft)
                     .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 7) {
-                    Button { session.stepPlan(by: -1) } label: {
-                        Image(systemName: "chevron.left").font(.caption)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(draft.isAtStart)
-                    Button { session.stepPlan(by: 1) } label: {
-                        Image(systemName: "chevron.right").font(.caption)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(draft.isAtTip)
-                    Text(draft.sans.joined(separator: " "))
-                        .font(.notation)
-                        .foregroundStyle(Palette.ink)
-                    Spacer(minLength: 0)
-                    Text("第 \(draft.step)/\(draft.steps.count) 步")
-                        .font(.caption)
-                        .foregroundStyle(Palette.inkSoft)
-                }
-                // The rows are the point of the whole section: five moves is a line, five moves
-                // each with a reason and a cost is a plan somebody could have thought of.
+                // The rows are the point of the whole section: five moves is a line, five moves each
+                // with a reason and a cost is a plan somebody could have thought of.
                 ForEach(session.planNotes, id: \.step) { note in
-                    step(note, isHere: note.step == draft.step)
+                    step(note)
                 }
-                if draft.isFull {
-                    Text("五步到了：再长的计划，对方回了这么多手，对错就没法判了。")
-                        .font(.caption)
-                        .foregroundStyle(Palette.inkSoft)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                // One reason for the whole line, said in the same eight words a single move's is.
-                // The line came from the engine; this half did not, and this is the half that is
-                // marked (docs/adr/0021).
-                Text("这条线是为了什么？说错了会告诉你。")
+            }
+
+            if draft.isTooLong {
+                Text("走了 \(draft.steps.count) 步了。计划最多五步 —— 再长对方回得太多，对错就没法判了。退回五步以内才能交卷。")
+                    .font(.caption)
+                    .foregroundStyle(Palette.alarm)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !draft.isEmpty {
+                // One reason for the whole of what you walked, said in the same eight words a single
+                // move's is. The moves may have come from the engine; this half did not, and this is
+                // the half that is marked (docs/adr/0021).
+                Text("你走的这条线是为了什么？说错了会告诉你。")
                     .font(.caption)
                     .foregroundStyle(Palette.inkSoft)
                 verbs
                 Text(reason).font(.caption).foregroundStyle(Palette.inkSoft)
                 HStack(spacing: 9) {
-                    Button("退一步") { session.undoPlanMove() }.buttonStyle(.bordered)
                     Button("交卷") { session.commitPlan() }
                         .buttonStyle(.borderedProminent)
                         .disabled(!session.canCommitPlan)
@@ -1259,17 +1262,14 @@ struct GameScreen: View {
         }
     }
 
-    /// One numbered row: the move, the verb it answers to, what it buys, and what it gives away.
+    /// One numbered row: the move, what it is for, and what it gives away.
     ///
-    /// Tappable, because the number on it is the number on an arrow and the position that arrow is
-    /// about is one tap away. The whole row is shown for every step rather than only the current
-    /// one: "and then what" is a question about the moves you have not got to yet.
-    @ViewBuilder private func step(_ note: PlanNote, isHere: Bool) -> some View {
-        Button {
-            withAnimation(.snappy(duration: 0.2)) {
-                session.stepPlan(by: note.step - (session.planDraft?.step ?? note.step))
-            }
-        } label: {
+    /// Tappable, and what it does is *play* — tapping row three walks the board three moves down the
+    /// line. The number on it is the number on an arrow, so what a tap does is visible before it
+    /// happens. Every row is shown rather than only the next one: "and then what" is a question
+    /// about the moves you have not got to yet.
+    @ViewBuilder private func step(_ note: PlanNote) -> some View {
+        Button { session.followPlan(through: note.step) } label: {
             HStack(alignment: .top, spacing: 7) {
                 Text("\(note.step)")
                     .font(.caption2.bold())
@@ -1304,10 +1304,6 @@ struct GameScreen: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
-            .background(
-                isHere ? Palette.chipRest : Color.clear,
-                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-            )
         }
         .buttonStyle(.plain)
     }
@@ -2035,7 +2031,7 @@ struct GameScreen: View {
                 // A plan being written takes the move instead: it is not an answer to this
                 // position's question, it is the next move of a line (docs/adr/0017).
                 if session.planDraft != nil {
-                    session.addToPlan(move)
+                    session.playInPlan(move)
                     self.selected = nil
                     return
                 }

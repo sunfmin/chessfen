@@ -471,41 +471,40 @@ struct GameScreenScreenshots {
         #expect(session.analysis == nil)
     }
 
-    /// 五步计划: the engine's five moves, one row saying what each is for, and one reason of your
-    /// own over the whole line — judged.
+    /// 五步计划: a board you can move on, with the engine's next five drawn on it and a row saying
+    /// what each of them is for — and one reason of your own over what you walked, judged.
     ///
     /// docs/adr/0017 said an Intent should be able to hang off a Variation rather than a single Ply.
-    /// What was built for it first asked the player to write the five moves, and that was a wall:
-    /// whoever could already do it did not need the feature. So the engine writes the line and the
-    /// player owes the reason, which is the half that gets marked (docs/adr/0021). The cap is still
-    /// five, because five is what can be told false (docs/adr/0018).
-    @Test("the plan arrives from the engine with a reason per step, and your one reason is judged")
+    /// The first build asked the player to write the five moves, and that was a wall. The second
+    /// handed them five frozen moves, and that was a replay button. What is left is the board:
+    /// you move on it, the five recompute from where you are, and the claim is still yours
+    /// (docs/adr/0021). The cap is still five, because five is what can be told false.
+    @Test("the engine shows five ahead, you walk the board, and it shows five ahead of that")
     func planBuiltAndJudged() async throws {
         let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
         let asked = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: ["e2e4", "e7e5"]))
-        // Six plies offered, so the picture also shows the cap doing its work.
+        let walked = try #require(
+            Game(startFEN: PGN.standardStartFEN, uciMoves: ["e2e4", "e7e5", "d2d4"])
+        )
+        // Six plies offered from the head, so the picture also shows the cap doing its work.
         let engine = ScriptedEngine(
             Self.searching,
             isEndless: true,
             byPosition: [
-                asked.state.fen: Analysis(
-                    depth: 14,
-                    selectiveDepth: 18,
-                    lines: [
-                        Line(
-                            score: .centipawns(32),
-                            uciMoves: ["f1c4", "g8f6", "g1f3", "b8c6", "f3g5", "d7d5"],
-                            san: ["Bc4", "Nf6", "Nf3", "Nc6", "Ng5", "d5"]
-                        )
-                    ]
-                )
+                asked.state.fen: Self.opinion(
+                    .centipawns(32), best: ("f1c4", "Bc4"),
+                    then: ["Nf6", "Nf3", "Nc6", "Ng5", "d5"]
+                ),
+                walked.state.fen: Self.opinion(
+                    .centipawns(10), best: ("e5d4", "exd4"), then: ["Qxd4", "Nc6"]
+                ),
             ]
         )
         let session = GameSession.fresh(game)
         session.attach(engine: engine, library: nil)
         session.jump(toPly: 2)
 
-        // One tap, and the oldest plan in chess is on the board: two pieces onto f7.
+        // One tap, and the oldest plan in chess is drawn on the board: two pieces onto f7.
         session.startPlan()
         await hop()
         let drafting = await ScreenImage.write("game-plan-drafting") {
@@ -514,41 +513,50 @@ struct GameScreenScreenshots {
 
         #expect(engine.searchCount == 1, "one search, for the line — and nothing else asked")
         #expect(drafting.says("五步计划"))
-        #expect(drafting.says("Bc4 Nf6 Nf3 Nc6 Ng5"), "five of the six offered")
-        #expect(drafting.says("第 0/5 步"), "at the head of the line, which is where the arrows are")
-        #expect(drafting.says("1–5 号箭头"))
-        #expect(drafting.says("五步到了"), "and the reason for the cap, where a reader will find it")
+        #expect(drafting.says("点哪一行就走到哪一步"))
+        #expect(drafting.says("在棋盘上随便走"), "the board is live, and the screen says so")
         // A row per move, each read in the position it is played in. This is the whole of what a
         // handed-over line does not carry.
         #expect(drafting.says("占 d5"), "the bishop takes the square, which is what Bc4 is for")
         #expect(drafting.says("攻 f7"), "and the fifth move gets there")
         #expect(drafting.says("对方"), "including the replies, read from their side of the board")
         #expect(drafting.says("自己王边上的 d2 少了看守"), "and what it gives away")
-        // Five numbered arrows on the board, yours and theirs, none of them walked yet.
+        #expect(session.planDraft?.aheadSans == ["Bc4", "Nf6", "Nf3", "Nc6", "Ng5"])
         #expect(session.planArrows.map(\.step) == [1, 2, 3, 4, 5])
-        #expect(session.planArrows.map(\.isYours) == [true, false, true, false, true])
-        #expect(session.planArrows.allSatisfy { !$0.isPlayed })
+
+        // Two — a move of the player's own, which is not one of the five. The board takes it, and
+        // the five are recomputed from where it leaves them.
+        session.playInPlan(try #require(session.board.state.move(matching: "d2d4")))
+        await hop()
+        let deviated = await ScreenImage.write("game-plan-walked") {
+            screen(session, engine: engine)
+        }
+
+        #expect(engine.searchCount == 2, "one more, for the position the move made")
+        #expect(deviated.says("你走的"))
+        #expect(deviated.says("d4"))
+        #expect(session.planDraft?.sans == ["d4"], "what you walked is the plan")
+        #expect(session.planDraft?.aheadSans == ["exd4", "Qxd4", "Nc6"], "five ahead of that")
+        // And still read from your seat: the reply opens the line, so row one is theirs.
+        #expect(session.planArrows.map(\.isYours) == [false, true, false])
+        #expect(session.board.plies.map(\.san) == ["e4", "e5", "d4"])
         // On the board and in no Game, right up to the commit.
         #expect(session.game.variations(atPly: 2).isEmpty)
-        #expect(drafting.says("说不清"), "the same eight answers a single move's reason is given in")
 
-        // One reason, over the whole line, and it is the player's.
+        // Three — one reason, over what you walked, and it is the player's. Not 占 d4: the pawn
+        // *stands* on d4, and 占 is control rather than occupation (docs/adr/0018).
         session.choose(.attack)
-        session.aim(at: try #require(Square("f7")))
+        session.aim(at: try #require(Square("e5")))
         session.commitPlan()
         let judged = await ScreenImage.write("game-plan-judged") { screen(session, engine: engine) }
 
         let plan = try #require(session.game.plans(atPly: 2).first)
-        #expect(plan.sans == ["Bc4", "Nf6", "Nf3", "Nc6", "Ng5"])
-        #expect(plan.intent == .claim(.attack, try #require(Square("f7"))))
-        #expect(judged.says("攻 f7"))
-        #expect(judged.says("说对了"))
-        // Which move of the plan made it true, which is the whole difference between a plan's
-        // verdict and a single move's.
-        #expect(judged.says("第 5 步 Ng5 的时候成立"))
+        #expect(plan.sans == ["d4"], "what you played, never what was being shown")
+        #expect(plan.intent == .claim(.attack, try #require(Square("e5"))))
+        #expect(judged.says("攻 e5"))
+        #expect(judged.says("第 1 步 d4 的时候成立"))
         #expect(judged.says("这条线进了棋谱"))
         #expect(session.planCheck?.held == true)
-        #expect(session.planCheck?.step == 5)
     }
 
     /// 走马灯: the engine's stored Line played out on the main board, with the layer following each
