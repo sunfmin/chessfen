@@ -105,6 +105,11 @@ struct GameScreenScreenshots {
             !rendered.says("搜索深度"),
             "and not how fast the phone is going while it says it — that was a row of plumbing"
         )
+        // How deep it has got, though, which is not the same thing: a search that stops after ten
+        // seconds (docs/adr/0019) has to account for itself, or a number that stopped moving is
+        // indistinguishable from an engine that died. One figure, in the strip, and no speed.
+        #expect(rendered.says("深 26"))
+        #expect(!rendered.says("再算"), "and no offer of more while it is still inside its Stint")
         // The move it would play, named beside the arrow the board draws — one move, because a
         // line of six is a language most people playing this have not learnt.
         #expect(rendered.says("建议 d4"))
@@ -244,6 +249,31 @@ struct GameScreenScreenshots {
             !session.canPlayBestMove,
             "and 让引擎走 stands down while the engine is already walking this one"
         )
+    }
+
+    /// Ten seconds later. The advisory search has run its Stint and stopped itself, which is the
+    /// whole point of a Stint (docs/adr/0019) — and the strip under the board has to say so, or a
+    /// number that quietly stopped moving reads as an engine that died.
+    @Test("when its Stint runs out the strip keeps the answer and offers another ten seconds")
+    func adviceSpent() async throws {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
+        let session = GameSession.fresh(
+            game, controllers: [.white: .hand, .black: .engine]
+        )
+        session.setPractising(false)
+        // The app's Stint is ten seconds. A screenshot that waited ten seconds is a screenshot
+        // nobody runs, so this one is over before the screen has finished settling.
+        session.adviceStint = .milliseconds(100)
+
+        let rendered = await ScreenImage.write("game-advice-spent") {
+            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
+        }
+
+        #expect(session.isAdviceSpent, "the search stopped on its own rather than running on")
+        #expect(rendered.says("再算 10 秒"), "and the strip offers the one thing left to do")
+        #expect(rendered.says("+0.38"), "with what it found still standing")
+        #expect(rendered.says("优势条"), "and the bar it found it for")
+        #expect(rendered.says("建议 d4"), "the move too — stopping is not forgetting")
     }
 
     /// Both Controllers on the engine: the app playing itself. There is no player's last move to

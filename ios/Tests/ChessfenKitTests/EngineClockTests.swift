@@ -27,7 +27,10 @@ struct EngineClock {
     ]
 
     private func session(
-        _ engine: ScriptedEngine, controllers: [PieceColour: Controller], opinion: Bool = false
+        _ engine: ScriptedEngine,
+        controllers: [PieceColour: Controller],
+        opinion: Bool = false,
+        stint: Duration = .seconds(10)
     ) throws -> GameSession {
         let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
         let session = GameSession.fresh(game, controllers: controllers)
@@ -35,6 +38,8 @@ struct EngineClock {
         // the *advisory* search is asked for turn it on, the way a person would. Said before the
         // engine is attached, so it is one search that starts and not two.
         if opinion { session.setPractising(false) }
+        // Ten seconds is the app's Stint; a test that waited one would be a test nobody runs.
+        session.adviceStint = stint
         session.attach(engine: engine, library: nil)
         // What the screen does in `onAppear`, and what makes the engine start.
         session.retune()
@@ -183,5 +188,72 @@ struct EngineClock {
         #expect(session.isPractising, "which is where a Game starts")
         #expect(engine.searchCount == playedItself, "nothing new was asked of the engine")
         #expect(session.analysis == nil, "and there is no number on the screen")
+    }
+
+    // ------------------------------------------------------------------- the Stint
+
+    /// The advisory search used to deepen for as long as it was left alone, which on a phone put
+    /// down on a table is for ever. It now runs a Stint and stops (docs/adr/0019).
+    @Test("advice runs its Stint and then stops, keeping what it found")
+    func adviceStopsAfterItsStint() async throws {
+        let engine = ScriptedEngine(Self.searching, isEndless: true)
+        let session = try session(
+            engine, controllers: [.white: .hand, .black: .hand], opinion: true,
+            stint: .milliseconds(40)
+        )
+        await hop()
+
+        #expect(session.isAdviceSpent, "the clock ran out and took the search down with it")
+        #expect(engine.searchCount == 1, "and nothing started another behind it")
+        #expect(session.analysis?.bestMove == "d2d4", "what it found stays on the screen")
+        #expect(session.searchProgress?.depth == 26, "and so does how far it got")
+    }
+
+    /// The search is still asked for unbounded, and that is the load-bearing part: the pause gate
+    /// refuses an unbounded search while the app is away because it belongs to a screen somebody
+    /// is looking at (docs/adr/0009). A Stint is a clock the session keeps, not a budget the
+    /// engine is handed — a ten-second `movetime` would be admitted at that gate and held.
+    @Test("a Stint is the session's clock, not a budget handed to the engine")
+    func stintDoesNotBoundTheSearch() async throws {
+        let engine = ScriptedEngine(Self.searching, isEndless: true)
+        let session = try session(
+            engine, controllers: [.white: .hand, .black: .hand], opinion: true,
+            stint: .milliseconds(40)
+        )
+        await hop()
+
+        #expect(session.isAdviceSpent)
+        #expect(engine.budgets == [.untilStopped])
+
+        session.adviseAgain()
+        await hop()
+
+        #expect(engine.searchCount == 2, "another Stint is another search")
+        #expect(engine.budgets == [.untilStopped, .untilStopped])
+        #expect(session.isAdviceSpent, "which has itself run out by now")
+    }
+
+    /// A Stint's clock is wound for one search, and every other way a search ends unwinds it. It
+    /// used to be possible for the timer belonging to the advice a thumb interrupted to fire while
+    /// that thumb's own search was running, and take the move down with it.
+    @Test("a Stint's clock does not reach past the search it was wound for")
+    func stintClockLetsGoOfAnAskedMove() async throws {
+        let engine = ScriptedEngine(Self.searching, isEndless: true)
+        let session = try session(
+            engine, controllers: [.white: .hand, .black: .hand], opinion: true,
+            stint: .milliseconds(60)
+        )
+
+        // Straight onto the button, while the advice is still inside its Stint.
+        session.beginAskedMove()
+        await hop()
+
+        #expect(session.thinking == .asked, "the thumb's search is the one running")
+        #expect(!session.isAdviceSpent, "and the clock it replaced is not still counting")
+        #expect(session.game.plies.count == 8, "nothing was played out from under it")
+
+        session.endAskedMove()
+
+        #expect(session.game.plies.count == 9, "the press still ends in the move it asked for")
     }
 }

@@ -119,6 +119,31 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// Whether a move of either kind is being walked.
     public var isThinking: Bool { thinking != nil }
 
+    // ------------------------------------------------------------------- the Stint
+
+    /// How long a Stint runs: ten seconds of advice, and then the engine stops.
+    ///
+    /// The Analysis in front of a player used to deepen for as long as it was left alone
+    /// (docs/adr/0009), which on a phone left on a table is a search that never ends — eight cores
+    /// on a position nobody is looking at any more, until the battery says otherwise. Ten seconds
+    /// is past the point where another ply changes the recommendation on most positions, and
+    /// 再算 10 秒 is there for the positions where it does.
+    ///
+    /// Settable only so a test does not have to wait ten seconds to watch one end. Not a dial: the
+    /// app never changes it, and asking for another Stint is how a person asks for more.
+    public var adviceStint: Duration = .seconds(10)
+
+    /// Whether the standing Analysis has run its Stint and stopped, with more to give if asked.
+    ///
+    /// False while one is running and false when there is nothing to run — practice, a finished
+    /// game, no engine. It is the whole of what puts 再算 10 秒 on the screen, so it says "stopped
+    /// with more available" rather than merely "not searching".
+    public private(set) var isAdviceSpent = false
+
+    /// The clock that ends a Stint. Kept beside `searchTask` and taken down with it: a clock left
+    /// ticking over a search that has already been replaced would stop the replacement.
+    private var stintTask: Task<Void, Never>?
+
     /// How the running search is getting on — how long it has been at it and how deep it has got.
     ///
     /// Apart from the Analysis on purpose, because it is not advice: a Depth and a stopwatch are a
@@ -459,7 +484,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// the game in front of you, not leave a second record behind.
     public func replaceStart(with fresh: Game) -> Bool {
         guard game.plies.isEmpty else { return false }
-        searchTask?.cancel()
+        stopSearching()
         game = fresh
         cursor = 0
         analysis = nil
@@ -937,7 +962,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         askedBest = analysis?.bestMove
         isAskReleased = false
         let position = viewed
-        searchTask?.cancel()
+        stopSearching()
         searchProgress = nil
         thinking = .asked
         searchTask = Task { [weak self] in
@@ -973,8 +998,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         isAskReleased = true
         guard askedBest != nil else { return }
         let position = viewed
-        searchTask?.cancel()
-        searchTask = nil
+        stopSearching()
         finishAskedMove(in: position)
     }
 
@@ -997,7 +1021,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// game, going backwards is browsing, and deleting is not what a back button means.
     public func undo() {
         guard isAtLatest, !game.plies.isEmpty else { return }
-        searchTask?.cancel()
+        stopSearching()
         game.undo()
         Sounds.current.play(.move)
         // If undoing leaves the engine on the clock while the player is not, undo its move
@@ -1030,7 +1054,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// Starts the game again from the position it began in, with `colour` to move.
     public func restart(withSideToMove colour: PieceColour) {
         guard let fresh = restarted(withSideToMove: colour) else { return }
-        searchTask?.cancel()
+        stopSearching()
         // A game with moves in it has already been written to its own file. Leaving that file
         // behind and taking a new one means restarting never eats the record of what was
         // played — the old game is still in the library, exactly as it stood.
@@ -1054,10 +1078,22 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
 
     // ----------------------------------------------------------------- engine
 
-    /// Starts whatever the position calls for. Safe to call repeatedly.
-    public func retune() {
+    /// Takes down whatever search is running, and the Stint clock with it.
+    ///
+    /// Every way a search ends goes through here, which is the point: a clock left ticking over a
+    /// search that has already been replaced would stop the replacement — a thumb on 让引擎走 would
+    /// have its move taken out from under it by the timer belonging to the advice it interrupted.
+    private func stopSearching() {
         searchTask?.cancel()
         searchTask = nil
+        stintTask?.cancel()
+        stintTask = nil
+        isAdviceSpent = false
+    }
+
+    /// Starts whatever the position calls for. Safe to call repeatedly.
+    public func retune() {
+        stopSearching()
         thinking = nil
         thinkingBest = nil
         turnBegan = nil
@@ -1101,16 +1137,59 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
             // the engine be doing right now" has one answer, and a screen that forgot would leave
             // a phone deepening a search nobody is allowed to see the result of.
             guard !isPractising else { return }
-            searchTask = Task { [weak self] in
-                // Unbounded: it deepens for as long as the player is thinking, and what it
-                // recommends keeps changing (docs/adr/0009). Three lines, because this is the
-                // one search whose product is the panel's candidates rather than one move.
-                for await snapshot in engine.analyse(position, budget: .untilStopped, lines: 3) {
-                    if Task.isCancelled { return }
-                    self?.record(snapshot)
-                }
+            advise(on: position, using: engine)
+        }
+    }
+
+    /// One Stint of advice on a position, and the clock that ends it.
+    ///
+    /// The search itself is unbounded, and what stops it is a timer here rather than a `movetime`
+    /// handed to the engine. Two reasons, and the first is the load-bearing one: the pause gate
+    /// admits a bounded search and refuses an unbounded one, because a bounded search has somebody
+    /// waiting on its answer while an unbounded one belongs to a screen (docs/adr/0009) — and this
+    /// is the second kind however few seconds it runs for. The other is that cancelling is already
+    /// how every search in this app ends, a thumb coming off 让引擎走 included.
+    private func advise(on position: Game, using engine: any Engine) {
+        isAdviceSpent = false
+        searchProgress = nil
+        searchTask = Task { [weak self] in
+            // Three lines, because this is the one search whose product is the panel's candidates
+            // rather than one move. What it recommends keeps changing as it deepens, and that is
+            // the honest picture of a search rather than a bug (docs/adr/0009).
+            for await snapshot in engine.analyse(position, budget: .untilStopped, lines: 3) {
+                if Task.isCancelled { return }
+                self?.record(snapshot)
             }
         }
+        let stint = adviceStint
+        stintTask = Task { [weak self] in
+            try? await Task.sleep(for: stint)
+            guard !Task.isCancelled else { return }
+            self?.spendStint()
+        }
+    }
+
+    /// The Stint has run out. The search stops where it got to; what it found stays on screen, and
+    /// the strip under the board offers another one.
+    private func spendStint() {
+        // Only ever an advisory search. Anything walking a move has taken the search over since
+        // the clock was wound, and stopping that is not this clock's business — it has its own
+        // ending, a budget or a thumb.
+        guard thinking == nil, searchTask != nil else { return }
+        stopSearching()
+        isAdviceSpent = true
+    }
+
+    /// Another Stint on the position being looked at.
+    ///
+    /// Not a `retune`: that would start the player's clock again, and Mirrored Time is a record of
+    /// how long *they* have been thinking. Asking the engine for more time is not the player
+    /// taking less.
+    public func adviseAgain() {
+        guard isAdviceSpent, !isPractising, let engine, !engine.isPaused else { return }
+        let position = viewed
+        guard !position.isOver, !isEngineTurn else { return }
+        advise(on: position, using: engine)
     }
 
     /// Cuts the engine's thinking short and takes whatever it likes best right now.
@@ -1125,8 +1204,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         // go, so cutting one short here would stop the search and play nothing.
         guard thinking == .own else { return }
         let position = viewed
-        searchTask?.cancel()
-        searchTask = nil
+        stopSearching()
         thinking = nil
         if let uci = thinkingBest, let move = position.state.move(matching: uci) {
             playByEngine(move)
@@ -1145,8 +1223,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// Cancelling is the whole of it: the stream's termination stops the engine, on its own
     /// queue and with the generation check that a bare stop call never had.
     public func suspend() {
-        searchTask?.cancel()
-        searchTask = nil
+        stopSearching()
         thinking = nil
         // A pass that outlived the screen would come back having written Scores nobody watched
         // arrive, at a Depth chosen by a screen that has gone.

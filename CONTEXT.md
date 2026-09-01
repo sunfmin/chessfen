@@ -99,12 +99,21 @@ is something the rules merely allow.
 _Avoid_: move, turn, half-move, step
 
 **Analysis**:
-What the engine reports about a Position: a Score, a Depth, and one or more Lines. Runs
-unbounded — it deepens for as long as it is left alone and its answer keeps changing, so
-an Analysis is always a snapshot at a Depth, never a verdict. Left alone means in front of
-the player: an Analysis belongs to a screen someone is looking at, and the engine does not
-take one up while the app is away (docs/adr/0009). Never mutates a Game.
+What the engine reports about a Position: a Score, a Depth, and one or more Lines. Deepens
+while it runs and its answer keeps changing, so an Analysis is always a snapshot at a
+Depth, never a verdict. It belongs to a screen someone is looking at: the engine does not
+take one up while the app is away (docs/adr/0009), and it runs in Stints rather than for
+as long as it is left alone (docs/adr/0019). Never mutates a Game.
 _Avoid_: evaluation (ambiguous with the engine's static eval), hint, suggestion
+
+**Stint**:
+Ten seconds of advice, after which the engine stops and the strip under the board offers
+another. The unit an Analysis is bought in — a clock the session keeps rather than a
+budget handed to the engine, so a search that belongs to a screen is still refused while
+the app is away (docs/adr/0019). What ends one is the clock; what ends the *silence* after
+it is a person pressing 再算 10 秒. Says nothing about the engine's own move, which is
+bounded by Thinking Time, or about a Review, which is bounded by Depth.
+_Avoid_: timeout, budget, session, throttle, interval
 
 **Review**:
 Re-scoring a whole Game at one uniform Depth, so that the Scores of different moves are

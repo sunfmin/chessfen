@@ -96,9 +96,10 @@ xcodebuild test -project Chessfen.xcodeproj -scheme Chessfen \
 open out/game-in-play.png
 ```
 
-Ten pictures land in `ios/App/out`: a game under way, a board straight off a photograph, one
-filed into a collection, a reopened game, the engine on its own clock, the app playing itself,
-a Variation offered where it branches, a mate, practice, and the whole screen at night. They
+Eleven pictures land in `ios/App/out`: a game under way, a board straight off a photograph, one
+filed into a collection, a reopened game, the engine on its own clock, an engine that has run
+its Stint out, the app playing itself, a Variation offered where it branches, a mate, practice,
+and the whole screen at night. They
 are not in the repository — they are written to be looked at, and they are rewritten by every
 run.
 
@@ -132,11 +133,15 @@ and the fields no picture could have settled — whose move it is, castling righ
 the board is — are asked rather than assumed. A wrong piece is not a wrong pixel; it is a
 different game, discovered ten moves later.
 
-**One engine, and it never stops thinking.** There is a single Stockfish instance behind a
+**One engine, thinking in ten-second Stints.** There is a single Stockfish instance behind a
 serial queue, and a new search supersedes the one before it. While it is the player's move the
-search is unbounded, so what it recommends keeps changing as it deepens — that is the honest
-display of what an engine is doing, not a bug
-([ADR 0009](../docs/adr/0009-one-engine-unbounded-analysis-mirrored-opponent-time.md)). When
+search deepens and what it recommends keeps changing — that is the honest display of what an
+engine is doing, not a bug
+([ADR 0009](../docs/adr/0009-one-engine-unbounded-analysis-mirrored-opponent-time.md)) — and
+after ten seconds it stops, because a phone left on a table is not a reason to keep eight cores
+busy ([ADR 0019](../docs/adr/0019-advice-runs-in-ten-second-stints-and-the-strip-says-so.md)).
+The strip under the board says how deep it got and offers 再算 10 秒 for the positions where
+another ply is worth having. When
 the engine is playing, it takes about as long as the player just took, and 马上走 cuts that
 short without changing which move it picks. Put both sides on the engine and it plays itself,
 three seconds a move — there is no player's clock to mirror then, so the clock is named, and

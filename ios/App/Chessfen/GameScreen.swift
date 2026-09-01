@@ -120,17 +120,17 @@ struct GameScreen: View {
             .frame(maxWidth: .infinity)
         }
         .background(Palette.parchment)
-        // No title. The screen is a board; a word saying "game" over the top of one is a row of a
-        // phone spent on something nobody was in any doubt about. What stands in the title's place
-        // is the one switch, which used to have a strip of its own under the reading — so the
-        // report got that strip, and the switch is more findable than it was, not less.
+        // No title, and now nothing in its place either. The screen is a board; a word saying
+        // "game" over the top of one is a row of a phone spent on something nobody was in any
+        // doubt about. The engine's switch stood here for a while, which was better than the strip
+        // of its own it had before — but a switch in the navigation bar is still a long way from
+        // the bar it governs, and it has gone down to join it under the board.
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Palette.parchment, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .tint(Palette.analysis)
         .toolbar {
-            ToolbarItem(placement: .principal) { engineOpinion }
             ToolbarItem(placement: .topBarTrailing) { flip }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -265,31 +265,28 @@ struct GameScreen: View {
     /// A finished game keeps its bar, and that is not a leak: what it carries then is the result,
     /// and who won is a fact about the game rather than the engine's opinion of it. Practice hides
     /// what the engine thinks, never what happened.
+    ///
+    /// **Everything the engine has to say is now in this one strip**, including the switch that
+    /// decides whether it says anything — which used to live in the navigation bar, a screen away
+    /// from the bar it governs. Four things that are one thought: whether it is talking, who is
+    /// ahead, by how much, and how far it has got working it out. The last of those is new, and it
+    /// is here because a search that stops after ten seconds (docs/adr/0019) has to be able to say
+    /// so — a number that quietly stopped moving is indistinguishable from an engine that died.
     private var standing: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
+            opinionSwitch
+
             if viewed.isOver {
                 // Who won is not a fact about one side, so it is said here rather than in a bar.
                 Text(viewed.chineseTurn)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Palette.ink)
-            } else if session.isPractising {
-                // Where the number lives, so its absence is accounted for rather than read as an
-                // engine that has died.
-                HStack(spacing: 5) {
-                    Image(systemName: "eye.slash").font(.caption2)
-                    Text("练习").font(.footnote.weight(.semibold))
-                }
-                .foregroundStyle(Palette.inkSoft)
             } else if engine.unavailableReason != nil {
                 Text("没有引擎").font(.caption).foregroundStyle(Palette.alarm)
             }
 
             if !session.isPractising || finish != nil {
-                EvalBar(
-                    score: session.analysis?.best?.score,
-                    orientation: session.orientation,
-                    finish: finish
-                )
+                evalTrack
             } else {
                 Spacer(minLength: 0)
             }
@@ -305,9 +302,106 @@ struct GameScreen: View {
                     .font(.clock(22))
                     .foregroundStyle(session.analysis == nil ? Palette.inkSoft : Palette.analysis)
                     .contentTransition(.numericText())
+                effort
             }
         }
         .frame(height: 26)
+    }
+
+    /// The switch that used to sit in the navigation bar, brought down beside the bar it governs.
+    ///
+    /// Two shapes, because the two states are read for different reasons. Silent, it wears the
+    /// word: 练习 is a thing to be *in*, and a strip with no number in it has the room to name it.
+    /// Talking, the bar and the number have already said the engine is talking, so the control
+    /// shrinks back to the eye that turns it off.
+    ///
+    /// One deliberate press either way, which is all ADR-0015 ever asked for: the engine's opinion
+    /// is never found already on, and never lost by brushing past it.
+    private var opinionSwitch: some View {
+        Button {
+            withAnimation(.snappy(duration: 0.2)) { session.setPractising(!session.isPractising) }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: session.isPractising ? "eye.slash" : "eye").font(.caption2)
+                if session.isPractising {
+                    Text("练习").font(.footnote.weight(.semibold))
+                }
+            }
+            .foregroundStyle(session.isPractising ? Palette.inkSoft : Palette.analysis)
+            .padding(.horizontal, session.isPractising ? 9 : 6)
+            .padding(.vertical, 4)
+            .background(Palette.chipRest, in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(!engine.isReady && session.isPractising)
+        .accessibilityLabel("引擎意见")
+        .accessibilityValue(session.isPractising ? "关" : "开")
+    }
+
+    /// Who is ahead, with how hard the engine is still working on that answer drawn underneath it.
+    ///
+    /// One control rather than a bar with a button next to it, because they are the same subject:
+    /// the line is the search that produced the bar, and when the search has stopped the bar is
+    /// what you press for more of it. The line fills with Depth — the same measure the hold button
+    /// uses — so it is the picture of the number beside it rather than a second thing to read.
+    ///
+    /// It goes quiet rather than away when the Stint ends: how deep it got is worth keeping on
+    /// screen, and a line that vanished would say the engine had never run.
+    private var evalTrack: some View {
+        VStack(spacing: 3) {
+            EvalBar(
+                score: session.analysis?.best?.score,
+                orientation: session.orientation,
+                finish: finish
+            )
+            if finish == nil, !session.isPractising {
+                GeometryReader { proxy in
+                    Capsule()
+                        .fill(Palette.analysis.opacity(session.isAdviceSpent ? 0.3 : 0.9))
+                        .frame(width: proxy.size.width * depthFraction)
+                        .animation(.easeOut(duration: 0.3), value: depthFraction)
+                }
+                .frame(height: 2)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { session.adviseAgain() }
+    }
+
+    /// How far the search has got, 0...1, by the same reckoning the hold button uses.
+    private var depthFraction: Double {
+        min(Double(session.searchProgress?.depth ?? 0) / SearchDepth.deepEnough, 1)
+    }
+
+    /// What the engine has got to, and — once it has stopped — what to do about that.
+    ///
+    /// A search with no readout is a phone that might be working or might be broken, and the
+    /// answer used to be "it is always working", which was the problem. Now it stops, so it has to
+    /// account for itself: a Depth while it climbs, and an offer of another ten seconds when it
+    /// has stopped climbing.
+    @ViewBuilder private var effort: some View {
+        if session.isAdviceSpent {
+            Button { session.adviseAgain() } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: "arrow.clockwise").font(.system(size: 9))
+                    Text("再算 10 秒").font(.caption.weight(.semibold))
+                }
+                .foregroundStyle(Palette.parchment)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Palette.analysis, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("再算 10 秒")
+        } else if let depth = session.searchProgress?.depth, depth > 0 {
+            Text("深 \(depth)")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(Palette.inkSoft)
+                // It climbs several times a second, and a number that animates while it does is a
+                // number nobody can read.
+                .animation(.none, value: depth)
+        }
     }
 
     // ------------------------------------------------------------------ the two sides
@@ -1251,40 +1345,6 @@ struct GameScreen: View {
     }
 
     // ------------------------------------------------------------------ the bar at the top
-
-    /// The one switch: whether the engine's opinion is on this screen at all.
-    ///
-    /// A switch rather than a chip, because a chip has to choose between naming the state it is
-    /// in and naming the act of pressing it, and this control cannot afford to be read either way
-    /// round. It starts off on every Game and it belongs to the Game in front of you — the thing
-    /// standing between a player and the answer is not allowed to be found wherever it was last
-    /// left (docs/adr/0015).
-    ///
-    /// In the title's place, because it had a strip of its own under the reading and the reading
-    /// needed the strip more. A word saying "game" over a board was worth less than three lines of
-    /// what the engine found, and the switch is more findable in the bar than it was down there.
-    private var engineOpinion: some View {
-        Toggle(
-            isOn: Binding(
-                get: { !session.isPractising },
-                set: { session.setPractising(!$0) }
-            )
-        ) {
-            HStack(spacing: 5) {
-                Image(systemName: session.isPractising ? "eye.slash" : "eye").font(.caption2)
-                Text("引擎意见").font(.footnote)
-            }
-            .foregroundStyle(session.isPractising ? Palette.inkSoft : Palette.ink)
-        }
-        .toggleStyle(.switch)
-        .controlSize(.mini)
-        .fixedSize()
-        // Named here rather than left to the screen's tint: a toolbar item is outside the view
-        // that carries it, and what it inherited instead was the system green — a colour with no
-        // voice in this app, worn by the one control that says whose voice you are hearing.
-        .tint(Palette.analysis)
-        .disabled(!engine.isReady && session.isPractising)
-    }
 
     /// Turns the board round — and with it, which side's controls are above and which below. The
     /// state it is in is the board, so it needs no label saying so.
