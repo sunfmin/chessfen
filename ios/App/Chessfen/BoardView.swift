@@ -113,6 +113,12 @@ struct BoardView: View {
     /// board is what survived both (docs/adr/0020). Numbered, because each one has a sentence
     /// under the board and a square with no number cannot be matched to one.
     var key: [KeySquare] = []
+    /// A whole plan at once: one numbered arrow per move, yours and the answers to them.
+    ///
+    /// Numbered because each arrow has a row of its own under the board, and five unlabelled lines
+    /// across a board is a scribble. Thinner than the engine's single Best Move arrow and thinner
+    /// than your own — those two are one move each and are a gesture; these are a shape.
+    var plan: [PlanArrow] = []
     var coordinates = true
     var isInteractive = true
     var onTap: ((Square) -> Void)?
@@ -320,6 +326,9 @@ struct BoardView: View {
                 drawRoute(occupation, cell: cell, colour: colour, into: &context)
             }
         }
+        // The plan goes under both single-move arrows: it is five moves of context, and context
+        // never covers the one move somebody is being asked about.
+        for arrow in plan { drawPlanArrow(arrow, cell: cell, into: &context) }
         // The player's first, so that where the two agree the engine's is the one on top and the
         // board does not read as though only one arrow was drawn.
         if let mine { drawArrow(mine, cell: cell, colour: Palette.mine, into: &context) }
@@ -551,6 +560,76 @@ struct BoardView: View {
         )
         arrowhead.closeSubpath()
         context.fill(arrowhead, with: .color(colour))
+    }
+
+    /// One move of a plan: a thin arrow with its step number on the shaft.
+    ///
+    /// Your moves in your own colour and the opponent's in the alarm colour, because the two are
+    /// read differently — one is what you are doing, the other is what you have to survive. The
+    /// ones the board is already past are held right back: they are there to keep the shape whole,
+    /// not to be looked at.
+    private func drawPlanArrow(
+        _ arrow: PlanArrow, cell: CGFloat, into context: inout GraphicsContext
+    ) {
+        func centre(_ square: Square) -> CGPoint {
+            let position = self.cell(of: square)
+            return CGPoint(
+                x: (CGFloat(position.column) + 0.5) * cell,
+                y: (CGFloat(position.row) + 0.5) * cell
+            )
+        }
+        let colour = (arrow.isYours ? Palette.mine : Palette.alarm)
+            .opacity(arrow.isPlayed ? 0.26 : 0.82)
+        let start = centre(arrow.move.from)
+        let end = centre(arrow.move.to)
+        let angle = atan2(end.y - start.y, end.x - start.x)
+        let head = cell * 0.3
+        let tip = CGPoint(x: end.x - cos(angle) * cell * 0.05, y: end.y - sin(angle) * cell * 0.05)
+        let base = CGPoint(x: tip.x - cos(angle) * head, y: tip.y - sin(angle) * head)
+
+        var shaft = Path()
+        shaft.move(to: start)
+        shaft.addLine(to: base)
+        context.stroke(
+            shaft, with: .color(colour),
+            style: StrokeStyle(lineWidth: cell * 0.09, lineCap: .round)
+        )
+        var arrowhead = Path()
+        arrowhead.move(to: tip)
+        arrowhead.addLine(
+            to: CGPoint(
+                x: base.x + cos(angle + .pi / 2) * head * 0.6,
+                y: base.y + sin(angle + .pi / 2) * head * 0.6
+            )
+        )
+        arrowhead.addLine(
+            to: CGPoint(
+                x: base.x + cos(angle - .pi / 2) * head * 0.6,
+                y: base.y + sin(angle - .pi / 2) * head * 0.6
+            )
+        )
+        arrowhead.closeSubpath()
+        context.fill(arrowhead, with: .color(colour))
+
+        // The number sits a third of the way along rather than at either end, where five arrows
+        // out of one square would stack five discs on top of each other.
+        let radius = cell * 0.14
+        let label = CGPoint(
+            x: start.x + (end.x - start.x) * 0.34, y: start.y + (end.y - start.y) * 0.34
+        )
+        context.fill(
+            Path(ellipseIn: CGRect(
+                x: label.x - radius, y: label.y - radius, width: radius * 2, height: radius * 2
+            )),
+            with: .color(colour)
+        )
+        context.draw(
+            Text("\(arrow.step)")
+                .font(.system(size: radius * 1.5, weight: .bold))
+                .foregroundStyle(.white),
+            at: label,
+            anchor: .center
+        )
     }
 
     private func drawCoordinate(

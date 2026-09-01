@@ -1188,14 +1188,28 @@ struct GameScreen: View {
         }
     }
 
-    /// The line being written, its transport, and the one reason it is all for.
+    /// The five moves, what each one is for, and the one reason they are all for.
     @ViewBuilder private func drafting(_ draft: PlanDraft) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             if draft.steps.isEmpty {
-                Text("在棋盘上走出你的计划，最多 5 步。走完再说这是为了什么。")
-                    .font(.caption)
-                    .foregroundStyle(Palette.inkSoft)
+                if session.isPlanning {
+                    HStack(spacing: 7) {
+                        ProgressView().controlSize(.mini)
+                        Text("引擎在算这五步…").font(.caption).foregroundStyle(Palette.inkSoft)
+                    }
+                } else {
+                    // Not an error and not a dead end: the board is still there, and walking the
+                    // line out by hand is what this was before the engine was asked to do it.
+                    Text("引擎没给出线路。在棋盘上自己走出来也行，最多 5 步。")
+                        .font(.caption)
+                        .foregroundStyle(Palette.inkSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             } else {
+                Text("棋盘上 1–5 号箭头就是这五步。紫色是你的，红色是对方的回应。")
+                    .font(.caption2)
+                    .foregroundStyle(Palette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 7) {
                     Button { session.stepPlan(by: -1) } label: {
                         Image(systemName: "chevron.left").font(.caption)
@@ -1215,6 +1229,11 @@ struct GameScreen: View {
                         .font(.caption)
                         .foregroundStyle(Palette.inkSoft)
                 }
+                // The rows are the point of the whole section: five moves is a line, five moves
+                // each with a reason and a cost is a plan somebody could have thought of.
+                ForEach(session.planNotes, id: \.step) { note in
+                    step(note, isHere: note.step == draft.step)
+                }
                 if draft.isFull {
                     Text("五步到了：再长的计划，对方回了这么多手，对错就没法判了。")
                         .font(.caption)
@@ -1222,6 +1241,11 @@ struct GameScreen: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 // One reason for the whole line, said in the same eight words a single move's is.
+                // The line came from the engine; this half did not, and this is the half that is
+                // marked (docs/adr/0021).
+                Text("这条线是为了什么？说错了会告诉你。")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
                 verbs
                 Text(reason).font(.caption).foregroundStyle(Palette.inkSoft)
                 HStack(spacing: 9) {
@@ -1233,6 +1257,59 @@ struct GameScreen: View {
                 }
             }
         }
+    }
+
+    /// One numbered row: the move, the verb it answers to, what it buys, and what it gives away.
+    ///
+    /// Tappable, because the number on it is the number on an arrow and the position that arrow is
+    /// about is one tap away. The whole row is shown for every step rather than only the current
+    /// one: "and then what" is a question about the moves you have not got to yet.
+    @ViewBuilder private func step(_ note: PlanNote, isHere: Bool) -> some View {
+        Button {
+            withAnimation(.snappy(duration: 0.2)) {
+                session.stepPlan(by: note.step - (session.planDraft?.step ?? note.step))
+            }
+        } label: {
+            HStack(alignment: .top, spacing: 7) {
+                Text("\(note.step)")
+                    .font(.caption2.bold())
+                    .foregroundStyle(.white)
+                    .frame(width: 16, height: 16)
+                    .background(note.isYours ? Palette.mine : Palette.alarm, in: Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    // No verb chip beside the move: the first line of 值 already opens with the
+                    // verb and its square, and the same two words twice on one row reads as two
+                    // different claims.
+                    HStack(spacing: 6) {
+                        Text(note.san).font(.notation).foregroundStyle(Palette.ink)
+                        if !note.isYours {
+                            Text("对方").font(.caption2).foregroundStyle(Palette.alarm)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    ForEach(note.gains, id: \.self) { line in
+                        Text(line)
+                            .font(.caption)
+                            .foregroundStyle(Palette.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    ForEach(note.costs, id: \.self) { line in
+                        Text(line)
+                            .font(.caption)
+                            .foregroundStyle(Palette.alarm)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(
+                isHere ? Palette.chipRest : Color.clear,
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     /// The verdict: which move of the plan made the claim true, or the state it actually left.
@@ -1893,6 +1970,7 @@ struct GameScreen: View {
             loose: looseSquares,
             ways: session.trial == nil ? (session.scan?.origins ?? []) : [],
             key: keySquares,
+            plan: session.planArrows,
             // Tappable while a verb is waiting for its target, too: the board is the only place a
             // claim's target can be said, which is the whole reason a verb has one.
             // Not while a line is being walked: the pieces on screen are five moves from where the

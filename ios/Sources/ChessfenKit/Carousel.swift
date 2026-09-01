@@ -182,3 +182,65 @@ public struct PlanDraft: Hashable, Sendable {
         self.step = step
     }
 }
+
+/// What one Ply of a line is for, and what it gives away.
+///
+/// The row under a numbered arrow. A line handed over as five moves is five moves — the thing a
+/// club player cannot do with it is say why each one is there, which is the whole of what they
+/// were going to have to learn. So every Ply goes through the same reader a single hypothesis
+/// does: the verb it answers to, what it buys, and what it costs (docs/adr/0020).
+public struct PlanNote: Hashable, Sendable {
+    /// Counting from one, the way the arrow on the board and the row under it are numbered.
+    public let step: Int
+    /// Whether it belongs to the side to move at the head of the line.
+    ///
+    /// The opponent's replies are read too, and read from *their* seat: on those rows 「值」 is
+    /// what is coming at you. A plan whose answers were left blank is a plan nobody checked.
+    public let isYours: Bool
+    public let trial: Trial
+
+    public var san: String { trial.san }
+    public var intent: Intent { trial.intent }
+    public var gains: [String] { trial.gains }
+    public var costs: [String] { trial.costs }
+}
+
+/// One move of a plan as the board draws it.
+public struct PlanArrow: Hashable, Sendable {
+    public let step: Int
+    public let move: MoveSquares
+    public let isYours: Bool
+    /// Whether the board is already past this move. Drawn anyway, and quieter: the arrows are the
+    /// shape of the whole plan, and a plan with its first moves rubbed out has no shape.
+    public let isPlayed: Bool
+
+    public init(step: Int, move: MoveSquares, isYours: Bool, isPlayed: Bool) {
+        self.step = step
+        self.move = move
+        self.isYours = isYours
+        self.isPlayed = isPlayed
+    }
+}
+
+extension Game {
+    /// Every Ply of a line, read in the position it is actually played in.
+    ///
+    /// Nil when the line will not replay from here — an honest refusal, in the same shape
+    /// `outcome(of:)` and `Intent.check(plan:)` already refuse in.
+    public func readPlan(of line: [String]) -> [PlanNote]? {
+        guard !line.isEmpty else { return nil }
+        let mover = state.sideToMove
+        var walk = self
+        var notes: [PlanNote] = []
+        for (index, san) in line.enumerated() {
+            let position = walk
+            let isYours = position.state.sideToMove == mover
+            guard walk.apply(san: san), let played = walk.plies.last,
+                let move = position.state.move(matching: played.uci),
+                let trial = position.tryOut(move)
+            else { return nil }
+            notes.append(PlanNote(step: index + 1, isYours: isYours, trial: trial))
+        }
+        return notes
+    }
+}

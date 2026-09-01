@@ -103,8 +103,8 @@ one square named as this move's 要害 with the sentence that says why, an outpo
 from the piece that would come to it, a square taken and still not stood on, the three steps of
 the scanner — the ways into a square somebody pointed at, the move they tried weighed in their own
 terms, and the engine's answer once they asked for it — a line halfway through being walked with the
-layer following it, a five-move plan of the player's own being written and the same plan with its
-one reason judged, and the whole screen at night. They are not in the repository — they are written to be looked at, and they are rewritten by every
+layer following it, the engine's five moves drawn as numbered arrows with a row saying what each
+one is for and the same plan with the player's one reason judged, and the whole screen at night. They are not in the repository — they are written to be looked at, and they are rewritten by every
 run.
 
 The only thing faked is the search. `Engine` is a protocol the app's `EngineService` conforms

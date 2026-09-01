@@ -170,3 +170,57 @@ func aDraftTracksItself() throws {
     #expect(draft.isAtTip)
     #expect(draft.remaining.isEmpty, "and at the tip there is no next move to judge it by")
 }
+
+// ------------------------------------------------------- and what each step of it is for
+
+/// The half a handed-over line does not carry. Five moves is a line; five moves each with a reason
+/// and a cost is a plan somebody could have thought of themselves (docs/adr/0021).
+@Test("every move of a line gets its own verb, its own gain and its own cost")
+func aPlanIsReadStepByStep() throws {
+    let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: ["e2e4", "e7e5"]))
+    let notes = try #require(game.readPlan(of: ["Bc4", "Nf6", "Nf3", "Nc6", "Ng5"]))
+
+    #expect(notes.map(\.step) == [1, 2, 3, 4, 5])
+    #expect(notes.map(\.san) == ["Bc4", "Nf6", "Nf3", "Nc6", "Ng5"])
+    // A legal line alternates, so whose move a step is follows from its number — and the rows say
+    // so, because "what is coming at me" is half of what a plan has to survive.
+    #expect(notes.map(\.isYours) == [true, false, true, false, true])
+
+    // Each one read by the same reader a single hypothesis goes through, in the position it is
+    // actually played in: the bishop takes d5, the fifth move is the one that gets to f7.
+    #expect(notes[0].intent == .claim(.hold, try square("d5")))
+    #expect(notes[2].intent == .claim(.attack, try square("e5")))
+    #expect(notes[4].intent == .claim(.attack, try square("f7")))
+    #expect(notes[4].gains.first == "攻 f7：f7 上的子挨打了，而且守不住")
+    // And what it gives away, which is the half a line of engine moves never mentions.
+    #expect(notes[4].costs.contains("自己王边上的 d2 少了看守。"))
+}
+
+@Test("the opponent's replies are read from the opponent's seat, which is what makes them threats")
+func theRepliesAreReadToo() throws {
+    let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: ["e2e4", "e7e5"]))
+    let notes = try #require(game.readPlan(of: ["Bc4", "Nf6"]))
+
+    let reply = try #require(notes.last)
+    #expect(!reply.isYours)
+    #expect(reply.intent == .claim(.attack, try square("e4")), "your pawn, from their side of it")
+}
+
+@Test("a line that will not replay is refused rather than read halfway")
+func anUnreadablePlanIsRefused() throws {
+    let game = try position("4k3/8/8/8/8/8/8/R3K3 w - - 0 1")
+    #expect(game.readPlan(of: []) == nil)
+    #expect(game.readPlan(of: ["Qh8"]) == nil)
+    #expect(game.readPlan(of: ["Ra3", "Qa1"]) == nil, "and one that stops being legal partway")
+}
+
+@Test("reading the same line twice says the same thing about every one of its steps")
+func aPlanReadingIsDeterministic() throws {
+    // Two knights that can each land on a hole and two squares by the king that each lose a guard:
+    // every sentence in here has a tie in it.
+    let game = try position("4k3/8/8/8/2p1p3/2N1N3/5P1P/6K1 w - - 0 1")
+    let answers = (0..<30).map { _ in
+        game.readPlan(of: ["Nd5", "Kd7", "Ncd5", "Kc7"])?.map { "\($0.intent)\($0.gains)\($0.costs)" }
+    }
+    #expect(Set(answers.map { $0?.joined() ?? "" }).count == 1, "thirty readings, one set of rows")
+}

@@ -102,9 +102,14 @@ extension Intent {
 
         candidates.append((.block, move.to))
 
-        // 护 — one of the mover's own pieces that gained a defender, a hanging one for choice.
+        // 护 — one of the mover's own pieces that was under threat and now has one more defender.
         // Never the king: a king cannot be taken, so an extra piece looking at its square defends
         // nothing, and it would otherwise win every tie by being the dearest thing on the board.
+        //
+        // Somebody has to be looking at it. Any developing move adds a defender to *something*, so
+        // a 护 that only asks whether the count went up is true of nearly every move and therefore
+        // says nothing about any of them — 1.e4 e5 2.Bc4 read as 「护 a2」, which is a fact and not
+        // a reason. Defending what nobody is attacking is not a plan (docs/adr/0018, 0021).
         let helped = afterPieces.compactMap { square, piece -> Square? in
             guard piece.colour == mover, piece.kind != .king, square != move.to,
                 afterControl.attackers(of: square, by: mover)
@@ -116,7 +121,13 @@ extension Intent {
             beforeControl.attackers(of: $0, by: opponent)
                 > beforeControl.attackers(of: $0, by: mover)
         }
-        if let target = dearest(rescued.isEmpty ? helped : rescued, in: afterPieces) {
+        // A piece the opponent is at least looking at, when none of them was actually hanging.
+        // This is the whole of the tightening: 1.e4 e5 2.Bc4 gained a2 a second defender and
+        // nothing on the board has ever looked at a2, where O-O gained f2 one and a bishop on c5
+        // is pointed straight at it. The first is arithmetic; the second is why people castle.
+        let contested = helped.filter { afterControl.attackers(of: $0, by: opponent) > 0 }
+        let worth = rescued.isEmpty ? contested : rescued
+        if let target = dearest(worth, in: afterPieces) {
             candidates.append((.defend, target))
         }
 

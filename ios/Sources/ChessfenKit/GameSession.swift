@@ -72,6 +72,9 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
             isAsking = false
             walk = nil
             planDraft = nil
+            planNotes = []
+            planTask?.cancel()
+            isPlanning = false
             planCheck = nil
             planOutcome = nil
         }
@@ -126,11 +129,19 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// Reveal's — so watching it costs no engine time, and nothing in it is played: the Game, the
     /// PGN and the Variations are all untouched, and leaving puts the board back exactly.
     public private(set) var walk: Walk?
-    /// A line of the player's own being built, with one Intent to come over the whole of it.
+    /// The five moves on the board, with one Intent to come over the whole of them.
     ///
-    /// 五步计划 (docs/adr/0017). The mirror of the carousel: that one shows the engine's plan
-    /// landing, this one puts your own on trial.
+    /// 五步计划 (docs/adr/0017). Seeded from the engine's own best line, because a blank five-move
+    /// canvas is a wall: the club player who could already write the line down did not need the
+    /// feature, and everyone else got an empty box. What is asked of them instead is the harder
+    /// half and the half that was always the point — the line is given, the *reason* is theirs,
+    /// and it is judged (docs/adr/0021).
     public private(set) var planDraft: PlanDraft?
+    /// What each move of the plan is for, and what it gives away — one per step, in order.
+    public private(set) var planNotes: [PlanNote] = []
+    /// True while the search that fills the plan in is running.
+    public private(set) var isPlanning = false
+    private var planTask: Task<Void, Never>?
     /// How the last committed plan was judged, and at which step.
     public private(set) var planCheck: PlanCheck?
     /// Where that plan arrived, by the same reckoning the carousel uses (docs/adr/0020).
@@ -899,12 +910,17 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
 
     // ----------------------------------------------------------------- 五步计划
 
-    /// Starts a line of the player's own from the position being looked at.
+    /// Puts a five-move plan on the board, and asks the engine to fill it in.
     ///
     /// Only at a past position, and that is not a limitation so much as what a plan *is* here: it
     /// goes into the file as a Variation, a Variation is an alternative to a move, and at the latest
     /// position there is no move for it to be an alternative to — a line played there is the game,
     /// which the app already has a name for (docs/adr/0017).
+    ///
+    /// The line arrives from the engine rather than from the player, and that is the one place on
+    /// this screen where the engine goes first (docs/adr/0021). What it does not hand over is the
+    /// claim: the reason is still declared, still in the seven verbs, and still judged move by move
+    /// — so what changed is which half of the exercise the app does, not whether there is one.
     public func startPlan() {
         guard planDraft == nil, !isAtLatest, cursor < game.plies.count else { return }
         endScan()
@@ -912,10 +928,88 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         withdrawGuess()
         planCheck = nil
         planOutcome = nil
-        // The layer marks each step as the line is built, so it comes on with it — the same
+        planNotes = []
+        // The layer marks each step as the line is walked, so it comes on with it — the same
         // exception a commit and a carousel get, and for the same reason (docs/adr/0015).
         showsControlChange = true
         planDraft = PlanDraft(ply: cursor)
+        fillPlan()
+    }
+
+    /// Asks the engine for its best line and writes the first five plies of it into the draft.
+    ///
+    /// One bounded search at the study Depth, so the plan and everything else a study says are the
+    /// same number deep. Nothing arriving is not a failure and does not clear the draft: the board
+    /// is still yours to walk the line out on, which is what this was before the engine was asked.
+    private func fillPlan() {
+        guard let engine, let draft = planDraft, draft.steps.isEmpty else { return }
+        let position = viewed
+        let ply = draft.ply
+        let depth = studyDepth
+        isPlanning = true
+        planTask?.cancel()
+        planTask = Task { [weak self] in
+            await engine.clear()
+            var best: Line?
+            for await snapshot in engine.analyse(position, budget: .depth(depth), lines: 1) {
+                if Task.isCancelled { return }
+                best = snapshot.best ?? best
+            }
+            guard let self, !Task.isCancelled else { return }
+            isPlanning = false
+            // Whoever moved in the meantime keeps what they did: a search that came back to find
+            // moves already on the board has been overtaken, and overwriting them would throw away
+            // the one thing here that was the player's.
+            guard var draft = planDraft, draft.ply == ply, draft.steps.isEmpty, let best
+            else { return }
+            var tip = position
+            for san in best.san.prefix(Game.Ply.planLimit) {
+                let at = tip
+                guard tip.apply(san: san), let played = tip.plies.last,
+                    let move = at.state.move(matching: played.uci)
+                else { break }
+                // Written the way this package writes it, not the way the engine adapter did: the
+                // notation under the board and the notation on the rows have to be the same string
+                // or they read as two different moves.
+                draft.steps.append(
+                    PlanDraft.Step(move: move, san: SAN.text(for: move, in: at.state))
+                )
+            }
+            // At the head of the line and not at its end: the five arrows point forward from the
+            // position being studied, and a board already five moves along is a board none of them
+            // are about.
+            draft.step = 0
+            planDraft = draft
+            readPlan()
+        }
+    }
+
+    /// Reads every step of the draft — what it is for, and what it costs. Cheap enough to redo
+    /// whenever the line changes, and stored rather than derived so a view body never pays for it.
+    private func readPlan() {
+        guard let draft = planDraft, !draft.steps.isEmpty,
+            let before = game.rewound(to: draft.ply)
+        else {
+            planNotes = []
+            return
+        }
+        planNotes = before.readPlan(of: draft.sans) ?? []
+    }
+
+    /// The plan as the board draws it: one numbered arrow per move, the played ones marked.
+    ///
+    /// The sides alternate, so whose move a step is follows from its number — a legal line has no
+    /// other shape.
+    public var planArrows: [PlanArrow] {
+        guard let planDraft else { return [] }
+        return planDraft.steps.enumerated().map { index, step in
+            PlanArrow(
+                step: index + 1,
+                move: MoveSquares(from: step.move.from, to: step.move.to),
+                isYours: index.isMultiple(of: 2),
+                isPlayed: index < planDraft.step
+            )
+        }
     }
 
     /// Adds one move to the plan, up to the cap.
@@ -941,6 +1035,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         draft.steps.append(PlanDraft.Step(move: legal, san: san))
         draft.step = draft.steps.count
         planDraft = draft
+        readPlan()
         Sounds.current.play(.move)
     }
 
@@ -950,6 +1045,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         draft.steps.removeLast()
         draft.step = min(draft.step, draft.steps.count)
         planDraft = draft
+        readPlan()
     }
 
     /// Walks the plan being built, so the layer can be read at each step.
@@ -983,6 +1079,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         planCheck = intent.check(plan: draft.sans, in: before)
         planOutcome = before.outcome(of: draft.sans)
         planDraft = nil
+        planNotes = []
         declaringVerb = nil
         declaredIntent = nil
         save()
@@ -991,7 +1088,10 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// Throws the plan away. Nothing was written, so there is nothing to undo.
     public func abandonPlan() {
         guard planDraft != nil else { return }
+        planTask?.cancel()
+        isPlanning = false
         planDraft = nil
+        planNotes = []
         declaringVerb = nil
         declaredIntent = nil
     }

@@ -203,6 +203,109 @@ import Testing
         #expect(session.planOutcome?.steps == 5)
     }
 
+    /// The whole of what changed in docs/adr/0021: the line arrives filled in.
+    ///
+    /// A blank five-move canvas was a wall — the player who could already write the line down did
+    /// not need the feature, and everyone else got an empty box. So the engine writes the moves and
+    /// the player still owes the reason, which is the half that gets marked.
+    @Test("tapping the plan fills it in from the engine, with a reason for every step")
+    func aPlanArrivesFromTheEngine() async throws {
+        let before = try game(["e2e4", "e7e5"])
+        let engine = PositionalEngine([
+            before.state.fen: Analysis(
+                depth: 14,
+                lines: [
+                    Line(
+                        score: .centipawns(30),
+                        uciMoves: ["f1c4", "g8f6", "g1f3", "b8c6", "f3g5", "d7d5"],
+                        san: ["Bc4", "Nf6", "Nf3", "Nc6", "Ng5", "d5"]
+                    )
+                ]
+            )
+        ])
+        let session = try session(engine)
+        session.jump(toPly: 2)
+        session.startPlan()
+        #expect(session.isPlanning, "and it says so while the search runs")
+        await hop()
+
+        #expect(!session.isPlanning)
+        // Five and not six: the cap is what makes the claim checkable, and a line longer than it
+        // is cut here rather than refused at the door (docs/adr/0017, 0018).
+        #expect(session.planDraft?.sans == ["Bc4", "Nf6", "Nf3", "Nc6", "Ng5"])
+        #expect(session.planDraft?.isFull == true)
+        // At the head of the line: the five arrows point forward from the position being studied,
+        // and a board already five moves along is a board none of them are about.
+        #expect(session.planDraft?.step == 0)
+        #expect(session.board.state.fen == session.viewed.state.fen)
+
+        // One row per move, each read in the position it is played in — and the opponent's replies
+        // read from their seat, because a plan whose answers are blank is a plan nobody checked.
+        #expect(session.planNotes.map(\.san) == ["Bc4", "Nf6", "Nf3", "Nc6", "Ng5"])
+        #expect(session.planNotes.map(\.isYours) == [true, false, true, false, true])
+        #expect(session.planNotes.last?.intent == .claim(.attack, try #require(Square("f7"))))
+        #expect(session.planNotes.last?.costs.isEmpty == false, "and what it gives away")
+
+        // Numbered arrows, in the player's colour and the opponent's, and none of them walked yet.
+        #expect(session.planArrows.map(\.step) == [1, 2, 3, 4, 5])
+        #expect(session.planArrows.map(\.isYours) == [true, false, true, false, true])
+        #expect(session.planArrows.allSatisfy { !$0.isPlayed })
+        #expect(session.planArrows.first?.move.to == (try #require(Square("c4"))))
+
+        // Walking it marks the arrows behind you, and the board follows.
+        session.stepPlan(by: 2)
+        #expect(session.planArrows.map(\.isPlayed) == [true, true, false, false, false])
+        #expect(session.board.plies.map(\.san) == ["e4", "e5", "Bc4", "Nf6"])
+
+        // And the reason is still the player's, still in the seven verbs, still judged.
+        #expect(!session.canCommitPlan, "a line handed over is not a claim")
+        session.choose(.attack)
+        session.aim(at: try #require(Square("f7")))
+        session.commitPlan()
+        #expect(session.planCheck?.held == true)
+        #expect(session.planCheck?.step == 5)
+        #expect(session.planNotes.isEmpty, "and the rows go with the draft they described")
+    }
+
+    @Test("a search that comes back to find moves already on the board leaves them alone")
+    func theEnginesLineNeverOverwritesYourOwn() async throws {
+        let before = try game(["e2e4", "e7e5"])
+        let engine = PositionalEngine([
+            before.state.fen: Analysis(
+                depth: 14,
+                lines: [
+                    Line(
+                        score: .centipawns(30),
+                        uciMoves: ["f1c4", "g8f6"], san: ["Bc4", "Nf6"]
+                    )
+                ]
+            )
+        ])
+        let session = try session(engine)
+        session.jump(toPly: 2)
+        session.startPlan()
+        // In before the answer is: the one thing on this screen that was the player's own.
+        session.addToPlan(try #require(session.board.state.move(matching: "d2d4")))
+        await hop()
+
+        #expect(session.planDraft?.sans == ["d4"], "overtaken, and what was written stands")
+        #expect(session.planNotes.map(\.san) == ["d4"])
+    }
+
+    @Test("no engine and no line is not a dead end: the board still writes the plan")
+    func aPlanWithoutAnEngineIsStillAPlan() async throws {
+        let session = try session(PositionalEngine([:]))
+        session.jump(toPly: 2)
+        session.startPlan()
+        await hop()
+
+        #expect(session.planDraft?.steps.isEmpty == true)
+        #expect(!session.isPlanning)
+        session.addToPlan(try #require(session.board.state.move(matching: "d2d4")))
+        #expect(session.planDraft?.sans == ["d4"])
+        #expect(session.planNotes.count == 1, "and one row goes with it")
+    }
+
     @Test("the plan stops at five moves, and taking one back is taking one back")
     func aPlanIsCappedAtFive() throws {
         let session = try session(PositionalEngine([:]))
