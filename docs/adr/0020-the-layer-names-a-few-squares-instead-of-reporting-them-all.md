@@ -58,7 +58,11 @@ seconds an Analysis is bought in (docs/adr/0019) are untouched, and a phone stay
   is a reason, and it is one the same checker can be pointed at. It also puts the player's
   stated reason and the engine's into the same eight words, so 「我说的是护 f7，引擎说的是占 d5」
   is a comparison rather than a translation exercise. A Line that reads honestly as nothing
-  gets 说不清, exactly as a player's move does.
+  gets 说不清, exactly as a player's move does. Note which way 占 points while doing it: it is
+  about **control** and not occupation (docs/adr/0018), and a piece does not attack the square
+  it stands on — so the rook that takes the fifth rank 占 d5 and the knight that goes and
+  stands on d5 does not. A move whose whole point is to occupy a square is named by the layer,
+  as a 据点, and by no verb.
 - **A Line the engine expects is played on the main board, and never written to the Game.**
   Watching the squares change hands step by step is what "看到五步之后" means concretely, and a
   cumulative sentence at the end says where the whole line arrived. It is ephemeral: no

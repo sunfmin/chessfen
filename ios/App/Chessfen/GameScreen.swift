@@ -938,6 +938,19 @@ struct GameScreen: View {
                     revealRow("实战", reveal.played, reveal.playedScore)
                 }
             }
+            // The engine's own reason, in the words the player just used for theirs. Two claims in
+            // the same seven verbs is a comparison; a number against a sentence is not
+            // (docs/adr/0020).
+            if let reading = reveal.bestReading {
+                let subject = reveal.isSameAsBest ? "这步" : "引擎那步"
+                Text(
+                    reading.opening.intent == .unclear
+                        ? "\(subject)为什么好，这里说不清。"
+                        : "\(subject)是为了 \(reading.sentence)"
+                )
+                .font(.caption)
+                .foregroundStyle(Palette.inkSoft)
+            }
 
             HStack(spacing: 9) {
                 if !reveal.isSameAsPlayed {

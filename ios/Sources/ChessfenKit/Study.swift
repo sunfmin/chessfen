@@ -43,6 +43,12 @@ public struct Reveal: Hashable, Sendable {
     /// over actually mattered, which is a question about where the game goes next
     /// (docs/adr/0020). Empty when the search could not be made.
     public let guessLine: [String]
+    /// What the engine's own recommendation is for, in the same seven verbs the player declares in.
+    ///
+    /// Read out of the Line the search already produced and never declared by anybody, so it is a
+    /// reason the same checker can be pointed at (docs/adr/0020). Nil when the engine could not be
+    /// asked; 说不清 inside, when it was asked and none of the seven can honestly carry the answer.
+    public let bestReading: LineReading?
 
     /// What the player said the move was for, and whether that claim actually held.
     ///

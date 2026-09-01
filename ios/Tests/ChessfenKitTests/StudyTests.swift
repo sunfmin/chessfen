@@ -150,6 +150,51 @@ import Testing
         return session
     }
 
+    /// The engine gives a number and a sequence of moves and never a reason. The Reveal carries the
+    /// reason anyway, read out of that same sequence with the same rules code that judges the
+    /// player's own claim — so 「我说的是攻 c5，引擎那步是为了攻 e5」 is a comparison and not a
+    /// translation exercise (docs/adr/0020).
+    @Test("the reveal carries what the engine's own move is for, in the same seven verbs")
+    func theEnginesMoveIsTranslated() async throws {
+        let before = try game(["e2e4", "e7e5"])
+        let afterD4 = try game(["e2e4", "e7e5", "d2d4"])
+        let engine = PositionalEngine([
+            before.state.fen: Analysis(
+                depth: 14,
+                selectiveDepth: 18,
+                lines: [
+                    Line(
+                        score: .centipawns(30),
+                        uciMoves: ["g1f3"],
+                        san: ["Nf3", "Nc6", "Bb5"]
+                    )
+                ],
+                nodes: 1_000_000,
+                nodesPerSecond: 1_000_000,
+                timeMilliseconds: 500
+            ),
+            afterD4.state.fen: analysis(.centipawns(10)),
+        ])
+        let session = try session(engine)
+        session.jump(toPly: 2)
+        session.offer(try move("d2d4", in: session))
+        session.declareUnclear()
+        session.commitGuess()
+        await hop()
+
+        let reading = try #require(session.reveal?.bestReading)
+        #expect(reading.opening.san == "Nf3")
+        // The knight looks at e5 and nothing looks back. Bb5 is Black's problem and not White's
+        // plan, so it is read and then dropped: 攻 c6 would need the knight to be outnumbered, and
+        // b7 and d7 both guard it.
+        #expect(reading.opening.intent == .claim(.attack, try #require(Square("e5"))))
+        #expect(reading.sentence == "攻 e5")
+        // And every verb it prints is one the checker would agree with, which is the property the
+        // reading is built on rather than a coincidence of this fixture.
+        let played = try #require(before.state.move(matching: "g1f3"))
+        #expect(reading.opening.intent.check(played, in: before)?.held == true)
+    }
+
     @Test("a good guess is shown against the engine's move and the one that was played")
     func aGuessInsideTheBand() async throws {
         let session = try await markedSession(guessing: "d2d4")

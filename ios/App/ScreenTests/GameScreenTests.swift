@@ -482,7 +482,9 @@ struct GameScreenScreenshots {
             Self.searching,
             isEndless: true,
             byPosition: [
-                asked.state.fen: Self.opinion(.centipawns(45), best: ("e1g1", "O-O")),
+                asked.state.fen: Self.opinion(
+                    .centipawns(45), best: ("e1g1", "O-O"), then: ["d6", "d4"]
+                ),
                 guessed.state.fen: Self.opinion(.centipawns(20)),
                 played.state.fen: Self.opinion(.centipawns(38)),
             ]
@@ -522,6 +524,13 @@ struct GameScreenScreenshots {
         #expect(rendered.says("说对了"))
         #expect(rendered.says("走对了，理由也站得住"))
         #expect(session.reveal?.intentCheck?.verdict == .held)
+        // And the engine's own reason, in the same seven verbs the player just declared in — read
+        // off the Line the same search produced, so the two claims can be compared and not merely
+        // translated (docs/adr/0020).
+        #expect(session.reveal?.bestReading?.sentence == "护 f2，第 3 步再 挡 d4")
+        #expect(rendered.says("引擎那步是为了"))
+        #expect(rendered.says("护 f2"))
+        #expect(rendered.says("第 3 步再 挡 d4"))
         // The guess is on the board and not in the game: the record still ends where it did.
         #expect(session.game.plies.map(\.san).last == "Nf6")
         #expect(rendered.says("第 8 步 Nf6"))

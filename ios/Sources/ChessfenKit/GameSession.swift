@@ -829,6 +829,10 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
                 best: best?.san.first,
                 bestScore: best?.score,
                 guessLine: Array((afterGuess?.san ?? []).prefix(Game.Ply.lineLimit)),
+                // Read from the Line the same search produced, not asked for separately: the
+                // engine gives a number and a sequence of moves and never a reason, and this is
+                // the reason (docs/adr/0020).
+                bestReading: before.reading(of: best?.san ?? []),
                 intent: declared,
                 intentCheck: check
             )
