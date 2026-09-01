@@ -95,9 +95,29 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// The Analysis of the position being looked at, replaced each time the engine reports a
     /// deeper one, and cleared the moment anything makes it stale.
     public private(set) var analysis: Analysis?
-    /// True while the engine is thinking about a move it is going to play itself, as opposed
-    /// to advising.
-    public private(set) var isThinking = false
+    /// The move the engine is walking, when it is walking one — and *whose* it is, which is the
+    /// part a Bool could not say.
+    ///
+    /// Both kinds are the engine thinking about a move it will play rather than advice, and they
+    /// are not the same act, because they end in opposite ways. `own` is a move it took on under
+    /// its own Controller, on a clock, and 马上走 is how you stop waiting for it. `asked` is a move
+    /// a thumb is holding the button down for, and it ends when the thumb comes up.
+    ///
+    /// One flag for both is what this was, and the screen chose between the two buttons by reading
+    /// it — so the first instant of a press swapped 让引擎走 for 马上走 under the finger. A button
+    /// taken off the screen mid-press is never let go of: the hold ran on with nobody holding it,
+    /// and the move it was asked for was never played.
+    public enum Thinking: Sendable {
+        /// A move the engine took on itself, on a clock.
+        case own
+        /// A move somebody is holding the button down for.
+        case asked
+    }
+
+    public private(set) var thinking: Thinking?
+
+    /// Whether a move of either kind is being walked.
+    public var isThinking: Bool { thinking != nil }
 
     /// How the running search is getting on — how long it has been at it and how deep it has got.
     ///
@@ -443,7 +463,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         game = fresh
         cursor = 0
         analysis = nil
-        isThinking = false
+        thinking = nil
         lastHumanThink = nil
         shaky = []
         retune()
@@ -919,7 +939,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         let position = viewed
         searchTask?.cancel()
         searchProgress = nil
-        isThinking = true
+        thinking = .asked
         searchTask = Task { [weak self] in
             // Unbounded: how long it runs is how long the button is held. One line: the
             // answer is one move, and every extra line halves how deep the hold looks.
@@ -947,7 +967,9 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// one case where nothing is known yet waits for the first snapshot, which is the soonest
     /// an answer can exist at all, and the loop plays it the moment it lands.
     public func endAskedMove() {
-        guard isThinking else { return }
+        // Only the search a thumb started: a release is an answer to a press, and there is nothing
+        // for it to end when the engine is walking a move of its own.
+        guard thinking == .asked else { return }
         isAskReleased = true
         guard askedBest != nil else { return }
         let position = viewed
@@ -957,7 +979,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     }
 
     private func finishAskedMove(in position: Game) {
-        isThinking = false
+        thinking = nil
         isAskReleased = false
         let uci = askedBest
         askedBest = nil
@@ -1018,7 +1040,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         // The move has been handed to `colour`; the board turns so they face the person playing.
         orientation = .facing(colour)
         analysis = nil
-        isThinking = false
+        thinking = nil
         lastHumanThink = nil
         save()
         retune()
@@ -1036,7 +1058,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     public func retune() {
         searchTask?.cancel()
         searchTask = nil
-        isThinking = false
+        thinking = nil
         thinkingBest = nil
         turnBegan = nil
 
@@ -1049,7 +1071,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         guard let engine, !position.isOver, !engine.isPaused else { return }
 
         if isEngineTurn {
-            isThinking = true
+            thinking = .own
             // Mirrored Time is only the default, and only against a person: with both Controllers
             // on the engine there is no last human move to mirror, and there is a named clock
             // instead (`thinkingTime`).
@@ -1065,7 +1087,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
                     last = snapshot
                 }
                 guard let self, !Task.isCancelled else { return }
-                isThinking = false
+                thinking = nil
                 if let uci = last?.bestMove, let move = position.state.move(matching: uci) {
                     playByEngine(move)
                 }
@@ -1098,11 +1120,14 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// cancelling the task is what cuts the search short: the stream's termination is the one
     /// way in, so the engine never outlives the button that ends it.
     public func moveNow() {
-        guard isThinking else { return }
+        // Only the engine's own move. What it likes best is kept in `thinkingBest`, which only that
+        // search fills in — an Asked Move keeps its answer somewhere else and is ended by letting
+        // go, so cutting one short here would stop the search and play nothing.
+        guard thinking == .own else { return }
         let position = viewed
         searchTask?.cancel()
         searchTask = nil
-        isThinking = false
+        thinking = nil
         if let uci = thinkingBest, let move = position.state.move(matching: uci) {
             playByEngine(move)
         }
@@ -1122,7 +1147,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     public func suspend() {
         searchTask?.cancel()
         searchTask = nil
-        isThinking = false
+        thinking = nil
         // A pass that outlived the screen would come back having written Scores nobody watched
         // arrive, at a Depth chosen by a screen that has gone.
         stopReview()

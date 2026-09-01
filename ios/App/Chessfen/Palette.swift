@@ -183,8 +183,9 @@ struct ChipCluster<Value: Hashable>: View {
 struct HoldButton: View {
     let label: String
     let symbol: String
-    /// Whether it is being held right now. Owned by the screen, because the screen has to say what
-    /// the deck reads while it is.
+    /// Whether it is being held right now. Passed in rather than kept here, because the screen has
+    /// to say what the deck reads while it is — and it should be the same thing `onPress` starts
+    /// and `onRelease` ends, so that a press which never gets its release cannot leave this true.
     let isHeld: Bool
     /// How far the search has got, 0...1. Drawn only while the button is held: a search is running
     /// under this screen most of the time, and a meter standing at three quarters with nobody's

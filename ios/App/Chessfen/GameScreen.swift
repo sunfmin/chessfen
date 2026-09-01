@@ -35,8 +35,12 @@ struct GameScreen: View {
     /// Whether the opening guess below has been made yet. Once, on the way in — not on every
     /// appearance, or coming back from a Review would shut what somebody had just opened.
     @State private var hasGuessedUnfold = false
-    /// Whether a thumb is on 让引擎走 right now. The engine is thinking for exactly as long as it is.
-    @State private var isAsking = false
+    /// Whether a thumb is on 让引擎走 right now. The engine is thinking for exactly as long as it is —
+    /// which is why this is read off the session rather than kept here as well. A screen holding
+    /// its own copy of "a finger is down" is a screen that can be left holding it: a press that
+    /// ends any way other than a release leaves the flag set, and the button then draws itself
+    /// full and held with nobody touching it.
+    private var isAsking: Bool { session.thinking == .asked }
 
     /// How tall the window under the record is, and how tall the page in it turned out to be — the
     /// reading fills the first, and the difference is what says whether anything is out of sight.
@@ -369,8 +373,13 @@ struct GameScreen: View {
     /// Two states and they are not the same act: while the engine holds this colour's Controller
     /// it is already walking the move and the only thing left to do is stop waiting; the rest of
     /// the time it is an Asked Move, and how long the button is held is the time the engine gets.
+    ///
+    /// Which one is on screen turns on *whose* move the engine is walking, never on whether it is
+    /// searching at all. An Asked Move searches too, and choosing on that swapped this button for
+    /// the other one on the first instant of a press — which took the button out from under the
+    /// finger, so it was never let go of and the move it was asked for was never played.
     @ViewBuilder private var action: some View {
-        if session.isThinking {
+        if session.thinking == .own {
             // Mirrored Time means the engine takes about as long as the player just did, which is
             // right most of the time and longer than anyone wants to sit through the rest of it.
             // Stopping the search does not change which move it picks; it just stops waiting.
@@ -393,13 +402,9 @@ struct GameScreen: View {
                 fill: Double(session.searchProgress?.depth ?? 0) / SearchDepth.deepEnough,
                 onPress: {
                     selected = nil
-                    isAsking = true
                     session.beginAskedMove()
                 },
-                onRelease: {
-                    isAsking = false
-                    session.endAskedMove()
-                }
+                onRelease: { session.endAskedMove() }
             )
             .accessibilityLabel("让引擎走")
             .accessibilityHint("按住不放，引擎算得更深；松手就走")

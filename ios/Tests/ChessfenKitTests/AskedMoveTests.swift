@@ -106,6 +106,54 @@ struct AskedMove {
         #expect(session.game.plies.last?.san == "d4")
     }
 
+    /// The two searches are told apart, and this is the fact the screen leans on: it chooses
+    /// between two different buttons by asking *whose* move is being walked, so a thumb's search
+    /// must not read as the engine's own. Reading "is a search running" instead swapped 让引擎走 for
+    /// 马上走 on the first instant of a press — and a button taken out from under a finger is never
+    /// let go of, so the press ran on with nobody holding it and played nothing.
+    @Test("a search a thumb asked for is not the engine walking a move of its own")
+    func askedIsNotTheEnginesOwn() async throws {
+        let session = try session(ScriptedEngine(Self.searching, isEndless: true))
+
+        session.beginAskedMove()
+        await hop()
+
+        #expect(session.thinking == .asked)
+        #expect(session.thinking != .own, "so 让引擎走 stays on screen under the thumb holding it")
+
+        // 马上走 ends the engine's own move and plays what that search had. Turned on an Asked
+        // Move it would take the search down and play nothing — which is what a hold that had
+        // nothing left to release used to leave behind.
+        session.moveNow()
+
+        #expect(session.thinking == .asked, "stopping the engine's clock is not stopping a thumb")
+        #expect(session.game.plies.count == 8, "and nothing is played behind the thumb's back")
+
+        session.endAskedMove()
+
+        #expect(session.game.plies.count == 9, "the press still ends where a press ends: a move")
+        #expect(session.game.plies.last?.san == "d4")
+    }
+
+    /// The other kind. This is the one 马上走 is for, and cutting it short plays what it had.
+    @Test("the engine's own move is the other kind of thinking, and 马上走 is what ends it")
+    func theEnginesOwnMoveIsCutShort() async throws {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
+        let session = GameSession.fresh(game, controllers: [.white: .engine, .black: .hand])
+        session.attach(engine: ScriptedEngine(Self.searching, isEndless: true), library: nil)
+        session.retune()
+        await hop()
+
+        #expect(session.thinking == .own, "it is walking a move it took on itself")
+        #expect(!session.canPlayBestMove, "so there is no second button asking for the same move")
+
+        session.moveNow()
+
+        #expect(session.thinking == nil)
+        #expect(session.game.plies.count == 9, "and it plays what it liked best when it was stopped")
+        #expect(session.game.plies.last?.san == "d4")
+    }
+
     /// Practice hides what the engine thinks, not what it is doing.
     @Test("a search asked for while practising reports its progress but not its opinion")
     func practisingKeepsTheStopwatch() async throws {
