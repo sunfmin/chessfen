@@ -405,6 +405,43 @@ struct GameScreenScreenshots {
         #expect(session.analysis == nil)
     }
 
+    /// Practice still on, the finder on: one shot named, no Score. This is the combination
+    /// docs/adr/0022 exists for.
+    @Test("the tactics finder names a shot while practice stays on")
+    func tacticsFinderDuringPractice() async throws {
+        let fen = "4k3/8/8/3r4/8/8/8/3QK3 w - - 0 1"
+        let game = try #require(Game(startFEN: fen))
+        let engine = ScriptedEngine(
+            [],
+            byPosition: [
+                game.state.fen: Analysis(
+                    depth: 10,
+                    lines: [
+                        Line(score: .centipawns(500), uciMoves: ["d1d5"], san: ["Qxd5"]),
+                        Line(score: .centipawns(20), uciMoves: ["e1d2"], san: ["Kd2"]),
+                    ]
+                )
+            ]
+        )
+        let session = GameSession.fresh(game)
+        session.attach(engine: engine, library: nil)
+        session.setFindingTactics(true)
+        await hop()
+
+        let rendered = await ScreenImage.write("game-tactics-finder") {
+            screen(session, engine: engine)
+        }
+
+        #expect(session.isPractising)
+        #expect(session.isFindingTactics)
+        #expect(session.tactic?.move.uci == "d1d5")
+        #expect(rendered.says("战术"))
+        #expect(rendered.says("有战术"))
+        #expect(rendered.says("没人守的车"))
+        #expect(!rendered.says("+5.00"), "no Score while practising")
+        #expect(session.analysis == nil)
+    }
+
     /// The same game, the same engine, the same moves played into it — and nothing whispered.
     /// This is the screenshot the default is answerable to: a person reading it should not be able
     /// to work out what the engine thinks of the position, and should be in no doubt that the app

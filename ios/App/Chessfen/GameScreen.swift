@@ -70,6 +70,9 @@ struct GameScreen: View {
                 playerBar(topColour)
                 board.frame(width: side, height: side)
                 standing.frame(width: side).padding(.vertical, 6)
+                if session.isFindingTactics, session.isAtLatest, !viewed.isOver {
+                    tacticStrip.frame(width: side)
+                }
                 playerBar(bottomColour)
                 record
                 // What there is to read rather than to press: where this game sits in its
@@ -281,6 +284,7 @@ struct GameScreen: View {
     private var standing: some View {
         HStack(spacing: 8) {
             opinionSwitch
+            finderSwitch
 
             if viewed.isOver {
                 // Who won is not a fact about one side, so it is said here rather than in a bar.
@@ -346,6 +350,46 @@ struct GameScreen: View {
         // reports "off" says two different things to two different readers, and the tree is the
         // one VoiceOver hears.
         .accessibilityValue(session.isPractising ? "练习" : "开")
+    }
+
+    /// Off at the start of every Game, like Practice, and for the same reason: a shot already
+    /// on the board is a shot the eye cannot decline to read (docs/adr/0022).
+    private var finderSwitch: some View {
+        Button {
+            withAnimation(.snappy(duration: 0.2)) {
+                session.setFindingTactics(!session.isFindingTactics)
+            }
+        } label: {
+            Text("战术")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(session.isFindingTactics ? Palette.analysis : Palette.inkSoft)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
+                .background(Palette.chipRest, in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(!engine.isReady && !session.isFindingTactics)
+        .accessibilityLabel("战术发现器")
+        .accessibilityValue(session.isFindingTactics ? "开" : "关")
+    }
+
+    /// One line, not a panel: the shot if there is one, or the admission that there isn't.
+    private var tacticStrip: some View {
+        Button {
+            guard let line = session.tactic?.line, !line.isEmpty else { return }
+            selected = nil
+            session.startWalk(line: line)
+        } label: {
+            Text(session.tacticPrompt ?? "在看有没有战术")
+                .font(.caption)
+                .foregroundStyle(session.tactic == nil ? Palette.inkSoft : Palette.analysis)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 4)
+        }
+        .buttonStyle(.plain)
+        .disabled(session.tactic?.line.isEmpty != false)
+        .accessibilityLabel(session.tacticPrompt ?? "在看有没有战术")
     }
 
     /// Who is ahead, with how hard the engine is still working on that answer drawn underneath it.
@@ -2094,7 +2138,10 @@ struct GameScreen: View {
     private var tapPosition: Game { session.planDraft != nil ? session.board : viewed }
 
     private var recommendation: MoveSquares? {
-        session.analysis?.bestMove.flatMap { MoveSquares(uci: $0) }
+        if session.isFindingTactics, let tactic = session.tactic {
+            return MoveSquares(from: tactic.move.from, to: tactic.move.to)
+        }
+        return session.analysis?.bestMove.flatMap { MoveSquares(uci: $0) }
     }
 
     /// Whether the position on screen is one being studied rather than one about to be played

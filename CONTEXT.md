@@ -185,6 +185,21 @@ the eye cannot decline to read (docs/adr/0015). Says nothing about whether the e
 *plays* — it can hold a Controller and still not talk. 自己练 on screen.
 _Avoid_: hint off, silent mode, blindfold, difficulty, training mode
 
+**Tactic**:
+A shot for the side to move that wins material or mates. The rules propose it — a mate, a
+winning capture, a double attack — and a short search confirms the engine would play it, or
+else names a forcing line the rules did not. Named in a sentence the rules code can check,
+in the seven Intent verbs where they fit, never as a motif. Whose it is follows who is to
+move: after you play it is theirs, after they play it is yours (docs/adr/0022).
+_Avoid_: fork, pin, skewer, puzzle, combo, tactic puzzle
+
+**战术发现器**:
+The switch that lets a Tactic be named on the latest position of a Game in progress. Off at
+the start of every Game and never written to PGN, like Practice, and silent on a past Ply,
+which is still a Drill. Practice can stay on: then the board has no Score and no candidate
+Lines, only the shot if there is one. 战术 on screen.
+_Avoid_: hint mode, blunder check, coach, assistant
+
 **Drill**:
 One question made out of a Game the app already holds: the position comes back with the
 engine silent, and a move — with an Intent, when one is asked for — has to be committed

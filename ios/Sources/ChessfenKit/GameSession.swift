@@ -77,6 +77,8 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
             isPlanning = false
             planCheck = nil
             planOutcome = nil
+            tactic = nil
+            isProbingTactics = false
         }
     }
     /// The Game rebuilt where the cursor stands, kept until either the Game or the cursor
@@ -248,6 +250,16 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// up once for a session of fifty positions: it is the one thing standing between a player
     /// and the answer, so it has to be found off every time rather than wherever it was left.
     public private(set) var isPractising = true
+
+    /// Whether a Tactic may be named on the latest position (docs/adr/0022).
+    ///
+    /// Off at the start of every Game, never written to PGN, silent on a past Ply. Practice
+    /// can stay on: then the board has no Score and no candidate Lines, only the shot.
+    public private(set) var isFindingTactics = false
+    /// The shot the finder currently names, if the last probe found one.
+    public private(set) var tactic: Tactic?
+    /// True while the short search that confirms a Tactic is running.
+    public private(set) var isProbingTactics = false
 
     private var controllers: [PieceColour: Controller]
     /// The clock somebody has put the engine on, if anybody has. Nil means the game decides —
@@ -504,6 +516,32 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         // one here (docs/adr/0015).
         if !practising, !game.isReviewed { startReview() }
         retune()
+    }
+
+    /// Turns the tactics finder on, or back off. Takes effect now: a shot left standing after
+    /// the switch is thrown is the one thing the live board must not keep drawing.
+    public func setFindingTactics(_ on: Bool) {
+        guard isFindingTactics != on else { return }
+        isFindingTactics = on
+        if !on {
+            tactic = nil
+            isProbingTactics = false
+        }
+        retune()
+    }
+
+    /// What the strip under the board should say while the finder is on.
+    ///
+    /// Nil when the finder is off, or when the cursor is not on the latest position — a
+    /// Drill is not a live Game, and the finder does not talk there (docs/adr/0022).
+    public var tacticPrompt: String? {
+        guard isFindingTactics, isAtLatest, !viewed.isOver else { return nil }
+        if isProbingTactics, tactic == nil { return "在看有没有战术" }
+        if let tactic {
+            let whose = isHandTurn ? "有战术" : "对方有战术"
+            return "\(whose)：\(tactic.sentence)"
+        }
+        return "这一步没有战术"
     }
 
     /// The collection this game is filed under, according to its own file.
@@ -1142,11 +1180,11 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// a committed Guess's search produced. No search is started to play a carousel: an app that
     /// went and fetched a line when somebody pressed play would be spending a Stint on a picture
     /// (docs/adr/0019, 0020). Nothing to play means nothing happens and the screen says why.
-    public func startWalk() {
+    public func startWalk(line: [String]? = nil) {
         // Not over a plan: the board would show one line and the arrows another, and the plan has a
         // transport of its own for exactly this.
         guard walk == nil, planDraft == nil else { return }
-        let line = viewedContinuation
+        let line = line ?? viewedContinuation
         guard !line.isEmpty, let outcome = viewed.outcome(of: line) else { return }
         endScan()
         // Watching the squares change hands is the whole point of playing it, so the layer comes on
@@ -1617,6 +1655,42 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         // gate in `analyse`. `retune` is called from more places than the app coming back
         // (`onAppear`, the engine having just played), so the answer to "what should the engine
         // be doing right now" has to include "nothing, nobody is watching".
+        guard let engine, !position.isOver, !engine.isPaused else { return }
+
+        if isFindingTactics, isAtLatest {
+            probeTactics(on: position, using: engine)
+            return
+        }
+        tactic = nil
+        isProbingTactics = false
+        continueAfterProbe()
+    }
+
+    /// A short two-line search that confirms or drops a rules-named shot, then hands the
+    /// engine back to whatever it was going to do — its own move, or a Stint of advice.
+    ///
+    /// Before, not after: a prompt that lands once the opponent has already moved is a
+    /// post-mortem (docs/adr/0022). The table is left warm on purpose.
+    private func probeTactics(on position: Game, using engine: any Engine) {
+        tactic = Tactic.proposed(in: position)
+        isProbingTactics = true
+        searchTask = Task { [weak self] in
+            var last: Analysis?
+            for await snapshot in engine.analyse(
+                position, budget: .depth(Tactic.probeDepth), lines: 2
+            ) {
+                if Task.isCancelled { return }
+                last = snapshot
+            }
+            guard let self, !Task.isCancelled else { return }
+            if let last { tactic = Tactic.confirmed(in: position, analysis: last) }
+            isProbingTactics = false
+            continueAfterProbe()
+        }
+    }
+
+    private func continueAfterProbe() {
+        let position = viewed
         guard let engine, !position.isOver, !engine.isPaused else { return }
 
         if isEngineTurn {

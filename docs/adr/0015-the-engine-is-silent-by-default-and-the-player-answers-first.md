@@ -53,3 +53,7 @@ sequence is fixed: **the player answers, and only then does the engine.**
   > the layer now draws nothing at all on its own initiative, and answers a tap about one
   > square instead. After a Guess is committed it appears by itself — that is the moment the
   > engine is already speaking, so a second tap to reach the reading buys nothing.
+
+  > Opened, narrowly, by [ADR 0022](0022-a-tactics-finder-can-speak-during-a-game.md): a second
+  > switch, off by default, may name one Tactic on the latest position. Practice, the Drill,
+  > and everything the live board still refuses to draw are unchanged.
