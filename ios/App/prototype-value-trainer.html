@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>PROTOTYPE — 局面价值训练器</title>
+<!--
+  Three variants of a from-scratch position-value trainer (ignore chessfen's GameScreen).
+  Switch via ?variant=A|B|C. Throwaway. Answers: if we designed from the research, not
+  from the current app, what would the product even look like?
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Cormorant+Garamond:ital,wght@0,600;1,600&family=Oswald:wght@500;600&family=Barlow+Condensed:wght@500;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --phone-w: 390px;
+    --phone-h: 844px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: #1a1814;
+    color: #f3efe6;
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    min-height: 100%;
+  }
+
+  .stage {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px 120px;
+    gap: 16px;
+  }
+  .brief {
+    max-width: 720px;
+    width: 100%;
+    font-size: 13px;
+    line-height: 1.55;
+    color: #c9c1b2;
+  }
+  .brief strong { color: #f3efe6; font-weight: 600; }
+  .brief em { color: #e8c872; font-style: normal; }
+
+  .phone-wrap { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; justify-content: center; }
+  .phone {
+    width: var(--phone-w);
+    height: var(--phone-h);
+    border-radius: 36px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 30px 80px rgba(0,0,0,.55), inset 0 0 0 1px rgba(255,255,255,.08);
+    flex: 0 0 var(--phone-w);
+  }
+  .phone-notch {
+    position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+    width: 120px; height: 28px; background: #0b0b0b; border-radius: 16px; z-index: 5;
+  }
+  .screen { height: 100%; overflow: auto; padding: 0; }
+  .screen-inner { min-height: 100%; padding: 48px 16px 28px; }
+
+  .state-panel {
+    width: min(360px, 100%);
+    background: #111;
+    border: 1px solid #3a342c;
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    line-height: 1.6;
+    color: #b7ec9a;
+    white-space: pre-wrap;
+  }
+  .state-panel .k { color: #7d9a6e; }
+
+  /* ---------------- board (shared drawing, not shared layout) ---------------- */
+  .board {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 2px;
+    overflow: hidden;
+    user-select: none;
+    touch-action: manipulation;
+  }
+  .sq {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px; line-height: 1; cursor: pointer; position: relative;
+  }
+  .sq.light { background: #f0d9b5; }
+  .sq.dark { background: #b58863; }
+  .sq.sel { outline: 3px solid #ffe08a; outline-offset: -3px; }
+  .sq.dest::after {
+    content: ""; width: 12px; height: 12px; border-radius: 50%;
+    background: rgba(20,80,40,.45); position: absolute;
+  }
+  .sq.last { box-shadow: inset 0 0 0 3px rgba(255, 220, 80, .55); }
+  .piece { pointer-events: none; }
+
+  /* ================================================================= A 天平 */
+  .a-screen { background: #234338; color: #f4efe4; }
+  .a-eyebrow { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #c5dcc8; }
+  .a-title { font-family: "Cormorant Garamond", serif; font-size: 28px; font-weight: 600; margin: 4px 0 12px; }
+  .a-board-frame {
+    padding: 8px; background: #1a332b; border-radius: 4px;
+    box-shadow: 0 8px 0 #15261f, 0 12px 24px rgba(0,0,0,.35);
+  }
+  .a-screen .sq.light { background: #e7d7b3; }
+  .a-screen .sq.dark { background: #6b8f71; }
+  .a-hint { font-size: 13px; color: #d5e6d4; margin: 12px 0 8px; min-height: 36px; }
+  .a-beam {
+    margin-top: 8px; height: 168px; position: relative;
+    background: linear-gradient(#2a4a3e, #1e3830);
+    border-radius: 4px; overflow: hidden;
+  }
+  .a-rail {
+    position: absolute; left: 16px; right: 16px; top: 28px; height: 4px;
+    background: #c6a15b; border-radius: 2px;
+    box-shadow: 0 1px 0 #8a6a2e;
+  }
+  .a-rail-label {
+    position: absolute; top: 8px; font-size: 10px; color: #c6a15b; letter-spacing: .08em;
+  }
+  .a-rail-label.l { left: 16px; }
+  .a-rail-label.r { right: 16px; }
+  .a-weight {
+    position: absolute; top: 24px; transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center; width: 64px;
+    transition: left .6s cubic-bezier(.2,.8,.2,1);
+  }
+  .a-string { width: 1px; height: 28px; background: #c6a15b; }
+  .a-tag {
+    background: #f1e6c8; color: #2a2114; padding: 6px 6px 5px;
+    font-family: "Cormorant Garamond", serif; font-size: 18px; min-width: 52px; text-align: center;
+    box-shadow: 0 2px 0 #b7a57a;
+  }
+  .a-tag small { display: block; font-family: "IBM Plex Sans", sans-serif; font-size: 9px; letter-spacing: .04em; color: #6a5a38; }
+  .a-tag.yours { background: #ffe08a; }
+  .a-tag.engine { background: #d7f0c8; }
+  .a-tag.played { background: #ead7c0; }
+  .a-tag.ghost { opacity: .35; }
+  .a-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .a-btn {
+    flex: 1; border: 0; padding: 12px 10px; font: 600 14px "IBM Plex Sans", sans-serif;
+    background: #c6a15b; color: #1a2418; cursor: pointer; border-radius: 2px;
+  }
+  .a-btn.ghost { background: transparent; color: #e7d7b3; outline: 1px solid #c6a15b; }
+  .a-btn:disabled { opacity: .35; cursor: default; }
+
+  /* ================================================================= B 对局 */
+  .b-screen { background: #0e0d0c; color: #f0e6d4; }
+  .b-top {
+    display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px;
+  }
+  .b-who { font-size: 12px; color: #a89880; }
+  .b-clock {
+    font-family: "Oswald", sans-serif; font-size: 42px; letter-spacing: .04em;
+    color: #e4b45a; line-height: 1;
+    text-shadow: 0 0 18px rgba(228,180,90,.25);
+  }
+  .b-clock.engine { color: #d0c4b0; text-shadow: none; font-size: 28px; }
+  .b-screen .sq.light { background: #cfc6b6; }
+  .b-screen .sq.dark { background: #5a5348; }
+  .b-board-frame { padding: 3px; background: #2a261f; }
+  .b-status { margin-top: 12px; font-size: 14px; color: #d8cbb3; min-height: 40px; }
+  .b-receipt {
+    margin-top: 14px; background: #f4ead4; color: #2b2418;
+    padding: 14px 14px 12px; font-family: "IBM Plex Mono", monospace; font-size: 12px;
+    transform: rotate(-0.4deg);
+    box-shadow: 0 8px 20px rgba(0,0,0,.4);
+  }
+  .b-receipt h2 { font-family: "Oswald", sans-serif; font-size: 16px; letter-spacing: .12em; font-weight: 500; }
+  .b-receipt .row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px dashed #cbbfa6; }
+  .b-receipt .row.you { background: #ffe9a8; margin: 0 -6px; padding: 4px 6px; }
+  .b-actions { display: flex; gap: 8px; margin-top: 14px; }
+  .b-btn {
+    flex: 1; border: 0; padding: 14px 10px; font: 600 14px "IBM Plex Sans", sans-serif;
+    background: #e4b45a; color: #1a140c; cursor: pointer;
+  }
+  .b-btn.dim { background: #2a261f; color: #e4b45a; outline: 1px solid #e4b45a; }
+  .b-btn:disabled { opacity: .3; }
+
+  /* ================================================================= C 三条线 */
+  .c-screen { background: #dfe6d8; color: #243026; }
+  .c-kicker {
+    font-family: "Barlow Condensed", sans-serif; font-size: 13px; letter-spacing: .2em;
+    text-transform: uppercase; color: #4d6a52;
+  }
+  .c-title { font-family: "Barlow Condensed", sans-serif; font-size: 32px; font-weight: 700; letter-spacing: .02em; margin: 0 0 8px; }
+  .c-screen .sq.light { background: #f7f1e3; }
+  .c-screen .sq.dark { background: #769176; }
+  .c-ask { font-size: 14px; margin-bottom: 8px; color: #3c4f3e; }
+  .strips { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+  .strip {
+    background: #f4f7f0; border: 2px solid #8aa48a; padding: 8px;
+    display: grid; grid-template-columns: 96px 1fr; gap: 8px; align-items: center;
+    cursor: pointer;
+  }
+  .strip.best { border-color: #1f6b38; background: #e7f3e6; }
+  .strip.yours { border-color: #b8860b; }
+  .strip .mini { width: 96px; }
+  .strip .mini .sq { font-size: 11px; }
+  .strip .meta { font-size: 13px; }
+  .strip .san {
+    font-family: "Barlow Condensed", sans-serif; font-size: 22px; font-weight: 700;
+  }
+  .strip .pv { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: #4d6a52; margin-top: 2px; }
+  .strip .score { font-family: "Barlow Condensed", sans-serif; font-size: 28px; font-weight: 700; }
+  .c-stepper { display: flex; gap: 6px; margin-top: 6px; }
+  .c-stepper button {
+    border: 1px solid #4d6a52; background: transparent; color: #243026;
+    font: 600 12px "Barlow Condensed", sans-serif; padding: 4px 8px; cursor: pointer;
+  }
+  .c-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .c-btn {
+    flex: 1; border: 0; padding: 12px; font: 700 15px "Barlow Condensed", sans-serif;
+    letter-spacing: .06em; background: #1f6b38; color: #f4f7f0; cursor: pointer;
+  }
+  .c-btn.ghost { background: transparent; color: #1f6b38; outline: 2px solid #1f6b38; }
+  .c-btn:disabled { opacity: .35; }
+
+  /* switcher — not part of the design being judged */
+  .switcher {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px;
+    background: #111; color: #fff; border: 2px solid #f5d76e;
+    padding: 8px 10px; border-radius: 999px; z-index: 50;
+    box-shadow: 0 8px 30px rgba(0,0,0,.45); font-size: 13px; font-weight: 600;
+  }
+  .switcher button {
+    width: 36px; height: 36px; border-radius: 50%; border: 0; cursor: pointer;
+    background: #f5d76e; color: #111; font-size: 18px; font-weight: 700;
+  }
+  .switcher .lab { min-width: 210px; text-align: center; }
+  .switcher .lab small { display: block; font-weight: 400; color: #cfc7b0; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <p class="brief">
+    <strong>PROTOTYPE · 抛开现有实现，从调研重画这个产品。</strong>
+    问题：如果棋力来自「给每步打分」而不是「记住最佳着」，主界面该是什么？
+    三个变体结构互斥：<em>A 天平</em>把分数做成主界面；<em>B 对局</em>先下完再给收据；<em>C 三条线</em>用三块棋盘并排走变化。
+    同一盘棋：意大利 3…Nf6 之后，你猜 d4，实战走了 c3，引擎要 O-O。
+  </p>
+  <div class="phone-wrap">
+    <div class="phone" id="phone">
+      <div class="phone-notch"></div>
+      <div class="screen" id="screen"></div>
+    </div>
+    <pre class="state-panel" id="state"></pre>
+  </div>
+</div>
+
+<div class="switcher" id="switcher">
+  <button type="button" id="prev" aria-label="上一变体">←</button>
+  <div class="lab" id="lab"></div>
+  <button type="button" id="next" aria-label="下一变体">→</button>
+</div>
+
+<script>
+/* Shared position data. Variants may render it however they like. */
+const START_FEN = "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq -";
+const GLYPH = {
+  K:"♔", Q:"♕", R:"♖", B:"♗", N:"♘", P:"♙",
+  k:"♚", q:"♛", r:"♜", b:"♝", n:"♞", p:"♟"
+};
+const CANDIDATES = [
+  { san: "O-O", uci: "e1g1", cp: 45, tag: "engine", pv: ["O-O", "Bc5", "d3", "d6", "c3"] },
+  { san: "c3",  uci: "c2c3", cp: 38, tag: "played", pv: ["c3", "Nxe4", "d4", "d5", "exd5"] },
+  { san: "d4",  uci: "d2d4", cp: 20, tag: "yours",  pv: ["d4", "exd4", "Nxd4", "Bc5", "Nxc6"] },
+  { san: "Ng5", uci: "f3g5", cp: 10, tag: "",       pv: ["Ng5", "d5", "exd5", "Na5", "Bb5+"] }
+];
+const DEST = {
+  e1: ["g1", "f1"],
+  d2: ["d3", "d4"],
+  c2: ["c3"],
+  f3: ["g5", "d4", "e5", "g1", "h4"],
+  b1: ["c3", "a3"],
+  a2: ["a3", "a4"],
+  b2: ["b3", "b4"],
+  c4: ["b3", "b5", "d3", "d5", "e6", "f7", "b5", "a6"],
+  e4: ["e5"],
+  g2: ["g3", "g4"],
+  h2: ["h3", "h4"]
+};
+
+const VARIANTS = [
+  { key: "A", name: "天平", blurb: "分数是主界面" },
+  { key: "B", name: "对局", blurb: "先下完再给收据" },
+  { key: "C", name: "三条线", blurb: "三块棋盘并排走变化" }
+];
+
+function parseFen(fen) {
+  const grid = Array.from({ length: 8 }, () => Array(8).fill(null));
+  const [board, stm] = fen.split(" ");
+  let r = 0, c = 0;
+  for (const ch of board) {
+    if (ch === "/") { r++; c = 0; continue; }
+    if (/\d/.test(ch)) { c += +ch; continue; }
+    grid[r][c] = ch; c++;
+  }
+  return { grid, stm: stm || "w" };
+}
+function sqName(r, c) { return "abcdefgh"[c] + (8 - r); }
+function nameToRc(name) { return [8 - +name[1], "abcdefgh".indexOf(name[0])]; }
+function applyUci(fen, uci) {
+  const { grid, stm } = parseFen(fen);
+  const [fr, fc] = nameToRc(uci.slice(0, 2));
+  const [tr, tc] = nameToRc(uci.slice(2, 4));
+  const piece = grid[fr][fc];
+  grid[fr][fc] = null;
+  grid[tr][tc] = piece;
+  if (uci === "e1g1") { grid[7][7] = null; grid[7][5] = "R"; }
+  const rows = grid.map(row => {
+    let s = "", n = 0;
+    for (const p of row) {
+      if (!p) n++;
+      else { if (n) { s += n; n = 0; } s += p; }
+    }
+    if (n) s += n;
+    return s;
+  });
+  return rows.join("/") + " " + (stm === "w" ? "b" : "w") + " - -";
+}
+function boardHtml(fen, opts = {}) {
+  const { grid } = parseFen(fen);
+  const sel = opts.sel, dests = new Set(opts.dests || []), last = opts.last;
+  let html = `<div class="board" data-board>`;
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const name = sqName(r, c);
+    const light = (r + c) % 2 === 0;
+    const cls = [
+      "sq", light ? "light" : "dark",
+      sel === name ? "sel" : "",
+      dests.has(name) ? "dest" : "",
+      last && (last.slice(0,2) === name || last.slice(2,4) === name) ? "last" : ""
+    ].filter(Boolean).join(" ");
+    const g = grid[r][c] ? GLYPH[grid[r][c]] : "";
+    html += `<div class="${cls}" data-sq="${name}"><span class="piece">${g}</span></div>`;
+  }
+  return html + `</div>`;
+}
+
+/* ---------- session state for the prototype (in memory) ---------- */
+let variant = "A";
+let phase = "guess";          // guess | revealed | playout | receipt
+let fen = START_FEN;
+let sel = null;
+let guess = null;             // {san, uci, cp, tag, pv}
+let playUci = [];
+let clock = 15;
+let clockId = null;
+let stripStep = 0;
+let stripFocus = 0;
+
+function ranking() {
+  const list = CANDIDATES.map(c => ({ ...c }));
+  if (guess && !list.some(c => c.uci === guess.uci)) {
+    list.push({ ...guess, cp: guess.cp ?? 0, tag: "yours", pv: [] });
+  }
+  return list.sort((a, b) => b.cp - a.cp);
+}
+function dumpState() {
+  const lines = [
+    `variant     ${variant}  ${VARIANTS.find(v => v.key === variant).name}`,
+    `phase       ${phase}`,
+    `side        ${parseFen(fen).stm === "w" ? "白走" : "黑走"}`,
+    `guess       ${guess ? guess.san + "  " + guess.uci : "—"}`,
+    `ranking     ${ranking().map(c => c.san + (c.tag ? "[" + c.tag + "]" : "")).join("  ")}`,
+    `playout     ${playUci.join(" ") || "—"}`,
+    `controllers 白=手  黑=${phase === "playout" || variant === "B" && phase !== "guess" ? "引擎" : "—"}`,
+    `practice    ${phase === "playout" || (variant === "B" && phase !== "receipt") ? "on（无分无箭）" : "off"}`
+  ];
+  document.getElementById("state").textContent = lines.join("\n");
+}
+
+function stopClock() { if (clockId) { clearInterval(clockId); clockId = null; } }
+function startClock() {
+  stopClock();
+  clock = 15;
+  clockId = setInterval(() => {
+    clock = Math.max(0, clock - 1);
+    const el = document.querySelector("[data-clock]");
+    if (el) el.textContent = "0:" + String(clock).padStart(2, "0");
+  }, 1000);
+}
+
+function setVariant(key) {
+  variant = key;
+  phase = variant === "B" ? "playout" : "guess";
+  fen = START_FEN;
+  sel = null;
+  guess = variant === "B" ? null : null;
+  playUci = [];
+  stripStep = 0;
+  stripFocus = 0;
+  stopClock();
+  if (variant === "B") startClock();
+  const url = new URL(location.href);
+  url.searchParams.set("variant", key);
+  history.replaceState({}, "", url);
+  render();
+}
+
+function onBoardClick(name) {
+  const { stm } = parseFen(fen);
+  if (variant === "A" && phase === "guess") {
+    if (sel && (DEST[sel] || []).includes(name)) {
+      const uci = sel + name;
+      const found = CANDIDATES.find(c => c.uci === uci) || { san: uci, uci, cp: 0, tag: "yours", pv: [] };
+      // map a few ucis to san
+      const SAN = { e1g1: "O-O", d2d4: "d4", c2c3: "c3", f3g5: "Ng5", d2d3: "d3", b1c3: "Nc3" };
+      guess = { ...found, san: SAN[uci] || found.san, tag: "yours" };
+      fen = applyUci(START_FEN, uci);
+      sel = null;
+      render();
+      return;
+    }
+    sel = sel === name ? null : name;
+    render();
+    return;
+  }
+  if (variant === "B" && phase === "playout" && stm === "w") {
+    if (sel && (DEST[sel] || []).includes(name)) {
+      const uci = sel + name;
+      const SAN = { e1g1: "O-O", d2d4: "d4", c2c3: "c3", f3g5: "Ng5", d2d3: "d3", b1c3: "Nc3" };
+      if (!guess) guess = { san: SAN[uci] || uci, uci, cp: (CANDIDATES.find(c => c.uci === uci) || { cp: 5 }).cp, tag: "yours", pv: [] };
+      playUci.push(uci);
+      fen = applyUci(fen, uci);
+      sel = null;
+      render();
+      setTimeout(engineReply, 450);
+      return;
+    }
+    sel = sel === name ? null : name;
+    render();
+    return;
+  }
+  if (variant === "C" && phase === "guess") {
+    if (sel && (DEST[sel] || []).includes(name)) {
+      const uci = sel + name;
+      const SAN = { e1g1: "O-O", d2d4: "d4", c2c3: "c3", f3g5: "Ng5", d2d3: "d3", b1c3: "Nc3" };
+      guess = { ...(CANDIDATES.find(c => c.uci === uci) || { san: SAN[uci] || uci, uci, cp: 0, pv: [] }), tag: "yours", san: SAN[uci] || uci };
+      fen = applyUci(START_FEN, uci);
+      sel = null;
+      phase = "revealed";
+      render();
+      return;
+    }
+    sel = sel === name ? null : name;
+    render();
+  }
+  if ((variant === "A" || variant === "C") && phase === "playout" && stm === "w") {
+    if (sel && (DEST[sel] || []).includes(name)) {
+      playUci.push(sel + name);
+      fen = applyUci(fen, sel + name);
+      sel = null;
+      render();
+      setTimeout(engineReply, 400);
+      return;
+    }
+    sel = sel === name ? null : name;
+    render();
+  }
+}
+
+function engineReply() {
+  if (phase !== "playout" && !(variant === "B" && phase === "playout")) return;
+  const replies = ["e5d4", "b8c6", "d7d5", "g8f6"];
+  const uci = replies[playUci.length % replies.length];
+  // naive: if e5 still there
+  try {
+    const { grid } = parseFen(fen);
+    const [fr, fc] = nameToRc(uci.slice(0, 2));
+    if (!grid[fr][fc]) return;
+    fen = applyUci(fen, uci);
+    playUci.push(uci);
+    render();
+  } catch (e) { /* ignore */ }
+}
+
+/* ---------------- Variant A ---------------- */
+function VariantA() {
+  const dests = sel ? (DEST[sel] || []) : [];
+  const beam = beamHtml();
+  const canCommit = guess && phase === "guess";
+  const canPlay = phase === "revealed";
+  return `
+    <div class="a-screen screen-inner">
+      <div class="a-eyebrow">第 7 步 · 白走 · 你的意大利</div>
+      <div class="a-title">这步值多少？</div>
+      <div class="a-board-frame" data-live>
+        ${boardHtml(fen, { sel, dests, last: guess && guess.uci })}
+      </div>
+      <p class="a-hint">${aHint()}</p>
+      <div class="a-beam">${beam}</div>
+      <div class="a-actions">
+        <button class="a-btn" ${canCommit ? "" : "disabled"} data-act="commit">交卷</button>
+        <button class="a-btn ghost" ${canPlay ? "" : "disabled"} data-act="playout">下完这局</button>
+      </div>
+    </div>`;
+}
+function aHint() {
+  if (phase === "playout") return "引擎执黑，不给分。把你认为值那些的这步走完。";
+  if (phase === "revealed") return "天平上的位置就是分数。你走的那块黄的，引擎那块绿的。";
+  if (guess) return `${guess.san} 挂上去了，还不知道多重。交卷之后才称。`;
+  return "在棋盘上走一步。走完先不给分，只把你的棋挂上天平。";
+}
+function beamHtml() {
+  const min = 0, max = 50;
+  const x = cp => 8 + ((cp - min) / (max - min)) * 84;
+  let items = [];
+  if (phase === "guess" && guess) {
+    items = [{ ...guess, ghost: true, left: 50 }];
+  } else if (phase !== "guess") {
+    items = ranking().map(c => ({ ...c, left: x(c.cp) }));
+  }
+  return `
+    <span class="a-rail-label l">差</span>
+    <span class="a-rail-label r">好</span>
+    <div class="a-rail"></div>
+    ${items.map(c => `
+      <div class="a-weight" style="left:${c.left}%">
+        <div class="a-string"></div>
+        <div class="a-tag ${c.tag || ""} ${c.ghost ? "ghost" : ""}">
+          ${c.san}
+          <small>${c.ghost ? "未称" : (c.cp >= 0 ? "+" : "") + (c.cp/100).toFixed(2)}${c.tag === "engine" ? " · 引擎" : c.tag === "played" ? " · 实战" : c.tag === "yours" ? " · 你走" : ""}</small>
+        </div>
+      </div>`).join("")}`;
+}
+
+/* ---------------- Variant B ---------------- */
+function VariantB() {
+  const dests = sel ? (DEST[sel] || []) : [];
+  const running = phase === "playout";
+  return `
+    <div class="b-screen screen-inner">
+      <div class="b-top">
+        <div>
+          <div class="b-who">${running ? (parseFen(fen).stm === "w" ? "你的回合" : "引擎在走") : "这局下完了"}</div>
+          <div class="b-who" style="margin-top:4px">第 7 步起 · 无分数 · 无箭头</div>
+        </div>
+        <div>
+          <div class="b-clock" data-clock>0:${String(clock).padStart(2,"0")}</div>
+          <div class="b-clock engine">引擎 0:15</div>
+        </div>
+      </div>
+      <div class="b-board-frame" data-live>
+        ${boardHtml(fen, { sel, dests, last: playUci.at(-1) })}
+      </div>
+      <p class="b-status">${bStatus()}</p>
+      ${phase === "receipt" ? bReceipt() : ""}
+      <div class="b-actions">
+        <button class="b-btn dim" data-act="stop" ${phase === "playout" && guess ? "" : "disabled"}>停，看这步</button>
+        <button class="b-btn" data-act="reset">重来一局</button>
+      </div>
+    </div>`;
+}
+function bStatus() {
+  if (phase === "receipt") return "收据是第一着的天平。后面那些着没打分——这盘只问你落下的第一步。";
+  if (!guess) return "从你当初走错的地方接着下。引擎执黑，不说话。你的第一步会被记住。";
+  return `你落下了 ${guess.san}。继续走，或停下来看这一步值多少。`;
+}
+function bReceipt() {
+  const rows = ranking().map(c => `
+    <div class="row ${c.tag === "yours" ? "you" : ""}">
+      <span>${c.san}${c.tag === "engine" ? "  引擎" : c.tag === "played" ? "  实战" : c.tag === "yours" ? "  你走" : ""}</span>
+      <span>${c.cp >= 0 ? "+" : ""}${(c.cp/100).toFixed(2)}</span>
+    </div>`).join("");
+  return `<div class="b-receipt">
+    <h2>第一着  ${guess ? guess.san : "—"}</h2>
+    <div style="margin:8px 0 10px;color:#6a5a38">深度 14 · 同一杆秤</div>
+    ${rows}
+  </div>`;
+}
+
+/* ---------------- Variant C ---------------- */
+function VariantC() {
+  const dests = sel ? (DEST[sel] || []) : [];
+  if (phase === "guess") {
+    return `
+      <div class="c-screen screen-inner">
+        <div class="c-kicker">Coach’s wall</div>
+        <div class="c-title">走一步，看三条命</div>
+        <p class="c-ask">棋盘上走你要的那步。交卷后墙上挂出三条变化：你的、实战的、引擎的。</p>
+        <div data-live>${boardHtml(fen, { sel, dests })}</div>
+      </div>`;
+  }
+  const doors = [
+    { ...CANDIDATES[0], label: "引擎" },
+    { ...CANDIDATES[1], label: "实战" },
+    { ...(guess || CANDIDATES[2]), label: "你走" }
+  ];
+  // unique by uci
+  const seen = new Set();
+  const unique = [];
+  for (const d of doors) {
+    if (seen.has(d.uci)) continue;
+    seen.add(d.uci);
+    unique.push(d);
+  }
+  return `
+    <div class="c-screen screen-inner">
+      <div class="c-kicker">三条变化 · 第 ${stripStep} 步</div>
+      <div class="c-title">${guess ? guess.san : "—"} 值多少，走远才知道</div>
+      <div class="strips">
+        ${unique.map((d, i) => stripHtml(d, i)).join("")}
+      </div>
+      <div class="c-actions">
+        <button class="c-btn ghost" data-act="step">三条一起再走一步</button>
+        <button class="c-btn" data-act="playout">从你这条下完</button>
+      </div>
+    </div>`;
+}
+function stripHtml(d, i) {
+  let f = START_FEN;
+  const pvUci = {
+    "O-O": ["e1g1", "f8c5", "d2d3", "d7d6", "c2c3"],
+    "c3":  ["c2c3", "f6e4", "d2d4", "d7d5", "e4d5"],
+    "d4":  ["d2d4", "e5d4", "f3d4", "f8c5", "d4c6"],
+    "Ng5": ["f3g5", "d7d5", "e4d5", "c6a5", "c4b5"]
+  }[d.san] || [d.uci];
+  const take = pvUci.slice(0, Math.max(1, stripStep || 1));
+  for (const u of take) {
+    try { f = applyUci(f, u); } catch (e) {}
+  }
+  const cls = ["strip", d.tag === "engine" || d.label === "引擎" ? "best" : "", d.tag === "yours" || d.label === "你走" ? "yours" : ""].join(" ");
+  return `<div class="${cls}" data-strip="${i}">
+    <div class="mini">${boardHtml(f, { last: take.at(-1) })}</div>
+    <div class="meta">
+      <div class="san">${d.san}  ·  ${d.label}</div>
+      <div class="score">${d.cp >= 0 ? "+" : ""}${(d.cp/100).toFixed(2)}</div>
+      <div class="pv">${(d.pv || []).slice(0, Math.max(1, stripStep || 1)).join(" ")}</div>
+    </div>
+  </div>`;
+}
+
+function render() {
+  const root = document.getElementById("screen");
+  if (variant === "A") root.innerHTML = VariantA();
+  else if (variant === "B") root.innerHTML = VariantB();
+  else root.innerHTML = VariantC();
+  root.querySelectorAll("[data-live] [data-sq]").forEach(el => {
+    el.addEventListener("click", () => onBoardClick(el.dataset.sq));
+  });
+  root.querySelectorAll("[data-act]").forEach(el => {
+    el.addEventListener("click", () => act(el.dataset.act));
+  });
+  const v = VARIANTS.find(x => x.key === variant);
+  document.getElementById("lab").innerHTML = `${v.key} — ${v.name}<small>${v.blurb}</small>`;
+  dumpState();
+}
+
+function act(name) {
+  if (name === "commit" && guess) { phase = "revealed"; render(); }
+  if (name === "playout") {
+    phase = "playout";
+    if (variant === "C" || variant === "A") {
+      fen = applyUci(START_FEN, guess.uci);
+    }
+    render();
+  }
+  if (name === "stop" && guess) { phase = "receipt"; stopClock(); render(); }
+  if (name === "reset") {
+    phase = "playout"; fen = START_FEN; guess = null; playUci = []; sel = null; startClock(); render();
+  }
+  if (name === "step") { stripStep = Math.min(5, stripStep + 1); render(); }
+}
+
+/* switcher */
+function cycle(dir) {
+  const i = VARIANTS.findIndex(v => v.key === variant);
+  const next = VARIANTS[(i + dir + VARIANTS.length) % VARIANTS.length];
+  setVariant(next.key);
+}
+document.getElementById("prev").onclick = () => cycle(-1);
+document.getElementById("next").onclick = () => cycle(1);
+document.addEventListener("keydown", e => {
+  const t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+  if (e.key === "ArrowLeft") cycle(-1);
+  if (e.key === "ArrowRight") cycle(1);
+});
+
+const initial = new URL(location.href).searchParams.get("variant") || "A";
+setVariant(VARIANTS.some(v => v.key === initial) ? initial : "A");
+</script>
+</body>
+</html>
