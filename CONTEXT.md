@@ -194,10 +194,12 @@ move: after you play it is theirs, after they play it is yours (docs/adr/0022).
 _Avoid_: fork, pin, skewer, puzzle, combo, tactic puzzle
 
 **战术发现器**:
-The switch that lets a Tactic be named on the latest position of a Game in progress. Off at
-the start of every Game and never written to PGN, like Practice, and silent on a past Ply,
-which is still a Drill. Practice can stay on: then the board has no Score and no candidate
-Lines, only the shot if there is one. 战术 on screen.
+What lets a Tactic be named on the position on screen. Off at the start of every Game and never
+written to PGN, like Practice — but **arriving at the 战术 card of 一叠卡片 turns it on**, and
+leaving turns it off again unless somebody flipped its switch by hand: swiping onto the card is
+the asking (docs/adr/0023). It talks about whichever Ply is on screen, a past one included, and
+Practice can stay on: then the board has no Score and no candidate Lines, only the shot if there
+is one. 战术 on screen.
 _Avoid_: hint mode, blunder check, coach, assistant
 
 **步杀消息**:
@@ -210,17 +212,22 @@ comes out of the sign of one White-relative number and which Controllers a perso
 2 步杀 / 对方 2 步杀 / 白方 2 步杀. Every clause of its sentence is counted by replaying the
 line — how many replies were the only legal move, whether the line reaches mate at all. Draws
 as numbered arrows, at most six Ply: 五步计划 stops at five for what can be checked, this stops
-at six for what can be seen. 杀 on screen.
+at six for what can be seen. About whichever position is on screen, a past Ply included, and its
+card turns 战术发现器 on when you arrive at it — so the mate that was there all along is one
+swipe from being said. 杀 on screen.
 _Avoid_: mate alert, mate warning, checkmate hint, forced mate, tactic
 
 **一叠卡片**:
-What is under the board: one card at a time, paged sideways, with a row of dots saying how many
-there are. Dealt from the position rather than from a fixed list — a card with nothing to say is
-not dealt, and the last one says what is missing and why (docs/adr/0023). Each card carries a
-one-line subtitle under its name, because four of them are named after ideas somebody has to
-have been told about once. The rule that replaced the row of chips: a layer that only **draws**
-follows the card it is named on, and anything that spends a **search** keeps a press of its own,
-so no amount of swiping starts one.
+What is under the board: one card at a time, paged sideways, with a row of ten dots. **The deck
+never changes shape** — the same ten cards in the same order whatever the position, so the fourth
+dot is the same card every time somebody looks; a card that cannot answer here says so on its own
+face (docs/adr/0023). Each carries a one-line subtitle under its name, because four of them are
+named after ideas somebody has to have been told about once. **The card you are on is the card
+that acts**: arriving turns its layer on — the scan, the walk, the squares, the mate's arrows,
+the finder — and leaving turns it off, so the board draws the one card in front of you and never
+the leftovers of three you swiped past. A swipe therefore spends a bounded search where the card
+is about one; the single exception is 复盘, which re-scores a whole game and writes what it
+finds, and keeps a press of its own.
 _Avoid_: tabs, carousel, sections, panels, accordion — and not 走马灯, which walks a Line
 
 **Drill**:

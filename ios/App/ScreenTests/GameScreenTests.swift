@@ -127,8 +127,15 @@ struct GameScreenScreenshots {
         #expect(rendered.says("复盘"))
         #expect(rendered.says("这一局"))
         #expect(rendered.says("这儿还问不了的"), "and the last card says what is missing and why")
-        #expect(!rendered.says("这步的要害"), "四张卡里没有它 —— 最新局面上没有「刚走的那步」")
-        #expect(!rendered.says("走马灯"))
+        // Ten dots, the same ten whatever the position: the deck does not change shape, so the
+        // fourth dot is the same card every time somebody looks (docs/adr/0023). What a card
+        // cannot answer here it says on its own face.
+        #expect(rendered.says("这步的要害"))
+        #expect(rendered.says("走马灯"))
+        #expect(rendered.says("五步计划"))
+        #expect(rendered.says("考一遍"))
+        #expect(rendered.says("这一局"))
+        #expect(rendered.says("我哪些子能走到这一格"), "and the card showing is the one it opens on")
         // One card at a time, so the numbers on screen are the strip's and no more.
         #expect(rendered.count(of: "+0.") == 2)
         // The record, and the whole walk through it.
@@ -457,15 +464,14 @@ struct GameScreenScreenshots {
         )
         let session = GameSession.fresh(game)
         session.attach(engine: engine, library: nil)
-        session.setFindingTactics(true)
+        // Nobody flips the switch: swiping onto the card is the asking (docs/adr/0023).
+        let rendered = await ScreenImage.write("game-tactics-finder") {
+            screen(session, engine: engine, opening: .tactics)
+        }
         await hop()
 
-        let rendered = await ScreenImage.write("game-tactics-finder") {
-            screen(session, engine: engine)
-        }
-
         #expect(session.isPractising)
-        #expect(session.isFindingTactics)
+        #expect(session.isFindingTactics, "arriving at the card opened it")
         #expect(session.tactic?.move.uci == "d1d5")
         #expect(rendered.says("战术"))
         #expect(rendered.says("有战术"))
@@ -1163,8 +1169,12 @@ struct GameScreenScreenshots {
         }
 
         #expect(rendered.says("这步的要害"))
-        #expect(rendered.says("你走 Qg5"))
-        #expect(rendered.says("攻 e5"), "the claim, in the player's own words")
+        #expect(rendered.says("红圈"), "the one mark on the board that needs a word, in the dark too")
+        #expect(rendered.says("先交卷"), "and the reason the ranked squares are not here yet")
+        // The guess and its claim are the drill's card and are photographed there — this one is
+        // about the two layers, and a card is held to its own words (docs/adr/0023).
+        #expect(session.guess?.san == "Qg5")
+        #expect(session.declaredIntent?.target == Square("e5"))
     }
 
     @Test("neither layer appears on the position the player is about to move in")

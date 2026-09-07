@@ -541,10 +541,11 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
 
     /// What the strip under the board should say while the finder is on.
     ///
-    /// Nil when the finder is off, or when the cursor is not on the latest position — a
-    /// Drill is not a live Game, and the finder does not talk there (docs/adr/0022).
+    /// Nil when the finder is off. It talks about whichever position is on screen, a past Ply
+    /// included: the finder is a card of its own now, and swiping onto it is the asking
+    /// (docs/adr/0023, amending 0022).
     public var tacticPrompt: String? {
-        guard isFindingTactics, isAtLatest, !viewed.isOver else { return nil }
+        guard isFindingTactics, !viewed.isOver else { return nil }
         if isProbingTactics, tactic == nil { return "在看有没有战术" }
         if let tactic {
             let whose = isHandTurn ? "有战术" : "对方有战术"
@@ -562,10 +563,12 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// off there is nothing to read and nothing is said — which is ADR-0015 left standing rather
     /// than argued with.
     ///
-    /// Only on the latest position: a past Ply is a Drill, and being handed the mate there is
-    /// being handed the answer (docs/adr/0022).
+    /// Any position the eye is on, the latest or a past one. A mate on a Ply somebody walked back
+    /// to is the same fact about the same board, and the card carrying it is one swipe away from
+    /// 考一遍 rather than on top of it — so looking is a thing a person does on purpose, and the
+    /// question is not answered before it is asked (docs/adr/0023, amending 0022).
     public var mateNews: MateNews? {
-        guard isAtLatest, !viewed.isOver else { return nil }
+        guard !viewed.isOver else { return nil }
         guard let source = analysis ?? probedAnalysis else { return nil }
         return MateNews.read(source, in: viewed, hands: handColours)
     }
@@ -1688,7 +1691,10 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         // be doing right now" has to include "nothing, nobody is watching".
         guard let engine, !position.isOver, !engine.isPaused else { return }
 
-        if isFindingTactics, isAtLatest {
+        // Wherever the eye is, not only on the latest position (docs/adr/0023). The engine still
+        // only *plays* from the latest one — `isEngineTurn` says so — so a probe at a past Ply
+        // costs one bounded search and moves nothing.
+        if isFindingTactics {
             probeTactics(on: position, using: engine)
             return
         }

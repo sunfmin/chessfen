@@ -38,14 +38,17 @@ those features could not say what 要害, 走马灯, 复盘 or 最贵三步 were
 
 **The board keeps the whole screen. Under it is one card at a time, paged sideways, with a row
 of dots.** The dots are as much the point as the paging — a scroll never says how many things
-there are, and a deck does. A mate's dot wears whose mate it is before anybody has swiped to it,
-which is the whole of what 「直接给予提示」 amounts to here.
+there are, and a deck does. A mate's dot wears whose mate it is, and the deck opens on the news
+when there is news, which is what 「直接给予提示」 amounts to here.
 
-**The cards are dealt from the position, not from a fixed list.** 这步的要害, 走马灯, 考一遍 need
-a past Ply; 复盘 and 最贵三步 need a uniform-depth pass (docs/adr/0016); 步杀 and 战术 need the
-latest position. A card that has nothing to say is not dealt, and **the last card says what is
-missing and why** — the dependency chain is a fact about the app that the app should be able to
-state.
+**The deck never changes shape: the same ten cards, in the same order, whatever the position.**
+It was dealt from the position for one afternoon and that was a mistake — cards appearing and
+disappearing as the eye moved between the latest Ply and a past one, so the fourth dot was a
+different card every time you looked. A deck like that cannot be learnt. Ten dots that never move
+can be. **A card that cannot answer here says so on its own face**, in the one sentence that says
+which of the reasons it is: no 「刚走的那步」 on the latest position, no line anybody has paid for
+yet, no uniform-depth pass. The last card still lists them all in one place, for somebody who
+would rather read it once than swipe through ten.
 
 **Every card carries a one-line subtitle under its name.** Four of these are named after ideas
 somebody has to have been told about once, and a deck of bare titles is a deck you have to be
@@ -54,19 +57,40 @@ taught before you can use.
 **复盘 and 最贵三步 are one card.** The three worst moves are that pass's own output and have no
 existence without it; two cards implied two things to understand.
 
-**The affordance rule: a layer that only *draws* follows the card it is named on; anything that
-spends a *search* keeps a press of its own.** Arriving at 走马灯 starts the walk, arriving at
-这步的要害 turns the layer on, arriving at 步杀 draws the arrows — drawing is free and putting it
-back is exact, and somebody who swiped to 「对方 2 步杀」 has already asked the question a button
-would have asked. 战术, 复盘 and the engine's opinion keep their buttons, so no amount of swiping
-can quietly start a search.
+**The card you are on is the card that acts.** Arriving turns its layer on — the scan, the walk,
+the squares, the mate's arrows, the finder — and leaving turns that layer off again, so the board
+is only ever drawing the one card in front of you and never the leftovers of three you swiped
+past. 「用户滑动了卡片，就只在棋盘上反应当前卡片。」
 
-Arriving is also non-destructive: a walk or a scan already set up is left alone rather than
-restarted, or the deck would wipe the state it was opened to show.
+This replaces a narrower rule that stood for one afternoon — draw-only layers follow the card,
+anything that spends a search keeps a press — and it is a deliberate widening: **a swipe onto 杀
+or 战术 starts the finder's probe**, one bounded `depth 10` search, because 「只要用户滑到了那个
+卡片就自动打开」 is how a person asks for it. Practice stays on around it: no Score, no candidate
+Lines, just the shot and the mate. What the swipe turned on, leaving turns off; what a person
+turned on with the switch is theirs and stays.
+
+**The one card still behind a deliberate press is 复盘.** A pass re-scores an entire game at a
+uniform depth and writes what it finds into the file (docs/adr/0016) — minutes of engine time and
+a change on disk. Turning a page is not an instruction to spend that.
+
+Arriving is otherwise non-destructive: a walk or a scan already set up is left alone rather than
+restarted, and a committed plan's verdict is not thrown away to start another, or the deck would
+wipe the state it was opened to show.
+
+**杀 and 战术 speak about a past Ply too**, which is a straight amendment to docs/adr/0022's
+「a past Ply is still a Drill, and the finder is silent there」. Both are cards of their own now,
+one swipe from 考一遍 rather than printed on top of it, so going to look is a thing somebody does
+on purpose — and a mate on a Ply you walked back to is the same fact about the same board. The
+engine still only *plays* from the latest position; a probe at a past Ply costs one bounded
+search and moves nothing.
 
 ## Consequences
 
 - The six chips that used to sit under the board are gone; the cards are the affordance.
+- A swipe can now cost a `depth 10` search, so paging back and forth across 杀 / 战术 probes each
+  position it lands on. That is the price of 「滑到就自动打开」 and it is bounded by design.
+- Two of docs/adr/0015's silences are narrower: the finder answers wherever the eye is, and a
+  Drill's position can be asked about by leaving the question and swiping two cards along.
 - A screenshot test has to name the card it photographs. A paged deck also keeps a neighbouring
   card alive in the accessibility tree, so a test is held to **its own card's** words and to the
   session — never to the absence of another card's words.

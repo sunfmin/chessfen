@@ -230,30 +230,40 @@ import Testing
         #expect(session.mateNews == nil)
     }
 
-    @Test("a past Ply is a Drill, and a Drill is not handed the mate")
-    func aPastPlyIsSilent() async throws {
+    /// The gate this test used to hold has been lifted (docs/adr/0023): a mate on a Ply somebody
+    /// walked back to is the same fact about the same board, and 考一遍 is a card of its own that
+    /// you have to leave to go and look.
+    @Test("a past Ply gets the news too, because the news is about the board on screen")
+    func aPastPlyIsNewsToo() async throws {
         let played = try #require(
             Game(startFEN: PGN.standardStartFEN, uciMoves: ["e2e4", "e7e5", "g1f3", "b8c6"])
+        )
+        let earlier = try #require(
+            Game(startFEN: PGN.standardStartFEN, uciMoves: ["e2e4", "e7e5"])
         )
         let engine = ScriptedEngine(
             [],
             byPosition: [
                 played.state.fen: Analysis(
                     depth: Tactic.probeDepth,
-                    lines: [
-                        Line(score: .mate(in: 3), uciMoves: ["f1c4"], san: ["Bc4"])
-                    ]
-                )
+                    lines: [Line(score: .mate(in: 3), uciMoves: ["f1c4"], san: ["Bc4"])]
+                ),
+                earlier.state.fen: Analysis(
+                    depth: Tactic.probeDepth,
+                    lines: [Line(score: .mate(in: 4), uciMoves: ["g1f3"], san: ["Nf3"])]
+                ),
             ]
         )
         let session = GameSession.fresh(played)
         session.attach(engine: engine, library: nil)
         session.setFindingTactics(true)
         await hop()
-        #expect(session.mateNews != nil, "the latest position is where the finder talks")
+        #expect(session.mateNews?.moves == 3)
 
         session.jump(toPly: 2)
         await hop()
-        #expect(session.mateNews == nil)
+        let news = try #require(session.mateNews, "the position on screen is the one it is about")
+        #expect(news.moves == 4)
+        #expect(news.head == "你有 4 步杀", "read out for the side the player holds, as ever")
     }
 }

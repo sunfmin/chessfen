@@ -40,6 +40,9 @@ struct GameScreen: View {
     @State private var hasGuessedUnfold = false
     /// Whether the deck has been dealt yet. Once, for the same reason.
     @State private var hasDealt = false
+    /// Whether it was arriving at 杀 or 战术 that turned the finder on, rather than a person
+    /// pressing its switch. Only what a swipe turned on does a swipe turn off again.
+    @State private var finderIsOurs = false
     /// Whether a thumb is on 让引擎走 right now. The engine is thinking for exactly as long as it is —
     /// which is why this is read off the session rather than kept here as well. A screen holding
     /// its own copy of "a finger is down" is a screen that can be left holding it: a press that
@@ -838,6 +841,21 @@ struct GameScreen: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.top, 10)
+        } else {
+            // A Drill is a reading of two things a person already said — the switch, and where
+            // they are looking (docs/adr/0015) — so when it is not one, the card says which of the
+            // two is in the way rather than going blank.
+            Text(
+                isPast
+                    ? "引擎意见开着，这一步的分已经在上面了。关掉那只眼睛，这一步才能当题做。"
+                    : "考一遍是拿走过的一步当题。用上面的记录条退回一步，这张卡就出题。"
+            )
+            .font(.caption)
+            .foregroundStyle(Palette.inkSoft)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
         }
     }
 
@@ -1183,6 +1201,16 @@ struct GameScreen: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.top, 10)
+        } else {
+            // A plan is committed as a Variation at a Ply (docs/adr/0018), and the latest position
+            // has no Ply after it to hang one on: a plan from here is just playing the game.
+            Text("五步计划要挂在走过的一步上 —— 交卷之后它作为一条变着存进棋谱。用记录条退回一步再来。")
+                .font(.caption)
+                .foregroundStyle(Palette.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
         }
     }
 
@@ -1654,6 +1682,13 @@ struct GameScreen: View {
                     }
                 }
             }
+        } else if !isPast {
+            // The commonest reason of the four, and it used to print one of the other three: on the
+            // latest position there is no 「刚走的那步」 to be about at all (docs/adr/0023).
+            Text("这是最新局面，还没有「刚走的那步」可说。用上面的记录条退回一步，这张卡就有话说了。")
+                .font(.caption)
+                .foregroundStyle(Palette.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
         } else if session.viewedContinuation.isEmpty {
             // Not "nothing happened": nobody has paid for a line over this position yet, and the
             // way to buy one is a Review or a committed Guess (docs/adr/0019, 0020).
@@ -1705,6 +1740,29 @@ struct GameScreen: View {
                         Text("这局还没打过分。").font(.footnote).foregroundStyle(Palette.inkSoft)
                         Button("打分") { session.startReview() }.buttonStyle(.bordered)
                     }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+        } else {
+            // The one card a swipe does not open by itself: a pass re-scores the whole game at a
+            // uniform depth and writes what it finds (docs/adr/0016), which is minutes and a
+            // change to the file — not something to start by turning a page (docs/adr/0023).
+            VStack(alignment: .leading, spacing: 8) {
+                Text(
+                    session.game.plies.isEmpty
+                        ? "还没走棋，没什么可复盘的。"
+                        : "复盘要引擎开口：按统一深度把这一局每一步重算一遍，然后这局最贵的三步就在下面。"
+                )
+                .font(.caption)
+                .foregroundStyle(Palette.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+                if !session.game.plies.isEmpty {
+                    Button("打分") { session.startReview() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(!engine.isReady)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1946,37 +2004,18 @@ struct GameScreen: View {
         case mate, tactics, scanner, drill, key, walk, plan, review, reading, missing
     }
 
-    /// The cards this position deals, in the order it deals them: news first, then the work this
-    /// position is for, then the question you can always ask, then the whole game, then what is
-    /// missing and how to buy it.
+    /// Every card, in one order, whatever the position: news, the shot, the question, the squares,
+    /// the line, the plan, the one square you can always ask about, the whole game, the reading,
+    /// and what is missing.
+    ///
+    /// **The deck does not change shape.** It used to be dealt from the position — cards appearing
+    /// and disappearing as the eye moved between the latest Ply and a past one — and a deck whose
+    /// pages come and go is a deck nobody can learn: the fourth dot is a different card every time
+    /// you look. Ten dots that never move can be learnt in an afternoon. A card that cannot answer
+    /// here says so on its own face, which is a thing a person can read; a card that is not there
+    /// says nothing at all.
     private var cards: [Card] {
-        var dealt: [Card] = []
-        if session.mateNews != nil { dealt.append(.mate) }
-        if isPast {
-            if session.isStudying || session.guess != nil || session.reveal != nil
-                || session.isRevealing
-            {
-                dealt.append(.drill)
-            }
-            dealt.append(.key)
-            if session.walk != nil || !session.viewedContinuation.isEmpty { dealt.append(.walk) }
-            dealt.append(.plan)
-        } else {
-            dealt.append(.tactics)
-        }
-        dealt.append(.scanner)
-        if !session.isPractising || session.game.isReviewed { dealt.append(.review) }
-        if hasReading { dealt.append(.reading) }
-        dealt.append(.missing)
-        return dealt
-    }
-
-    /// Whether the last card has anything on it: a collection to walk, a piece to correct, a
-    /// Variation, a finished game, or the runners-up the engine is weighing.
-    private var hasReading: Bool {
-        session.collection != nil || session.canEditPosition || !session.variationsHere.isEmpty
-            || viewed.isOver || session.isSelfPlaying
-            || (!session.isPractising && (session.analysis?.lines.count ?? 0) > 1)
+        [.mate, .tactics, .drill, .key, .walk, .plan, .scanner, .review, .reading, .missing]
     }
 
     /// The deck, and the row of dots that says how many cards there are.
@@ -1995,11 +2034,6 @@ struct GameScreen: View {
             // the built-in index view has no opinion about which page is the urgent one.
             .tabViewStyle(.page(indexDisplayMode: .never))
             dots(dealt)
-        }
-        .onChange(of: dealt) { _, now in
-            // A card that has been dealt away takes the eye with it, rather than leaving it on a
-            // page that is not there any more.
-            if !now.contains(card) { card = now.first ?? .missing }
         }
         .onChange(of: card) { was, now in turn(to: now, from: was) }
         // A move offered at a past Ply is the question being answered, so the deck goes to it.
@@ -2034,11 +2068,12 @@ struct GameScreen: View {
         .frame(height: 22)
     }
 
-    /// A mate's dot wears whose it is, and wears it whether or not anybody has looked yet: it is
-    /// the whole of what 「直接给予提示」 amounts to in a deck (docs/adr/0023).
+    /// A mate's dot wears whose it is, which is the whole of what 「直接给予提示」 amounts to in a
+    /// deck (docs/adr/0023) — and wears it only while there is a mate to be about. A dot that is
+    /// red all game is not a warning, it is a decoration.
     private func dotColour(_ kind: Card) -> Color {
-        if kind == .mate {
-            return (session.mateNews?.isOurs ?? false) ? Palette.mine : Palette.alarm
+        if kind == .mate, let news = session.mateNews {
+            return news.isOurs ? Palette.mine : Palette.alarm
         }
         if kind == card { return Palette.ink }
         return Palette.inkSoft.opacity(0.35)
@@ -2096,29 +2131,40 @@ struct GameScreen: View {
     }
 
     private var mateInk: Color {
-        (session.mateNews?.isOurs ?? false) ? Palette.mine : Palette.alarm
+        guard let news = session.mateNews else { return Palette.ink }
+        return news.isOurs ? Palette.mine : Palette.alarm
     }
 
     /// What arriving at a card does, and what leaving one undoes.
     ///
-    /// The rule, and it is the whole reason the chips could go: a layer that only **draws** follows
-    /// the card it is named on, because drawing is free and putting it back is exact. Anything that
-    /// spends a **search** keeps a press of its own — the finder, a Review, the engine's opinion —
-    /// so no amount of swiping can quietly start one (docs/adr/0022, 0023).
+    /// **The card you are on is the card that acts.** Arriving turns its layer on — the scan, the
+    /// walk, the squares, the mate's arrows, the finder — and leaving turns that layer off again,
+    /// so the board is only ever drawing the one card in front of you and never the leftovers of
+    /// three you swiped past (docs/adr/0023).
+    ///
+    /// A swipe therefore spends a search where the card is *about* one: the finder's probe is one
+    /// bounded search at `depth 10`, and 「滑到那张卡片就自动打开」 is the whole of how it is asked
+    /// for now. The one thing still behind a deliberate press is 复盘, which re-scores an entire
+    /// game and writes what it finds (docs/adr/0016) — a swipe is not an instruction to spend
+    /// minutes.
     private func turn(to now: Card, from was: Card) {
         selected = nil
-        leave(was)
+        leave(was, for: now)
         arrive(at: now)
     }
 
-    private func leave(_ was: Card) {
+    private func leave(_ was: Card, for now: Card) {
         switch was {
         case .scanner: session.endScan()
         case .walk:
             session.endWalk()
             session.setShowsControlChange(false)
         case .key: session.setShowsControlChange(false)
-        case .mate: showsMateLine = false
+        case .plan: session.abandonPlan()
+        case .mate:
+            showsMateLine = false
+            if !wantsFinder(now) { closeFinder() }
+        case .tactics: if !wantsFinder(now) { closeFinder() }
         default: break
         }
     }
@@ -2126,13 +2172,44 @@ struct GameScreen: View {
     private func arrive(at now: Card) {
         switch now {
         case .scanner: if session.scan == nil { session.armScanner() }
-        case .walk: if session.walk == nil { session.startWalk() }
+        case .walk:
+            // 走马灯 is the walk *and* the layer following it, step by step (docs/adr/0020), so
+            // both come on together and both go off together.
+            session.setShowsControlChange(true)
+            if session.walk == nil { session.startWalk() }
         case .key: session.setShowsControlChange(true)
         // Arriving *is* the tap: the arrows are what the news is for, and a person who swiped to
-        // 「对方 2 步杀」 has already asked the question the button would have asked (docs/adr/0023).
-        case .mate: showsMateLine = true
+        // 「对方 2 步杀」 has already asked the question a button would have asked (docs/adr/0023).
+        case .mate:
+            showsMateLine = true
+            openFinder()
+        case .tactics: openFinder()
+        // Unless there is a verdict on the last one to read: a commit is the end of a plan, and
+        // arriving back on the card to read how it was judged must not throw that away and start
+        // another (docs/adr/0021).
+        case .plan:
+            if session.planDraft == nil, session.planCheck == nil { session.startPlan() }
         default: break
         }
+    }
+
+    /// The two cards the finder answers for: the shot, and the mate that falls out of the same
+    /// probe. Swiping between them does not stop and restart it.
+    private func wantsFinder(_ kind: Card) -> Bool { kind == .mate || kind == .tactics }
+
+    private func openFinder() {
+        guard !session.isFindingTactics else { return }
+        finderIsOurs = true
+        session.setFindingTactics(true)
+    }
+
+    /// Puts back only what the swipe turned on. A switch somebody flipped by hand is theirs and
+    /// stays as they left it — including on the strip, where it goes on colouring the mate's dot
+    /// for the rest of the game.
+    private func closeFinder() {
+        guard finderIsOurs else { return }
+        finderIsOurs = false
+        session.setFindingTactics(false)
     }
 
     // ------------------------------------------------------------------ 杀
@@ -2196,6 +2273,25 @@ struct GameScreen: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.top, 10)
+        } else {
+            // No news is news, and it is three different pieces of it. A card that goes blank when
+            // there is no mate is a card that looks broken (docs/adr/0023).
+            VStack(alignment: .leading, spacing: 6) {
+                if viewed.isOver {
+                    Text("这局已经走完了，没有下一步可算。")
+                } else if session.isProbingTactics {
+                    Text("在看有没有杀…")
+                } else if session.isFindingTactics || session.analysis != nil {
+                    Text("这个局面几步之内没有杀 —— 双方都还没有强制的将死。")
+                } else {
+                    Text("引擎还没算过这个局面。往左滑到「战术」按一下，有没有杀也就一起看出来了。")
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(Palette.inkSoft)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
         }
     }
 
@@ -2231,15 +2327,35 @@ struct GameScreen: View {
             variations
             notes
             alternatives
+            if !hasReading {
+                Text("这一局没有别的可读的：没归到任何合集，没有走过又放下的变着，引擎也没在权衡第二个选择。")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
+            }
         }
+    }
+
+    /// Whether this card has anything on it: a collection to walk, a piece to correct, a
+    /// Variation, a finished game, or the runners-up the engine is weighing. It no longer decides
+    /// whether the card is dealt — every card is (docs/adr/0023) — only whether it has to explain
+    /// itself.
+    private var hasReading: Bool {
+        session.collection != nil || session.canEditPosition || !session.variationsHere.isEmpty
+            || viewed.isOver || session.isSelfPlaying
+            || (!session.isPractising && (session.analysis?.lines.count ?? 0) > 1)
     }
 
     /// What this position cannot answer, and what would buy it.
     ///
-    /// The chain has real dependencies and they used to be invisible: 最贵三步 is a Review's own
-    /// output, 要害 and 走马灯 need a line somebody already paid for, and four of the cards only
-    /// exist on a past Ply at all. A deck that silently left those out would be a deck that quietly
-    /// got smaller, which is the same 「我看不懂」 in a new shape.
+    /// Every card is dealt now (docs/adr/0023), so no card goes quietly missing — but the
+    /// dependencies are still real and are still worth having in one place: 最贵三步 is a Review's
+    /// own output, 要害 and 走马灯 need a line somebody already paid for, and three of the cards
+    /// want a Ply that has been played. Each of those cards says its own reason on its own face;
+    /// this is the list, for somebody who would rather read it once than swipe through ten.
     @ViewBuilder private var missingBody: some View {
         VStack(alignment: .leading, spacing: 10) {
             if missing.isEmpty {
@@ -2268,28 +2384,28 @@ struct GameScreen: View {
         if !isPast {
             rows.append(
                 (
-                    "考一遍 · 这步的要害 · 走马灯 · 五步计划",
-                    "用记录条退到走过的某一步 —— 最新局面上没有「刚走的那步」可说"
+                    "考一遍 · 这步的要害 · 五步计划",
+                    "它们说的是「刚走的那步」 —— 用记录条退回走过的一步"
                 )
             )
-        } else {
-            rows.append(("杀 · 战术", "回看走过的一步时它们不开口：那是一次考一遍，答案得你先给"))
-            if session.viewedContinuation.isEmpty {
-                rows.append(
-                    (
-                        "这步的要害 · 走马灯",
-                        session.guess == nil
-                            ? "引擎还没算过这一步。打开棋盘下面那只眼睛，它会按统一深度把全局重算一遍"
-                            : "先交卷 —— 交卷之前引擎不开口"
-                    )
-                )
-            }
+        } else if !session.isPractising {
+            rows.append(("考一遍", "引擎意见开着，这一步的分已经在屏幕上了 —— 关掉那只眼睛才能当题做"))
         }
-        if !isPast, session.isPractising, !session.isFindingTactics {
-            rows.append(("杀", "练习中引擎不开口。前面「战术」那张卡按一下，有没有杀也就一起看出来了"))
+        if session.viewedContinuation.isEmpty, isPast {
+            rows.append(
+                (
+                    "这步的要害 · 走马灯",
+                    session.guess == nil
+                        ? "它们要一条已经算过的线：复盘一遍，或者在这一步交一次卷"
+                        : "先交卷 —— 交卷之前引擎不开口"
+                )
+            )
         }
         if session.isPractising, !session.game.isReviewed, !session.game.plies.isEmpty {
-            rows.append(("复盘 · 最贵三步", "打开那只眼睛，让引擎按统一深度重算全局；三步是那一遍重算的产物"))
+            rows.append(("复盘 · 最贵三步", "统一深度重算全局要按一下「打分」；三步是那一遍重算的产物"))
+        }
+        if !session.isFindingTactics, session.analysis == nil {
+            rows.append(("杀 · 战术", "滑到那两张卡它们自己就开 —— 一次短搜索，不用你按开关"))
         }
         return rows
     }
@@ -2351,7 +2467,10 @@ struct GameScreen: View {
             loose: looseSquares,
             ways: session.trial == nil ? (session.scan?.origins ?? []) : [],
             key: keySquares,
-            plan: session.planArrows.isEmpty ? mateArrows : session.planArrows,
+            // Whichever card is in front of you, and only that one: five arrows left over from a
+            // plan you swiped away from are five arrows about a position nobody is looking at
+            // (docs/adr/0023).
+            plan: card == .plan ? session.planArrows : mateArrows,
             // Tappable while a verb is waiting for its target, too: the board is the only place a
             // claim's target can be said, which is the whole reason a verb has one.
             // Not while a line is being walked: the pieces on screen are five moves from where the
@@ -2469,7 +2588,10 @@ struct GameScreen: View {
     private var tapPosition: Game { session.planDraft != nil ? session.board : viewed }
 
     private var recommendation: MoveSquares? {
-        if session.isFindingTactics, let tactic = session.tactic {
+        // The shot is 战术's own drawing and is drawn while that card is up. The engine's
+        // recommendation underneath it is the strip's — 引擎意见 is a switch on the board, not a
+        // card — so it is not gated by the deck.
+        if card == .tactics, session.isFindingTactics, let tactic = session.tactic {
             return MoveSquares(from: tactic.move.from, to: tactic.move.to)
         }
         return session.analysis?.bestMove.flatMap { MoveSquares(uci: $0) }
@@ -2492,9 +2614,11 @@ struct GameScreen: View {
         return MoveSquares(from: guess.move.from, to: guess.move.to)
     }
 
-    /// Every piece hanging in the position on screen.
+    /// Every piece hanging in the position on screen — on the card that carries the word 红圈,
+    /// and on no other. A ring with no legend anywhere on screen is a mark somebody has to guess
+    /// at (docs/adr/0023).
     private var looseSquares: Set<Square> {
-        guard isPast else { return [] }
+        guard card == .key, isPast else { return [] }
         return session.board.loosePieces ?? []
     }
 

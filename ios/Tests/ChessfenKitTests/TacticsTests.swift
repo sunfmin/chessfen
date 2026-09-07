@@ -165,9 +165,14 @@ import Testing
         #expect(session.tacticPrompt == "这一步没有战术")
     }
 
-    @Test("browsing away from the latest position does not probe")
-    func aPastPlyIsSilent() async throws {
+    /// The rule this test used to assert has been turned round (docs/adr/0023): the finder is a
+    /// card of its own, and swiping onto that card is the asking — wherever the eye is standing.
+    @Test("browsing back and asking again probes the position being looked at")
+    func aPastPlyIsProbedToo() async throws {
         let game = try opening()
+        let past = try #require(
+            Game(startFEN: PGN.standardStartFEN, uciMoves: ["e2e4", "e7e5"])
+        )
         let engine = ScriptedEngine(
             [],
             byPosition: [
@@ -177,7 +182,14 @@ import Testing
                         Line(score: .centipawns(30), uciMoves: ["f1c4"], san: ["Bc4"]),
                         Line(score: .centipawns(24), uciMoves: ["d2d4"], san: ["d4"]),
                     ]
-                )
+                ),
+                past.state.fen: Analysis(
+                    depth: 10,
+                    lines: [
+                        Line(score: .centipawns(28), uciMoves: ["g1f3"], san: ["Nf3"]),
+                        Line(score: .centipawns(20), uciMoves: ["f1c4"], san: ["Bc4"]),
+                    ]
+                ),
             ]
         )
         let session = GameSession.fresh(game)
@@ -188,8 +200,10 @@ import Testing
 
         session.jump(toPly: 2)
         await hop()
-        #expect(engine.searchCount == probed, "a Drill is not a live position")
-        #expect(session.tactic == nil)
-        #expect(session.tacticPrompt == nil)
+        #expect(engine.searchCount == probed + 1, "one bounded probe, on the position on screen")
+        #expect(engine.budgets.last == .depth(Tactic.probeDepth))
+        #expect(session.tacticPrompt == "这一步没有战术", "and it answers about that position")
+        // Nothing was played: the engine only moves from the latest position.
+        #expect(session.game.plies.count == 4)
     }
 }
