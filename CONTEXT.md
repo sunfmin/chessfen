@@ -200,6 +200,29 @@ which is still a Drill. Practice can stay on: then the board has no Score and no
 Lines, only the shot if there is one. 战术 on screen.
 _Avoid_: hint mode, blunder check, coach, assistant
 
+**步杀消息**:
+A mate the engine can already see from the position on screen, said out loud without being
+asked. The one thing allowed to speak first, because it is a fact rather than a judgement: a
+Score can be argued with, 「你三步之后不在了」 cannot, and a fact withheld is a trick
+(docs/adr/0015, 0023). Never starts a search — it reads whichever one already ran, the standing
+Analysis or 战术发现器's probe, so Practice with the finder off says nothing. Whose mate it is
+comes out of the sign of one White-relative number and which Controllers a person holds: 你有
+2 步杀 / 对方 2 步杀 / 白方 2 步杀. Every clause of its sentence is counted by replaying the
+line — how many replies were the only legal move, whether the line reaches mate at all. Draws
+as numbered arrows, at most six Ply: 五步计划 stops at five for what can be checked, this stops
+at six for what can be seen. 杀 on screen.
+_Avoid_: mate alert, mate warning, checkmate hint, forced mate, tactic
+
+**一叠卡片**:
+What is under the board: one card at a time, paged sideways, with a row of dots saying how many
+there are. Dealt from the position rather than from a fixed list — a card with nothing to say is
+not dealt, and the last one says what is missing and why (docs/adr/0023). Each card carries a
+one-line subtitle under its name, because four of them are named after ideas somebody has to
+have been told about once. The rule that replaced the row of chips: a layer that only **draws**
+follows the card it is named on, and anything that spends a **search** keeps a press of its own,
+so no amount of swiping starts one.
+_Avoid_: tabs, carousel, sections, panels, accordion — and not 走马灯, which walks a Line
+
 **Drill**:
 One question made out of a Game the app already holds: the position comes back with the
 engine silent, and a move — with an Intent, when one is asked for — has to be committed

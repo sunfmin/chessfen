@@ -20,6 +20,9 @@ import SwiftUI
 struct GameScreen: View {
     let session: GameSession
     @Binding var path: [Step]
+    /// Which card of the deck to open on. Nil means the position decides, which is what the app
+    /// does; a screenshot test passes one in to photograph a card that is not the one on top.
+    var opening: Card?
 
     @Environment(EngineHost.self) private var engine
     @Environment(GameLibrary.self) private var library
@@ -35,6 +38,8 @@ struct GameScreen: View {
     /// Whether the opening guess below has been made yet. Once, on the way in — not on every
     /// appearance, or coming back from a Review would shut what somebody had just opened.
     @State private var hasGuessedUnfold = false
+    /// Whether the deck has been dealt yet. Once, for the same reason.
+    @State private var hasDealt = false
     /// Whether a thumb is on 让引擎走 right now. The engine is thinking for exactly as long as it is —
     /// which is why this is read off the session rather than kept here as well. A screen holding
     /// its own copy of "a finger is down" is a screen that can be left holding it: a press that
@@ -42,10 +47,14 @@ struct GameScreen: View {
     /// full and held with nobody touching it.
     private var isAsking: Bool { session.thinking == .asked }
 
-    /// How tall the window under the record is, and how tall the page in it turned out to be — the
-    /// reading fills the first, and the difference is what says whether anything is out of sight.
-    @State private var readHeight: CGFloat = 0
-    @State private var pageHeight: CGFloat = 0
+    /// Which card of the deck under the record is showing.
+    ///
+    /// A kind rather than an index (see `Card`): the deck is dealt from the position, so an index
+    /// would point at a different card every time the position changed shape.
+    @State private var card: Card = .scanner
+    /// Whether the mate line is drawn on the board. Set by arriving at the news, because a mate
+    /// drawn is the whole of what the news is for, and cleared by leaving it.
+    @State private var showsMateLine = false
 
     struct PromotionRequest: Identifiable {
         let id = UUID()
@@ -61,6 +70,27 @@ struct GameScreen: View {
         guard !hasGuessedUnfold else { return }
         hasGuessedUnfold = true
         unfolded = session.game.plies.isEmpty ? viewed.state.sideToMove : nil
+    }
+
+    /// Which card the deck opens on: the work this position is for, and **never the news**. A mate
+    /// you were shown without asking for it is the one thing this deck deliberately will not do —
+    /// its dot is lit and the rest is your move (docs/adr/0023).
+    private var opensOn: Card {
+        if let opening { return opening }
+        if isPast {
+            if session.isStudying || session.guess != nil { return .drill }
+            return .key
+        }
+        return .scanner
+    }
+
+    /// Deals the deck, once, and does whatever arriving at that card does — an opening card whose
+    /// layer never came on is a card that lies about what it is showing.
+    private func deal() {
+        guard !hasDealt else { return }
+        hasDealt = true
+        card = opensOn
+        arrive(at: card)
     }
 
     var body: some View {
@@ -80,48 +110,11 @@ struct GameScreen: View {
                 // phone has left over rather than leaving a hole at the bottom — and taller
                 // than the window when there is more to say than fits, which is when it becomes
                 // a scroll again.
-                ScrollView {
-                    VStack(spacing: 0) {
-                        // First, because it is the legend for marks that are on the board. It sat
-                        // under the Reveal until the Reveal grew tall enough to push it off the
-                        // screen entirely — a numbered square with its sentence two scrolls away
-                        // is the same "我看不懂" this layer was rebuilt to answer.
-                        scanner
-                        plan
-                        layers
-                        study
-                        report
-                        questions
-                        series
-                        corrections
-                        notes
-                        variations
-                        alternatives
-                    }
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { pageHeight = $0 }
-                    .frame(minHeight: readHeight, alignment: .top)
-                }
-                .scrollBounceBehavior(.basedOnSize)
-                // No bar down the side. The window under the record is short, and a scroll bar in
-                // it is a second thing moving next to the one being read; the fade below says the
-                // same thing more quietly.
-                .scrollIndicators(.hidden)
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { readHeight = $0 }
-                // Faded off at the bottom, and only when there is more page than window — a line
-                // cut in half by the edge reads as a mistake, and the same line fading out reads
-                // as what it is.
-                .mask {
-                    VStack(spacing: 0) {
-                        Rectangle()
-                        if pageHeight > readHeight + 1 {
-                            LinearGradient(
-                                colors: [.black, .black.opacity(0.04)],
-                                startPoint: .top, endPoint: .bottom
-                            )
-                            .frame(height: 26)
-                        }
-                    }
-                }
+                // One card at a time, dealt from the position (docs/adr/0023). This was a single
+                // scroll with eleven sections stacked in it, in the order they had been written
+                // rather than the order the position asks for — six switches and ten paragraphs,
+                // most of them about something this position could not do anything with.
+                deckView
             }
             .frame(maxWidth: .infinity)
         }
@@ -207,6 +200,7 @@ struct GameScreen: View {
         }
         .onAppear {
             guessUnfold()
+            deal()
             // Re-attached on every appearance: the engine may have finished starting while the
             // library was on screen, and coming back from a Review means the search this screen
             // wants is not the one that just ran.
@@ -1149,7 +1143,7 @@ struct GameScreen: View {
     /// built for it; this is that. The mirror of the carousel: that one shows the engine's plan
     /// landing, this one puts your own on trial. The cap is five and its reason is on the screen,
     /// because a cap whose reason lives only in an ADR reads as an arbitrary limit.
-    @ViewBuilder private var plan: some View {
+    @ViewBuilder private var planBody: some View {
         if isPast {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 9) {
@@ -1356,47 +1350,28 @@ struct GameScreen: View {
     /// The order inside it is the whole design: which of your pieces can get there, then what the
     /// move you picked is worth in your own terms, and the engine's opinion last and only on a tap.
     /// Reversed, it is a hint button (docs/adr/0020).
-    @ViewBuilder private var scanner: some View {
+    ///
+    /// The chip that used to arm it has gone: arriving at this card is the arming, and leaving puts
+    /// the board back. A layer that only *draws* may follow the card it is named on; anything that
+    /// starts a search still keeps a press of its own (docs/adr/0023).
+    @ViewBuilder private var scannerBody: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 9) {
-                Button {
-                    withAnimation(.snappy(duration: 0.2)) {
-                        if session.isScannerArmed {
-                            session.endScan()
-                        } else {
-                            session.armScanner()
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(
-                            systemName: session.isScannerArmed
-                                ? "hand.point.up.left.fill" : "hand.point.up.left"
-                        )
-                        .font(.caption2)
-                        Text("问一格").font(.footnote)
-                    }
-                    .foregroundStyle(
-                        session.planDraft != nil
-                            ? Palette.inkSoft.opacity(0.4)
-                            : (session.isScannerArmed ? Palette.mine : Palette.inkSoft)
-                    )
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(Palette.chipRest, in: Capsule())
-                }
-                .buttonStyle(.plain)
-                .disabled(session.planDraft != nil)
-                finderChip
-                if session.isScannerArmed, session.scan == nil {
-                    Text("点棋盘上任意一格，看你哪些子能过去。")
-                        .font(.caption)
-                        .foregroundStyle(Palette.inkSoft)
-                }
-                Spacer(minLength: 0)
+            if session.planDraft != nil {
+                Text("在写五步计划。问一格先让位 —— 一块棋盘上只放一个假设。")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let scan = session.scan {
+                scanned(scan)
+            } else if session.isScannerArmed {
+                Text("点棋盘上任意一格，看你哪些子能过去。")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
+            } else {
+                Button("再问一格") { session.armScanner() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
             }
-            if session.isFindingTactics { tacticAnswer }
-            if let scan = session.scan { scanned(scan) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
@@ -1499,6 +1474,31 @@ struct GameScreen: View {
         .accessibilityValue(session.isFindingTactics ? "开" : "关")
     }
 
+    /// 战术, and the one press ADR-0022 asked for.
+    ///
+    /// The switch did not become the card, and that is the line this deck draws: 要害 and 走马灯
+    /// only *draw* on a board, so arriving at their card is enough, but the finder spends a search
+    /// — bounded, but a real one — so it keeps a deliberate press of its own (docs/adr/0022, 0023).
+    @ViewBuilder private var tacticsBody: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 9) {
+                finderChip
+                Spacer(minLength: 0)
+            }
+            if session.isFindingTactics {
+                tacticAnswer
+            } else {
+                Text("按一下「战术」，引擎拿一次短搜索看这一步有没有一记赢子的 —— 顺手也就看出来有没有杀。不按就不算。")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+    }
+
     /// The finder's answer, under the chip that asked — the same place a scan writes.
     @ViewBuilder private var tacticAnswer: some View {
         if let prompt = session.tacticPrompt {
@@ -1530,88 +1530,52 @@ struct GameScreen: View {
         }
     }
 
-    /// The one control the two board layers have between them.
-    ///
-    /// Only for a position already played into: on the live position there is nothing here to
-    /// turn on, because there is nothing the app is willing to point at.
+    /// 这步的要害 — the squares this move is actually about (docs/adr/0020).
     ///
     /// **It names squares now instead of counting them.** It used to paint every square the move
     /// changed hands over — nine or ten of them, two colours, a legend with the totals in it. That
     /// is a diff, and the question it left was 「我管住了这些格，然后呢？」 So the rules propose and
     /// the engine's own line disposes, and what reaches the board is one square, sometimes two,
     /// never more than three, each with a sentence saying what it costs or buys (docs/adr/0020).
-    @ViewBuilder private var layers: some View {
-        if isPast {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 9) {
-                    Button {
-                        withAnimation(.snappy(duration: 0.2)) {
-                            session.setShowsControlChange(!session.showsControlChange)
-                        }
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(
-                                systemName: session.showsControlChange
-                                    ? "square.grid.3x3.fill" : "square.grid.3x3"
-                            )
-                            .font(.caption2)
-                            Text("这步的要害").font(.footnote)
-                        }
-                        .foregroundStyle(
-                            session.showsControlChange ? Palette.mine : Palette.inkSoft
-                        )
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(Palette.chipRest, in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    // 走马灯, and only where there is a line to play: the app never goes and
-                    // fetches one to fill the button in (docs/adr/0019, 0020).
-                    if !session.viewedContinuation.isEmpty {
-                        Button {
-                            selected = nil
-                            withAnimation(.snappy(duration: 0.2)) {
-                                if session.walk == nil {
-                                    session.startWalk()
-                                } else {
-                                    session.endWalk()
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 5) {
-                                Image(
-                                    systemName: session.walk == nil
-                                        ? "play.rectangle" : "play.rectangle.fill"
-                                )
-                                .font(.caption2)
-                                Text("走马灯").font(.footnote)
-                            }
-                            .foregroundStyle(
-                                session.planDraft != nil
-                                    ? Palette.inkSoft.opacity(0.4)
-                                    : (session.walk == nil ? Palette.inkSoft : Palette.mine)
-                            )
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 7)
-                            .background(Palette.chipRest, in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(session.planDraft != nil)
-                    }
-                    if !looseSquares.isEmpty, session.walk == nil {
-                        Text("红圈：被吃的子比守的多")
-                            .font(.caption)
-                            .foregroundStyle(Palette.inkSoft)
-                    }
-                    Spacer(minLength: 0)
-                }
-                if let walk = session.walk { transport(walk) }
-                if session.showsControlChange { controlLegend }
+    ///
+    /// The chip is gone the same way 问一格's did: the layer comes on with the card and goes off
+    /// with it, because drawing on a board is free and reversible (docs/adr/0023).
+    @ViewBuilder private var keyBody: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if !looseSquares.isEmpty, session.walk == nil {
+                Text("红圈：被吃的子比守的多")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
+            controlLegend
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+    }
+
+    /// 走马灯 — the stored Line played out on the board, a Ply at a time.
+    ///
+    /// Never a line the app went and fetched: what plays is whichever one somebody already paid
+    /// for, a Review's or a Reveal's (docs/adr/0019, 0020). Arriving at the card starts it and
+    /// leaving puts the board back, which is what makes the whole thing ephemeral.
+    @ViewBuilder private var walkBody: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let walk = session.walk {
+                transport(walk)
+            } else if session.viewedContinuation.isEmpty {
+                Text("这一步还没有引擎的线可走。")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
+            } else {
+                Button("从这儿走一遍") { session.startWalk() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
     }
 
     /// The transport, and where the whole line arrives.
@@ -1966,6 +1930,360 @@ struct GameScreen: View {
         .padding(.top, 10)
     }
 
+    // ------------------------------------------------------------------ the deck
+
+    /// One card of the deck under the record (docs/adr/0023).
+    ///
+    /// A kind and not an index, because the deck is **dealt from the position**: a live position
+    /// deals 杀 / 战术 / 问一格, a past Ply deals 考一遍 / 要害 / 走马灯 / 五步计划, and a card that
+    /// can do nothing here is not a page to swipe past. An index would land on a different card
+    /// every time that changed.
+    enum Card: Hashable {
+        case mate, tactics, scanner, drill, key, walk, plan, review, reading, missing
+    }
+
+    /// The cards this position deals, in the order it deals them: news first, then the work this
+    /// position is for, then the question you can always ask, then the whole game, then what is
+    /// missing and how to buy it.
+    private var cards: [Card] {
+        var dealt: [Card] = []
+        if session.mateNews != nil { dealt.append(.mate) }
+        if isPast {
+            if session.isStudying || session.guess != nil || session.reveal != nil
+                || session.isRevealing
+            {
+                dealt.append(.drill)
+            }
+            dealt.append(.key)
+            if session.walk != nil || !session.viewedContinuation.isEmpty { dealt.append(.walk) }
+            dealt.append(.plan)
+        } else {
+            dealt.append(.tactics)
+        }
+        dealt.append(.scanner)
+        if !session.isPractising || session.game.isReviewed { dealt.append(.review) }
+        if hasReading { dealt.append(.reading) }
+        dealt.append(.missing)
+        return dealt
+    }
+
+    /// Whether the last card has anything on it: a collection to walk, a piece to correct, a
+    /// Variation, a finished game, or the runners-up the engine is weighing.
+    private var hasReading: Bool {
+        session.collection != nil || session.canEditPosition || !session.variationsHere.isEmpty
+            || viewed.isOver || session.isSelfPlaying
+            || (!session.isPractising && (session.analysis?.lines.count ?? 0) > 1)
+    }
+
+    /// The deck, and the row of dots that says how many cards there are.
+    ///
+    /// The dots are the point as much as the paging is: eleven sections in a scroll never said how
+    /// many there were, and 「这么多一连串的功能」 is what a screen gets called when it cannot.
+    private var deckView: some View {
+        let dealt = cards
+        return VStack(spacing: 0) {
+            TabView(selection: $card) {
+                ForEach(dealt, id: \.self) { kind in
+                    body(of: kind).tag(kind)
+                }
+            }
+            // The dots below are ours: a mate's dot is a different colour from the rest, and
+            // the built-in index view has no opinion about which page is the urgent one.
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            dots(dealt)
+        }
+        .onChange(of: dealt) { _, now in
+            // A card that has been dealt away takes the eye with it, rather than leaving it on a
+            // page that is not there any more.
+            if !now.contains(card) { card = now.first ?? .missing }
+        }
+        .onChange(of: card) { was, now in turn(to: now, from: was) }
+        // A move offered at a past Ply is the question being answered, so the deck goes to it.
+        .onChange(of: session.guess?.san) { _, now in
+            if now != nil { card = .drill }
+        }
+    }
+
+    private func dots(_ dealt: [Card]) -> some View {
+        HStack(spacing: 7) {
+            ForEach(dealt, id: \.self) { kind in
+                Button {
+                    withAnimation(.snappy(duration: 0.2)) { card = kind }
+                } label: {
+                    Circle()
+                        .fill(dotColour(kind))
+                        .frame(width: kind == card ? 8 : 6, height: kind == card ? 8 : 6)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(title(of: kind))
+                .accessibilityAddTraits(kind == card ? [.isSelected] : [])
+            }
+        }
+        .frame(height: 22)
+    }
+
+    /// A mate's dot wears whose it is, and wears it whether or not anybody has looked yet: it is
+    /// the whole of what 「直接给予提示」 amounts to in a deck (docs/adr/0023).
+    private func dotColour(_ kind: Card) -> Color {
+        if kind == .mate {
+            return (session.mateNews?.isOurs ?? false) ? Palette.mine : Palette.alarm
+        }
+        if kind == card { return Palette.ink }
+        return Palette.inkSoft.opacity(0.35)
+    }
+
+    private func title(of kind: Card) -> String {
+        if kind == .mate, let news = session.mateNews { return news.head }
+        return kind.title
+    }
+
+    @ViewBuilder private func body(of kind: Card) -> some View {
+        switch kind {
+        case .mate: cardFrame(kind) { mateBody }
+        case .tactics: cardFrame(kind) { tacticsBody }
+        case .scanner: cardFrame(kind) { scannerBody }
+        case .drill: cardFrame(kind) { study }
+        case .key: cardFrame(kind) { keyBody }
+        case .walk: cardFrame(kind) { walkBody }
+        case .plan: cardFrame(kind) { planBody }
+        case .review: cardFrame(kind) { reviewBody }
+        case .reading: cardFrame(kind) { readingBody }
+        case .missing: cardFrame(kind) { missingBody }
+        }
+    }
+
+    /// One card: what it is called, one line saying what it answers, and then the thing itself.
+    ///
+    /// The second line is not decoration. Four of these cards are named after ideas somebody has
+    /// to have been told about once — 要害, 走马灯, 复盘, 最贵三步 — and a deck of bare titles is a
+    /// deck you have to be taught before you can use.
+    private func cardFrame<Content: View>(
+        _ kind: Card, @ViewBuilder body: () -> Content
+    ) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title(of: kind))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(kind == .mate ? mateInk : Palette.ink)
+                    Text(kind.subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(Palette.inkSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                body()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, 8)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .scrollIndicators(.hidden)
+    }
+
+    private var mateInk: Color {
+        (session.mateNews?.isOurs ?? false) ? Palette.mine : Palette.alarm
+    }
+
+    /// What arriving at a card does, and what leaving one undoes.
+    ///
+    /// The rule, and it is the whole reason the chips could go: a layer that only **draws** follows
+    /// the card it is named on, because drawing is free and putting it back is exact. Anything that
+    /// spends a **search** keeps a press of its own — the finder, a Review, the engine's opinion —
+    /// so no amount of swiping can quietly start one (docs/adr/0022, 0023).
+    private func turn(to now: Card, from was: Card) {
+        selected = nil
+        leave(was)
+        arrive(at: now)
+    }
+
+    private func leave(_ was: Card) {
+        switch was {
+        case .scanner: session.endScan()
+        case .walk:
+            session.endWalk()
+            session.setShowsControlChange(false)
+        case .key: session.setShowsControlChange(false)
+        case .mate: showsMateLine = false
+        default: break
+        }
+    }
+
+    private func arrive(at now: Card) {
+        switch now {
+        case .scanner: if session.scan == nil { session.armScanner() }
+        case .walk: if session.walk == nil { session.startWalk() }
+        case .key: session.setShowsControlChange(true)
+        // Arriving *is* the tap: the arrows are what the news is for, and a person who swiped to
+        // 「对方 2 步杀」 has already asked the question the button would have asked (docs/adr/0023).
+        case .mate: showsMateLine = true
+        default: break
+        }
+    }
+
+    // ------------------------------------------------------------------ 杀
+
+    /// The news: a mate somebody can already see, whoever it belongs to (docs/adr/0023).
+    ///
+    /// Not a switch and not an answer to anything — the one thing on this screen that arrives
+    /// unbidden. It says how forced it is because that is the difference between a mate a person
+    /// can follow and one they have to take on trust, and every clause of it was counted by the
+    /// rules code rather than asserted.
+    @ViewBuilder private var mateBody: some View {
+        if let news = session.mateNews {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(news.sentence)
+                    .font(.footnote)
+                    .foregroundStyle(Palette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !news.san.isEmpty {
+                    // The numbers are the join: the figure on a chip is the figure on its arrow.
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 6) {
+                            ForEach(Array(news.san.enumerated()), id: \.offset) { index, san in
+                                HStack(spacing: 5) {
+                                    Text("\(index + 1)")
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundStyle(.white)
+                                        .frame(width: 15, height: 15)
+                                        .background(
+                                            arrowColour(ofStep: index + 1, in: news), in: Circle()
+                                        )
+                                    Text(san).font(.notation).foregroundStyle(Palette.ink)
+                                }
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 4)
+                                .background(Palette.chipRest, in: Capsule())
+                            }
+                        }
+                    }
+                    .scrollIndicators(.hidden)
+                }
+                HStack(spacing: 9) {
+                    Button(showsMateLine ? "把箭头收起" : "画在棋盘上") {
+                        withAnimation(.snappy(duration: 0.2)) { showsMateLine.toggle() }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(news.arrows.isEmpty)
+                    Spacer(minLength: 0)
+                }
+                if !news.isFullyDrawn {
+                    Text("线太长，棋盘上只画了前 \(MateNews.arrowLimit) 步 —— 再多，一盘棋上就是一团线。")
+                        .font(.caption2)
+                        .foregroundStyle(Palette.inkSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text("这几步没有走进棋谱。这是引擎已经算出来的东西，不是又替你算了一遍。")
+                    .font(.caption2)
+                    .foregroundStyle(Palette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+        }
+    }
+
+    /// The same violet and red the五步计划 arrows use: yours near, theirs far.
+    private func arrowColour(ofStep step: Int, in news: MateNews) -> Color {
+        let arrow = news.arrows.first { $0.step == step }
+        return (arrow?.isYours ?? false) ? Palette.mine : Palette.alarm
+    }
+
+    /// The mate line as numbered arrows, while its own card is the one on show.
+    private var mateArrows: [PlanArrow] {
+        guard showsMateLine, card == .mate, let news = session.mateNews else { return [] }
+        return news.arrows
+    }
+
+    // ------------------------------------------------------------------ 复盘 and the rest
+
+    /// The pass, and the three moves it found — one card, because the three are its output and
+    /// have no existence without it.
+    @ViewBuilder private var reviewBody: some View {
+        VStack(spacing: 0) {
+            report
+            questions
+        }
+    }
+
+    /// The reading: where this game sits, a piece the camera got wrong, the lines that were played
+    /// and left behind, and the runners-up. Nothing here is a thing to do to the position.
+    @ViewBuilder private var readingBody: some View {
+        VStack(spacing: 0) {
+            series
+            corrections
+            variations
+            notes
+            alternatives
+        }
+    }
+
+    /// What this position cannot answer, and what would buy it.
+    ///
+    /// The chain has real dependencies and they used to be invisible: 最贵三步 is a Review's own
+    /// output, 要害 and 走马灯 need a line somebody already paid for, and four of the cards only
+    /// exist on a past Ply at all. A deck that silently left those out would be a deck that quietly
+    /// got smaller, which is the same 「我看不懂」 in a new shape.
+    @ViewBuilder private var missingBody: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if missing.isEmpty {
+                Text("这个局面能问的，都在前面那几张卡上了。")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
+            } else {
+                ForEach(missing, id: \.what) { row in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(row.what).font(.footnote).foregroundStyle(Palette.ink)
+                        Text(row.why)
+                            .font(.caption2)
+                            .foregroundStyle(Palette.inkSoft)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+    }
+
+    private var missing: [(what: String, why: String)] {
+        var rows: [(what: String, why: String)] = []
+        if !isPast {
+            rows.append(
+                (
+                    "考一遍 · 这步的要害 · 走马灯 · 五步计划",
+                    "用记录条退到走过的某一步 —— 最新局面上没有「刚走的那步」可说"
+                )
+            )
+        } else {
+            rows.append(("杀 · 战术", "回看走过的一步时它们不开口：那是一次考一遍，答案得你先给"))
+            if session.viewedContinuation.isEmpty {
+                rows.append(
+                    (
+                        "这步的要害 · 走马灯",
+                        session.guess == nil
+                            ? "引擎还没算过这一步。打开棋盘下面那只眼睛，它会按统一深度把全局重算一遍"
+                            : "先交卷 —— 交卷之前引擎不开口"
+                    )
+                )
+            }
+        }
+        if !isPast, session.isPractising, !session.isFindingTactics {
+            rows.append(("杀", "练习中引擎不开口。前面「战术」那张卡按一下，有没有杀也就一起看出来了"))
+        }
+        if session.isPractising, !session.game.isReviewed, !session.game.plies.isEmpty {
+            rows.append(("复盘 · 最贵三步", "打开那只眼睛，让引擎按统一深度重算全局；三步是那一遍重算的产物"))
+        }
+        return rows
+    }
+
     // ------------------------------------------------------------------ the bar at the top
 
     /// Turns the board round — and with it, which side's controls are above and which below. The
@@ -2023,7 +2341,7 @@ struct GameScreen: View {
             loose: looseSquares,
             ways: session.trial == nil ? (session.scan?.origins ?? []) : [],
             key: keySquares,
-            plan: session.planArrows,
+            plan: session.planArrows.isEmpty ? mateArrows : session.planArrows,
             // Tappable while a verb is waiting for its target, too: the board is the only place a
             // claim's target can be said, which is the whole reason a verb has one.
             // Not while a line is being walked: the pieces on screen are five moves from where the
@@ -2258,4 +2576,40 @@ struct MoveCard: Identifiable, Hashable {
     let white: PlyCell?
     let black: PlyCell?
     var id: Int { number }
+}
+
+extension GameScreen.Card {
+    var title: String {
+        switch self {
+        case .mate: "杀"
+        case .tactics: "战术"
+        case .scanner: "问一格"
+        case .drill: "考一遍"
+        case .key: "这步的要害"
+        case .walk: "走马灯"
+        case .plan: "五步计划"
+        case .review: "复盘"
+        case .reading: "这一局"
+        case .missing: "这儿还问不了的"
+        }
+    }
+
+    /// One line saying what the card answers, in the words of somebody who does not yet know the
+    /// name above it. Four of these names are ideas of this app's own — 要害, 走马灯, 复盘,
+    /// 最贵三步 — and the owner of the app could not say what two of them did, which is the whole
+    /// argument for this line existing (docs/adr/0023).
+    var subtitle: String {
+        switch self {
+        case .mate: "几步之内有人要被将死了"
+        case .tactics: "这一步有没有一记赢子的"
+        case .scanner: "我哪些子能走到这一格，走过去值不值"
+        case .drill: "把这一步当题做：先自己走，走完才给结果"
+        case .key: "刚走的那步，把哪一格变成了要紧的地方"
+        case .walk: "引擎说的后面几步，在棋盘上走一遍"
+        case .plan: "自己走五步，说一个理由，让它判对错"
+        case .review: "统一深度重算全局，让每一步的分能互相比"
+        case .reading: "这局在哪个集子里，退回去的线，认错的棋子"
+        case .missing: "这儿缺什么，以及怎么补"
+        }
+    }
 }
