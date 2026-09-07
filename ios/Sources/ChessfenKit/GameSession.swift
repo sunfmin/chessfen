@@ -79,6 +79,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
             planOutcome = nil
             tactic = nil
             isProbingTactics = false
+            probedAnalysis = nil
         }
     }
     /// The Game rebuilt where the cursor stands, kept until either the Game or the cursor
@@ -260,6 +261,13 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     public private(set) var tactic: Tactic?
     /// True while the short search that confirms a Tactic is running.
     public private(set) var isProbingTactics = false
+    /// The probe's own Analysis, kept only so a mate it happened to see can be reported.
+    ///
+    /// The finder's search is not advice — it is bounded, it was asked a question about shots, and
+    /// practice is allowed to keep it (docs/adr/0022). A mate in it is news, and news is not the
+    /// engine's opinion either, so it may be read out where a Score may not (docs/adr/0023). What
+    /// is *not* kept is a Score, a Depth or a candidate list: nothing else in here reaches a screen.
+    private var probedAnalysis: Analysis?
 
     private var controllers: [PieceColour: Controller]
     /// The clock somebody has put the engine on, if anybody has. Nil means the game decides —
@@ -526,6 +534,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         if !on {
             tactic = nil
             isProbingTactics = false
+            probedAnalysis = nil
         }
         retune()
     }
@@ -542,6 +551,28 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
             return "\(whose)：\(tactic.sentence)"
         }
         return "这一步没有战术"
+    }
+
+    /// The mate anybody can see from the position on screen, whoever it belongs to
+    /// (docs/adr/0023).
+    ///
+    /// **No search of its own.** It reads whichever one has already run: the standing Analysis
+    /// when the engine is talking, and the finder's bounded probe when it is not. So the app
+    /// never spends engine time to go looking for a mate, and while practising with the finder
+    /// off there is nothing to read and nothing is said — which is ADR-0015 left standing rather
+    /// than argued with.
+    ///
+    /// Only on the latest position: a past Ply is a Drill, and being handed the mate there is
+    /// being handed the answer (docs/adr/0022).
+    public var mateNews: MateNews? {
+        guard isAtLatest, !viewed.isOver else { return nil }
+        guard let source = analysis ?? probedAnalysis else { return nil }
+        return MateNews.read(source, in: viewed, hands: handColours)
+    }
+
+    /// The colours a person is playing. Both, one, or — the engine against itself — neither.
+    private var handColours: Set<PieceColour> {
+        Set([PieceColour.white, .black].filter { controller(for: $0) == .hand })
     }
 
     /// The collection this game is filed under, according to its own file.
@@ -1663,6 +1694,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         }
         tactic = nil
         isProbingTactics = false
+        probedAnalysis = nil
         continueAfterProbe()
     }
 
@@ -1683,7 +1715,10 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
                 last = snapshot
             }
             guard let self, !Task.isCancelled else { return }
-            if let last { tactic = Tactic.confirmed(in: position, analysis: last) }
+            if let last {
+                tactic = Tactic.confirmed(in: position, analysis: last)
+                probedAnalysis = last
+            }
             isProbingTactics = false
             continueAfterProbe()
         }
