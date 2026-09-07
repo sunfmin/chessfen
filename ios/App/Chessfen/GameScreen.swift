@@ -2044,7 +2044,13 @@ struct GameScreen: View {
         // on a deck (docs/adr/0023). On the way in only: a 2 步杀 becoming a 1 步杀 is the same
         // news twice, and would drag somebody back to a card they had deliberately swiped away.
         .onChange(of: session.mateNews == nil) { was, now in
-            if was, !now { card = .mate }
+            guard was, !now else { return }
+            // Never off a card that is already showing it — swiping to 战术 makes the probe find
+            // the mate, and being thrown to 杀 for it would make 战术 unreachable — and never out
+            // from under work in progress: leaving a plan card abandons the draft, and a feature
+            // that eats somebody's line is worse than one that waits for a swipe.
+            guard !wantsFinder(card), session.planDraft == nil, session.guess == nil else { return }
+            card = .mate
         }
     }
 
