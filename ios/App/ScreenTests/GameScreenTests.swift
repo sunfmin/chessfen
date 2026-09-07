@@ -125,7 +125,7 @@ struct GameScreenScreenshots {
         #expect(rendered.says("战术"))
         #expect(rendered.says("问一格"))
         #expect(rendered.says("复盘"))
-        #expect(rendered.says("这一局"))
+        #expect(rendered.says("旁注"))
         #expect(rendered.says("这儿还问不了的"), "and the last card says what is missing and why")
         // Ten dots, the same ten whatever the position: the deck does not change shape, so the
         // fourth dot is the same card every time somebody looks (docs/adr/0023). What a card
@@ -134,7 +134,7 @@ struct GameScreenScreenshots {
         #expect(rendered.says("走马灯"))
         #expect(rendered.says("五步计划"))
         #expect(rendered.says("考一遍"))
-        #expect(rendered.says("这一局"))
+        #expect(rendered.says("杀"), "including the mate card, which is dealt whether or not there is one")
         #expect(rendered.says("我哪些子能走到这一格"), "and the card showing is the one it opens on")
         // One card at a time, so the numbers on screen are the strip's and no more.
         #expect(rendered.count(of: "+0.") == 2)
@@ -180,7 +180,7 @@ struct GameScreenScreenshots {
             )
         }
 
-        #expect(rendered.says("这一局"))
+        #expect(rendered.says("旁注"))
         #expect(rendered.says("其它选择"))
         #expect(rendered.says("O-O"))
         #expect(!rendered.says("O-O d6 d4"), "the moves, not the lines they head")

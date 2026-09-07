@@ -46,6 +46,10 @@ nonisolated enum Palette {
     /// light over night. Tinted wood on a dark page is very nearly the dark page, which is how a
     /// deck of chips turns into an empty strip after sunset.
     static var hairline: Color { dynamic(light: walnut.opacity(0.18), dark: .white.opacity(0.16)) }
+    /// The shadow that lifts the deck's card off the page. Wood-coloured by day, because a grey
+    /// drop shadow on parchment is the one thing that would make this look like a web page; by
+    /// night a shadow has to be darker than the page it is on, and nothing in the wood is.
+    static var lift: Color { dynamic(light: walnut.opacity(0.22), dark: .black.opacity(0.55)) }
     static var chipRest: Color { dynamic(light: walnut.opacity(0.10), dark: .white.opacity(0.10)) }
 
     private static func dynamic(light: UInt32, dark: UInt32) -> Color {
@@ -93,6 +97,12 @@ extension Font {
     }
 
     static let notation = Font.system(.footnote, design: .monospaced)
+
+    /// The name on a card. Serif, and it is the only serif in the app: chess is written down in
+    /// tournament books and 棋谱, both of which are set in serif, and a deck of ten cards named in
+    /// the same face as their own body text is a deck of ten paragraphs. In Chinese it resolves to
+    /// 宋体, which is exactly the book voice this is borrowing.
+    static let cardName = Font.system(.subheadline, design: .serif).weight(.semibold)
 }
 
 // ------------------------------------------------------------------ controls

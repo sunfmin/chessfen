@@ -84,6 +84,42 @@ on purpose — and a mate on a Ply you walked back to is the same fact about the
 engine still only *plays* from the latest position; a probe at a past Ply costs one bounded
 search and moves nothing.
 
+## What a card looks like
+
+The behaviour above was right and the thing on screen was not: ten identical dots, a window
+about 180 points tall that cut 五步计划 and 考一遍 off mid-sentence, and ten bodies that had each
+invented their own type hierarchy — chips here, bullets there, numbered circles, bare paragraphs.
+It did not read as a card and it did not read as swipeable. Photographed one at a time, the ten
+shots are the argument (`ios/App/out/deck-01…10.png`).
+
+**The deck is a pull-up card, not a window.** It has two detents: a peek, which is whatever the
+board leaves over, and raised, which is up to the board's top edge. Rounded top corners, a
+hairline, a lift shadow, a grabber — it is an object with an edge, which is what makes pulling it
+occur to anybody. A body longer than the peek fades out at the cut rather than stopping dead, so
+a cut line reads as 「拉我」.
+
+**The card says how much room it needs.** Two of them answer with a list — the three moves of a
+Reveal, the five rows of a plan — and a list read four lines at a time is a list nobody reads, so
+arriving at one of those raises the deck, and leaving puts the board back. A tap inside a raised
+card that *plays* on the board lowers it again: what the tap does happens where you cannot see it
+otherwise.
+
+**Ten dots became a grouped rail.** The ten tabs sit in four clusters with a gap between them —
+现在 / 这一步 / 任何一格 / 这一局 — and the group you are in is named at the right end of the rail.
+The grouping is the answer to 「十个名字要先学会」: you do not have to remember which dot 走马灯 is,
+only that it is about 这一步. The current tab is a filled bar in its card's own tint, so 杀 wears
+whose mate it is even from three cards away.
+
+**Six primitives, and every body is built out of them.** A lede sentence, a row of move chips, a
+numbered row (figure · move · what it is for · what it gives away), a figures row, a note, and an
+action row. The numbered badges are the numbers on the board's arrows, so what a tap will do is
+visible before it happens. Eighteen bordered system buttons became one chip idiom, and a control
+says what the press *does* rather than what the card is called — 「找一记」/「不找了」, not a chip
+labelled 战术 under a head that also says 战术.
+
+**A name that repeats the group above it is not a name.** 这一局 as a card inside the 这一局 group
+is now 旁注: where this game sits, the lines that were left behind, the piece somebody corrected.
+
 ## Consequences
 
 - The six chips that used to sit under the board are gone; the cards are the affordance.
@@ -98,3 +134,6 @@ search and moves nothing.
   whole stack now counts the strip's.
 - 复盘 is a card and no longer a place to go to, which is what docs/adr/0015 wanted and had not
   finished paying for.
+- Every card is photographed on its own (`ios/App/ScreenTests/DeckGalleryTests.swift`), in a state
+  where it actually has something to say. A body that clips or a head that repeats itself is then
+  a thing somebody can see rather than a thing somebody has to swipe to.

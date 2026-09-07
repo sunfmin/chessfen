@@ -43,6 +43,12 @@ struct GameScreen: View {
     /// Whether it was arriving at 杀 or 战术 that turned the finder on, rather than a person
     /// pressing its switch. Only what a swipe turned on does a swipe turn off again.
     @State private var finderIsOurs = false
+    /// How far the deck is pulled up, and the two heights it is pulled between. Both are measured
+    /// from the layout, so peek is to the pixel the room the deck has always had and raised stops
+    /// exactly at the board's top edge.
+    @State private var detent = DeckDetent.peek
+    @State private var peek: CGFloat = 0
+    @State private var topBar: CGFloat = 0
     /// Whether a thumb is on 让引擎走 right now. The engine is thinking for exactly as long as it is —
     /// which is why this is read off the session rather than kept here as well. A screen holding
     /// its own copy of "a finger is down" is a screen that can be left holding it: a press that
@@ -105,25 +111,44 @@ struct GameScreen: View {
             let side = Self.boardSide(in: proxy.size)
             VStack(spacing: 0) {
                 playerBar(topColour)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { topBar = $0 }
                 board.frame(width: side, height: side)
                 standing.frame(width: side).padding(.vertical, 6)
                 playerBar(bottomColour)
                 record
-                // What there is to read rather than to press: where this game sits in its
-                // collection, a piece the camera got wrong, the lines the engine is weighing
-                // behind the one it is offering, and the lines that were played and left behind.
-                //
-                // A page at least as tall as its window, so the reading can take the slack a big
-                // phone has left over rather than leaving a hole at the bottom — and taller
-                // than the window when there is more to say than fits, which is when it becomes
-                // a scroll again.
-                // One card at a time, dealt from the position (docs/adr/0023). This was a single
-                // scroll with eleven sections stacked in it, in the order they had been written
-                // rather than the order the position asks for — six switches and ten paragraphs,
-                // most of them about something this position could not do anything with.
-                deckView
+                // The room the deck rests in, measured rather than guessed. The deck itself is
+                // laid over the top of this (below), so that pulling a card up can cover the
+                // board without ever *moving* it — the one promise this screen makes, and there
+                // is a test that reads pixels to hold it to it.
+                Color.clear
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { peek = $0 }
             }
             .frame(maxWidth: .infinity)
+            // One card at a time, the same ten whatever the position (docs/adr/0023). This was a
+            // single scroll with eleven sections stacked in it, in the order they had been written
+            // rather than the order the position asks for — six switches and ten paragraphs, most
+            // of them about something this position could not do anything with.
+            .overlay(alignment: .bottom) {
+                DeckSurface(
+                    detent: $detent,
+                    peek: peek,
+                    // As far as the board's own top edge and no further: a card that covered the
+                    // position it is talking about would be talking to itself.
+                    raised: max(peek, proxy.size.height - topBar)
+                ) {
+                    VStack(spacing: 0) {
+                        DeckHandle(detent: detent) {
+                            withAnimation(.snappy(duration: 0.28)) {
+                                detent = detent == .peek ? .raised : .peek
+                            }
+                        }
+                        rail
+                    }
+                } content: {
+                    deckView
+                }
+                .opacity(peek == 0 ? 0 : 1)
+            }
         }
         .background(Palette.parchment)
         // No title, and now nothing in its place either. The screen is a board; a word saying
@@ -800,10 +825,10 @@ struct GameScreen: View {
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
-                    Button("收回") { session.withdrawGuess() }.buttonStyle(.bordered)
-                    Button("就是这步") { session.commitGuess() }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!session.canCommitGuess)
+                    CardButton(label: "收回") { session.withdrawGuess() }
+                    CardButton(label: "就是这步", isOn: true, isEnabled: session.canCommitGuess) {
+                        session.commitGuess()
+                    }
                 }
                 if !engine.isReady {
                     Text("引擎还没准备好，没法给这步打分。")
@@ -972,11 +997,11 @@ struct GameScreen: View {
 
             HStack(spacing: 9) {
                 if !reveal.isSameAsPlayed {
-                    Button("改走这步") { session.keepGuess() }.buttonStyle(.bordered)
+                    CardButton(label: "改走这步") { session.keepGuess() }
                 }
-                Button("再来一次") { session.withdrawGuess() }.buttonStyle(.bordered)
+                CardButton(label: "再来一次") { session.withdrawGuess() }
                 if let next = nextQuestion {
-                    Button("下一题") { jump(toQuestion: next) }.buttonStyle(.bordered)
+                    CardButton(label: "下一题", isOn: true) { jump(toQuestion: next) }
                 }
             }
             Text("三步都按深度 \(reveal.depth) 算，所以彼此可以比。")
@@ -1168,34 +1193,17 @@ struct GameScreen: View {
     @ViewBuilder private var planBody: some View {
         if isPast {
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 9) {
-                    Button {
-                        selected = nil
-                        withAnimation(.snappy(duration: 0.2)) {
-                            if session.planDraft == nil {
-                                session.startPlan()
-                            } else {
-                                session.abandonPlan()
-                            }
+                if let draft = session.planDraft {
+                    drafting(draft)
+                } else if session.planCheck == nil {
+                    CardLede("在棋盘上走五步，说一个理由，让引擎判对错。")
+                    CardActions {
+                        CardButton(label: "开始写", isOn: true) {
+                            selected = nil
+                            withAnimation(.snappy(duration: 0.2)) { session.startPlan() }
                         }
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(
-                                systemName: session.planDraft == nil
-                                    ? "list.number" : "list.number.rtl"
-                            )
-                            .font(.caption2)
-                            Text("五步计划").font(.footnote)
-                        }
-                        .foregroundStyle(session.planDraft == nil ? Palette.inkSoft : Palette.mine)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(Palette.chipRest, in: Capsule())
                     }
-                    .buttonStyle(.plain)
-                    Spacer(minLength: 0)
                 }
-                if let draft = session.planDraft { drafting(draft) }
                 if let check = session.planCheck { judged(check) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1233,9 +1241,6 @@ struct GameScreen: View {
                         .font(.notation)
                         .foregroundStyle(Palette.mine)
                     Spacer(minLength: 0)
-                    Button("退一步") { session.undoPlanMove() }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
                 }
             }
 
@@ -1251,10 +1256,9 @@ struct GameScreen: View {
                     .foregroundStyle(Palette.inkSoft)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("从这儿往下，引擎会这么走。紫色是你的，红色是对方**最好的**应手 —— 不是猜你对手会怎么走；点哪一行就走到哪一步。")
-                    .font(.caption2)
-                    .foregroundStyle(Palette.inkSoft)
-                    .fixedSize(horizontal: false, vertical: true)
+                // One line, not three. It used to say the same thing twice — once about the
+                // colours and once about the tapping — in a window 100 points tall.
+                CardNote("紫色是你的，红色是对方最好的应手 —— 不是猜你对手；点哪一行就走到哪一步。")
                 // The rows are the point of the whole section: five moves is a line, five moves each
                 // with a reason and a cost is a plan somebody could have thought of.
                 ForEach(session.planNotes, id: \.step) { note in
@@ -1278,11 +1282,14 @@ struct GameScreen: View {
                     .foregroundStyle(Palette.inkSoft)
                 verbs
                 Text(reason).font(.caption).foregroundStyle(Palette.inkSoft)
-                HStack(spacing: 9) {
-                    Button("交卷") { session.commitPlan() }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!session.canCommitPlan)
-                    Spacer(minLength: 0)
+                CardActions {
+                    CardButton(label: "交卷", isOn: true, isEnabled: session.canCommitPlan) {
+                        session.commitPlan()
+                    }
+                    CardButton(label: "退一步") { session.undoPlanMove() }
+                    CardButton(label: "收起") {
+                        withAnimation(.snappy(duration: 0.2)) { session.abandonPlan() }
+                    }
                 }
             }
         }
@@ -1295,41 +1302,27 @@ struct GameScreen: View {
     /// happens. Every row is shown rather than only the next one: "and then what" is a question
     /// about the moves you have not got to yet.
     @ViewBuilder private func step(_ note: PlanNote) -> some View {
-        Button { session.followPlan(through: note.step) } label: {
-            HStack(alignment: .top, spacing: 7) {
-                Text("\(note.step)")
-                    .font(.caption2.bold())
-                    .foregroundStyle(.white)
-                    .frame(width: 16, height: 16)
-                    .background(note.isYours ? Palette.mine : Palette.alarm, in: Circle())
-                VStack(alignment: .leading, spacing: 2) {
-                    // No verb chip beside the move: the first line of 值 already opens with the
-                    // verb and its square, and the same two words twice on one row reads as two
-                    // different claims.
-                    HStack(spacing: 6) {
-                        Text(note.san).font(.notation).foregroundStyle(Palette.ink)
-                        if !note.isYours {
-                            Text("对方").font(.caption2).foregroundStyle(Palette.alarm)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    ForEach(note.gains, id: \.self) { line in
-                        Text(line)
-                            .font(.caption)
-                            .foregroundStyle(Palette.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    ForEach(note.costs, id: \.self) { line in
-                        Text(line)
-                            .font(.caption)
-                            .foregroundStyle(Palette.alarm)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
+        Button {
+            session.followPlan(through: note.step)
+            // A raised card covers the board, and what this tap does happens *on* the board, so
+            // it puts the board back first (docs/adr/0023).
+            withAnimation(.snappy(duration: 0.28)) { detent = .peek }
+        } label: {
+            // The same row every numbered thing on this screen uses: the figure that is also on
+            // the board, the move, what it is for, and what it gives away.
+            // No verb chip beside the move: the first line of 值 already opens with the verb and
+            // its square, and the same two words twice on one row reads as two different claims.
+            CardRow(
+                badge: .step(note.step, isYours: note.isYours),
+                move: note.san,
+                tag: note.isYours ? nil : "对方",
+                text: note.gains.joined(separator: "；"),
+                under: note.costs.isEmpty ? nil : note.costs.joined(separator: "；")
+            )
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding(.vertical, 3)
+            // Tappable: the board walks to this step, which is what the number is for.
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -1400,9 +1393,7 @@ struct GameScreen: View {
                     .font(.caption)
                     .foregroundStyle(Palette.inkSoft)
             } else {
-                Button("再问一格") { session.armScanner() }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                CardButton(label: "再问一格") { session.armScanner() }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1418,21 +1409,21 @@ struct GameScreen: View {
                     .font(.caption)
                     .foregroundStyle(Palette.inkSoft)
             } else if let trial = session.trial {
-                Text("\(trial.san)：")
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(Palette.ink)
+                // One row shape for both readings, and the dot's colour is the only difference
+                // between what a move buys and what it costs.
+                CardRow(badge: .none, move: "\(trial.san)：", text: "", isNamed: true)
                 ForEach(trial.gains, id: \.self) { line in
-                    sentence(line, colour: Palette.mine)
+                    CardRow(badge: .mark(isGain: true), text: line)
                 }
                 ForEach(trial.costs, id: \.self) { line in
-                    sentence(line, colour: Palette.alarm)
+                    CardRow(badge: .mark(isGain: false), text: line)
                 }
                 HStack(spacing: 9) {
-                    Button("换一个") { session.takeBackTrial() }.buttonStyle(.bordered)
+                    CardButton(label: "换一个") { session.takeBackTrial() }
                     if session.scanAnswer == nil, !session.isAsking {
                         // Last, and on a tap. Before this button is pressed the engine has not been
                         // asked anything at all — not asked and hidden, not asked (docs/adr/0015).
-                        Button("引擎怎么说") { session.askEngine() }.buttonStyle(.bordered)
+                        CardButton(label: "引擎怎么说", isOn: true) { session.askEngine() }
                     }
                     Spacer(minLength: 0)
                 }
@@ -1447,9 +1438,15 @@ struct GameScreen: View {
                 // Cheapest first, because the cheapest way in is the one worth weighing first.
                 HStack(spacing: 7) {
                     ForEach(scan.arrivals, id: \.san) { arrival in
-                        Button(arrival.san) { session.tryOut(arrival.move) }
-                            .buttonStyle(.bordered)
-                            .font(.notation)
+                        Button { session.tryOut(arrival.move) } label: {
+                            Text(arrival.san)
+                                .font(.notation)
+                                .foregroundStyle(Palette.ink)
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 6)
+                                .background(Palette.chipRest, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
                     }
                     Spacer(minLength: 0)
                 }
@@ -1468,40 +1465,31 @@ struct GameScreen: View {
                 Spacer(minLength: 0)
             }
             if let reading = answer.reading {
-                Text(
+                CardNote(
                     reading.opening.intent == .unclear
                         ? "引擎那步为什么好，这里说不清。"
                         : "引擎那步是为了 \(reading.sentence)"
                 )
-                .font(.caption)
-                .foregroundStyle(Palette.inkSoft)
-                .fixedSize(horizontal: false, vertical: true)
             }
-            Text("深度 \(answer.depth)").font(.caption2).foregroundStyle(Palette.inkSoft)
+            CardNote("深度 \(answer.depth)")
         }
     }
 
     /// Same family as 问一格: a layer you turn on, not a twin of 练习. 练习 is the eval strip;
     /// this is a question about the position (docs/adr/0022).
+    ///
+    /// It says what the press *does*, not what the card is called: a chip labelled 战术 under a
+    /// head that also says 战术 is a switch nobody can read (docs/adr/0023).
     private var finderChip: some View {
-        Button {
+        CardButton(
+            label: session.isFindingTactics ? "不找了" : "找一记",
+            isOn: !session.isFindingTactics,
+            isEnabled: engine.isReady || session.isFindingTactics
+        ) {
             withAnimation(.snappy(duration: 0.2)) {
                 session.setFindingTactics(!session.isFindingTactics)
             }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: session.isFindingTactics ? "burst.fill" : "burst")
-                    .font(.caption2)
-                Text("战术").font(.footnote)
-            }
-            .foregroundStyle(session.isFindingTactics ? Palette.analysis : Palette.inkSoft)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(Palette.chipRest, in: Capsule())
-            .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
-        .disabled(!engine.isReady && !session.isFindingTactics)
         .accessibilityLabel("战术发现器")
         .accessibilityValue(session.isFindingTactics ? "开" : "关")
     }
@@ -1520,7 +1508,7 @@ struct GameScreen: View {
             if session.isFindingTactics {
                 tacticAnswer
             } else {
-                Text("按一下「战术」，引擎拿一次短搜索看这一步有没有一记赢子的 —— 顺手也就看出来有没有杀。不按就不算。")
+                Text("按一下「找一记」，引擎拿一次短搜索看这一步有没有一记赢子的 —— 顺手也就看出来有没有杀。不按就不算。")
                     .font(.caption)
                     .foregroundStyle(Palette.inkSoft)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1600,9 +1588,7 @@ struct GameScreen: View {
                     .font(.caption)
                     .foregroundStyle(Palette.inkSoft)
             } else {
-                Button("从这儿走一遍") { session.startWalk() }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                CardButton(label: "从这儿走一遍") { session.startWalk() }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1618,36 +1604,28 @@ struct GameScreen: View {
     /// the rest of the layer (docs/adr/0020).
     @ViewBuilder private func transport(_ walk: Walk) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 7) {
-                Button { session.stepWalk(by: -walk.step) } label: {
-                    Image(systemName: "backward.end").font(.caption)
-                }
-                .buttonStyle(.bordered)
-                .disabled(walk.isAtStart)
-                Button { session.stepWalk(by: -1) } label: {
-                    Image(systemName: "chevron.left").font(.caption)
-                }
-                .buttonStyle(.bordered)
-                .disabled(walk.isAtStart)
-                Button { session.stepWalk(by: 1) } label: {
-                    Image(systemName: "chevron.right").font(.caption)
-                }
-                .buttonStyle(.bordered)
-                .disabled(walk.isAtEnd)
+            // The line *is* the transport: tapping the third move walks to the third move. There
+            // were three chevrons and a counter here, which is a tape deck for something that was
+            // never a tape — and the numbers on the chips are the numbers on the board's arrows.
+            CardLede(walk.outcome.sentence)
+            HStack(spacing: 8) {
                 Text("第 \(walk.step)/\(walk.line.count) 步")
                     .font(.caption)
                     .foregroundStyle(Palette.inkSoft)
-                if walk.step > 0 {
-                    Text(walk.line[walk.step - 1])
-                        .font(.notation)
-                        .foregroundStyle(Palette.ink)
-                }
                 Spacer(minLength: 0)
+                CardButton(label: "回到开头", isEnabled: !walk.isAtStart) {
+                    session.stepWalk(by: -walk.step)
+                }
             }
-            Text(walk.outcome.sentence)
-                .font(.caption)
-                .foregroundStyle(Palette.ink)
-                .fixedSize(horizontal: false, vertical: true)
+            CardMoves(
+                moves: walk.line.enumerated().map { index, san in
+                    CardMoves.Move(
+                        step: index + 1, san: san, isYours: index.isMultiple(of: 2)
+                    )
+                },
+                standing: walk.step,
+                tap: { step in session.stepWalk(by: step - walk.step) }
+            )
             Text("这几步没有走进棋谱，退出就回到原来的位置。")
                 .font(.caption2)
                 .foregroundStyle(Palette.inkSoft)
@@ -1738,7 +1716,7 @@ struct GameScreen: View {
                 } else if session.reviewPass == nil, !session.game.plies.isEmpty {
                     HStack(spacing: 9) {
                         Text("这局还没打过分。").font(.footnote).foregroundStyle(Palette.inkSoft)
-                        Button("打分") { session.startReview() }.buttonStyle(.bordered)
+                        CardButton(label: "打分", isOn: true) { session.startReview() }
                     }
                 }
             }
@@ -1759,10 +1737,9 @@ struct GameScreen: View {
                 .foregroundStyle(Palette.inkSoft)
                 .fixedSize(horizontal: false, vertical: true)
                 if !session.game.plies.isEmpty {
-                    Button("打分") { session.startReview() }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .disabled(!engine.isReady)
+                    CardButton(label: "打分", isOn: true, isEnabled: engine.isReady) {
+                        session.startReview()
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2023,22 +2000,25 @@ struct GameScreen: View {
     /// The dots are the point as much as the paging is: eleven sections in a scroll never said how
     /// many there were, and 「这么多一连串的功能」 is what a screen gets called when it cannot.
     private var deckView: some View {
-        let dealt = cards
-        return VStack(spacing: 0) {
-            TabView(selection: $card) {
-                ForEach(dealt, id: \.self) { kind in
-                    body(of: kind).tag(kind)
-                }
+        TabView(selection: $card) {
+            ForEach(cards, id: \.self) { kind in
+                body(of: kind).tag(kind)
             }
-            // The dots below are ours: a mate's dot is a different colour from the rest, and
-            // the built-in index view has no opinion about which page is the urgent one.
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            dots(dealt)
         }
+        // The index view is ours and it is above, on the card's own edge: a mate's tab wears a
+        // colour of its own, and the built-in dots have no opinion about which page is urgent.
+        .tabViewStyle(.page(indexDisplayMode: .never))
         .onChange(of: card) { was, now in turn(to: now, from: was) }
         // A move offered at a past Ply is the question being answered, so the deck goes to it.
         .onChange(of: session.guess?.san) { _, now in
             if now != nil { card = .drill }
+        }
+        // And the answer to it needs more room than the question did.
+        .onChange(of: session.reveal == nil) { _, _ in
+            withAnimation(.snappy(duration: 0.28)) { detent = needsRoom(card) ? .raised : .peek }
+        }
+        .onChange(of: session.planNotes.count) { _, _ in
+            withAnimation(.snappy(duration: 0.28)) { detent = needsRoom(card) ? .raised : .peek }
         }
         // And a mate that turns up mid-game takes the eye, which is the whole of 「直接给予提示」
         // on a deck (docs/adr/0023). On the way in only: a 2 步杀 becoming a 1 步杀 is the same
@@ -2054,24 +2034,18 @@ struct GameScreen: View {
         }
     }
 
-    private func dots(_ dealt: [Card]) -> some View {
-        HStack(spacing: 7) {
-            ForEach(dealt, id: \.self) { kind in
-                Button {
-                    withAnimation(.snappy(duration: 0.2)) { card = kind }
-                } label: {
-                    Circle()
-                        .fill(dotColour(kind))
-                        .frame(width: kind == card ? 8 : 6, height: kind == card ? 8 : 6)
-                        .frame(width: 18, height: 18)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(title(of: kind))
-                .accessibilityAddTraits(kind == card ? [.isSelected] : [])
-            }
-        }
-        .frame(height: 22)
+    /// Ten tabs, grouped by what the card is about, with the group's name beside them
+    /// (docs/adr/0023). It was ten identical dots, which said how many there were and nothing
+    /// else — and «ten» is only a useful thing to know if you can tell them apart.
+    private var rail: some View {
+        DeckRail(
+            cards: cards,
+            current: card,
+            group: { $0.group },
+            tint: dotColour,
+            name: title(of:),
+            go: { card = $0 }
+        )
     }
 
     /// A mate's dot wears whose it is, which is the whole of what 「直接给予提示」 amounts to in a
@@ -2117,7 +2091,7 @@ struct GameScreen: View {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title(of: kind))
-                        .font(.subheadline.weight(.semibold))
+                        .font(.cardName)
                         .foregroundStyle(kind == .mate ? mateInk : Palette.ink)
                     Text(kind.subtitle)
                         .font(.caption2)
@@ -2126,14 +2100,25 @@ struct GameScreen: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16)
-                .padding(.top, 8)
+                .padding(.top, 2)
+                // A hairline under the name, so the answer below it reads as the card's content
+                // rather than as a third line of its heading.
+                Rectangle()
+                    .fill(Palette.hairline)
+                    .frame(height: 0.5)
+                    .padding(.top, 8)
                 body()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.bottom, 8)
+            .padding(.bottom, 10)
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollIndicators(.hidden)
+        // A card with more on it than fits fades out at the bottom instead of being chopped: a
+        // cut sentence looks like a bug, a fading one looks like something to pull up.
+        .overlay(alignment: .bottom) {
+            if detent == .peek { CardFade() }
+        }
     }
 
     private var mateInk: Color {
@@ -2176,6 +2161,11 @@ struct GameScreen: View {
     }
 
     private func arrive(at now: Card) {
+        // The card says how much room it needs. Two of them answer with a list — the three moves
+        // of a Reveal, the five rows of a plan — and a list read four lines at a time is a list
+        // nobody reads, so arriving at one of those raises the deck and leaving it puts the board
+        // back (docs/adr/0023). Everything else rests at the height the deck has always had.
+        detent = needsRoom(now) ? .raised : .peek
         switch now {
         case .scanner: if session.scan == nil { session.armScanner() }
         case .walk:
@@ -2196,6 +2186,16 @@ struct GameScreen: View {
         case .plan:
             if session.planDraft == nil, session.planCheck == nil { session.startPlan() }
         default: break
+        }
+    }
+
+    /// Whether this card is one of the two that answer with a list, and so wants the board's room
+    /// rather than the four lines under the record.
+    private func needsRoom(_ kind: Card) -> Bool {
+        switch kind {
+        case .drill: session.reveal != nil || session.isRevealing
+        case .plan: !session.planNotes.isEmpty || session.planCheck != nil
+        default: false
         }
     }
 
@@ -2229,52 +2229,33 @@ struct GameScreen: View {
     @ViewBuilder private var mateBody: some View {
         if let news = session.mateNews {
             VStack(alignment: .leading, spacing: 8) {
-                Text(news.sentence)
-                    .font(.footnote)
-                    .foregroundStyle(Palette.ink)
-                    .fixedSize(horizontal: false, vertical: true)
+                CardLede(news.sentence)
                 if !news.san.isEmpty {
                     // The numbers are the join: the figure on a chip is the figure on its arrow.
-                    ScrollView(.horizontal) {
-                        HStack(spacing: 6) {
-                            ForEach(Array(news.san.enumerated()), id: \.offset) { index, san in
-                                HStack(spacing: 5) {
-                                    Text("\(index + 1)")
-                                        .font(.caption2.weight(.bold))
-                                        .foregroundStyle(.white)
-                                        .frame(width: 15, height: 15)
-                                        .background(
-                                            arrowColour(ofStep: index + 1, in: news), in: Circle()
-                                        )
-                                    Text(san).font(.notation).foregroundStyle(Palette.ink)
-                                }
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 4)
-                                .background(Palette.chipRest, in: Capsule())
-                            }
+                    CardMoves(
+                        moves: news.san.enumerated().map { index, san in
+                            CardMoves.Move(
+                                step: index + 1,
+                                san: san,
+                                isYours: news.arrows.first { $0.step == index + 1 }?.isYours ?? false
+                            )
                         }
-                    }
-                    .scrollIndicators(.hidden)
+                    )
                 }
                 HStack(spacing: 9) {
-                    Button(showsMateLine ? "把箭头收起" : "画在棋盘上") {
+                    CardButton(
+                        label: showsMateLine ? "把箭头收起" : "画在棋盘上",
+                        isOn: showsMateLine,
+                        isEnabled: !news.arrows.isEmpty
+                    ) {
                         withAnimation(.snappy(duration: 0.2)) { showsMateLine.toggle() }
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(news.arrows.isEmpty)
                     Spacer(minLength: 0)
                 }
                 if !news.isFullyDrawn {
-                    Text("线太长，棋盘上只画了前 \(MateNews.arrowLimit) 步 —— 再多，一盘棋上就是一团线。")
-                        .font(.caption2)
-                        .foregroundStyle(Palette.inkSoft)
-                        .fixedSize(horizontal: false, vertical: true)
+                    CardNote("线太长，棋盘上只画了前 \(MateNews.arrowLimit) 步 —— 再多，一盘棋上就是一团线。")
                 }
-                Text("这几步没有走进棋谱。这是引擎已经算出来的东西，不是又替你算了一遍。")
-                    .font(.caption2)
-                    .foregroundStyle(Palette.inkSoft)
-                    .fixedSize(horizontal: false, vertical: true)
+                CardNote("这几步没有走进棋谱。这是引擎已经算出来的东西，不是又替你算了一遍。")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
@@ -2370,13 +2351,13 @@ struct GameScreen: View {
                     .foregroundStyle(Palette.inkSoft)
             } else {
                 ForEach(missing, id: \.what) { row in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(row.what).font(.footnote).foregroundStyle(Palette.ink)
-                        Text(row.why)
-                            .font(.caption2)
-                            .foregroundStyle(Palette.inkSoft)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    CardRow(
+                        badge: .none,
+                        text: row.what,
+                        under: row.why,
+                        underTint: Palette.inkSoft,
+                        isNamed: true
+                    )
                 }
             }
         }
@@ -2729,7 +2710,7 @@ extension GameScreen.Card {
         case .walk: "走马灯"
         case .plan: "五步计划"
         case .review: "复盘"
-        case .reading: "这一局"
+        case .reading: "旁注"
         case .missing: "这儿还问不了的"
         }
     }
@@ -2750,6 +2731,17 @@ extension GameScreen.Card {
         case .review: "统一深度重算全局，让每一步的分能互相比"
         case .reading: "这局在哪个集子里，退回去的线，认错的棋子"
         case .missing: "这儿缺什么，以及怎么补"
+        }
+    }
+
+    /// Which of the four things a card is *about*, which is what the rail's gaps say and what
+    /// makes ten of them findable without learning ten names (docs/adr/0023).
+    var group: DeckGroup {
+        switch self {
+        case .mate, .tactics: .now
+        case .drill, .key, .walk, .plan: .thisMove
+        case .scanner: .anySquare
+        case .review, .reading, .missing: .thisGame
         }
     }
 }
