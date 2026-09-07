@@ -1,0 +1,1218 @@
+<title>棋盘之下四稿</title>
+<meta name="robots" content="noindex">
+<style>
+  /* PROTOTYPE — throwaway. Palette lifted verbatim from ios/App/Chessfen/Palette.swift so the
+     four drafts are judged in the app's own colours and not in a browser's. */
+  :root {
+    --parchment: #F7EDE1;
+    --raised: #FFF7EE;
+    --ink: #241A12;
+    --inkSoft: #7A6350;
+    --walnut: #6B4522;
+    --analysis: #2E7D6E;
+    --alarm: #B3402A;
+    --mine: #6C4AB6;
+    --boardLight: #FFCE9E;
+    --boardDark: #D18B47;
+    --hairline: rgba(107, 69, 34, 0.18);
+    --chipRest: rgba(107, 69, 34, 0.10);
+    --barBlack: #241A12;
+    --barWhite: #FFFCF7;
+    --lab: #EAE0D2;
+    --labInk: #241A12;
+    --labSoft: #7A6350;
+    --labPanel: #FBF5EC;
+    --pieceW: #FFFCF7;
+    --pieceWEdge: rgba(40, 28, 18, 0.85);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --parchment: #17110C;
+      --raised: #241A12;
+      --ink: #F2E4D5;
+      --inkSoft: #B09880;
+      --analysis: #4FB8A4;
+      --alarm: #E87A62;
+      --mine: #A78BFA;
+      --hairline: rgba(255, 255, 255, 0.16);
+      --chipRest: rgba(255, 255, 255, 0.10);
+      --barBlack: #4A3A2C;
+      --barWhite: #F2E4D5;
+      --lab: #100B07;
+      --labInk: #F2E4D5;
+      --labSoft: #B09880;
+      --labPanel: #1C1510;
+    }
+  }
+  :root[data-theme="dark"] {
+    --parchment: #17110C;
+    --raised: #241A12;
+    --ink: #F2E4D5;
+    --inkSoft: #B09880;
+    --analysis: #4FB8A4;
+    --alarm: #E87A62;
+    --mine: #A78BFA;
+    --hairline: rgba(255, 255, 255, 0.16);
+    --chipRest: rgba(255, 255, 255, 0.10);
+    --barBlack: #4A3A2C;
+    --barWhite: #F2E4D5;
+    --lab: #100B07;
+    --labInk: #F2E4D5;
+    --labSoft: #B09880;
+    --labPanel: #1C1510;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--lab);
+    color: var(--labInk);
+    font: 14px/1.55 -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    padding: 22px 18px 116px;
+  }
+  header { max-width: 1040px; margin: 0 auto 20px; }
+  h1 {
+    font: 600 21px/1.3 -apple-system, "PingFang SC", system-ui, sans-serif;
+    letter-spacing: 0.02em;
+    margin: 0 0 6px;
+  }
+  .lede { color: var(--labSoft); font-size: 13px; max-width: 62ch; margin: 0; }
+  .lede code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  .stage {
+    max-width: 1040px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 402px minmax(0, 1fr);
+    gap: 26px;
+    align-items: start;
+  }
+  @media (max-width: 820px) { .stage { grid-template-columns: minmax(0, 1fr); } }
+
+  /* ------------------------------------------------------------------ phone */
+  .phone {
+    width: 402px;
+    max-width: 100%;
+    height: 874px;
+    background: var(--parchment);
+    color: var(--ink);
+    border-radius: 34px;
+    border: 1px solid var(--hairline);
+    box-shadow: 0 18px 40px -18px rgba(20, 12, 6, 0.45);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+  .navbar {
+    height: 38px;
+    flex: 0 0 auto;
+    border-bottom: 0.5px solid var(--hairline);
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 0 14px;
+    color: var(--inkSoft);
+    font-size: 12px;
+    gap: 10px;
+  }
+
+  /* player bars */
+  .side {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 8px 7px 13px;
+    border-top: 0.5px solid var(--hairline);
+    font-size: 12px;
+    color: var(--inkSoft);
+    min-height: 44px;
+  }
+  .side.live { background: var(--raised); box-shadow: inset 3px 0 0 var(--analysis); }
+  .side .who { color: var(--ink); font-weight: 600; font-size: 13px; }
+  .swatch { width: 13px; height: 13px; border-radius: 50%; border: 1px solid var(--walnut); }
+  .swatch.w { background: var(--barWhite); }
+  .swatch.b { background: var(--barBlack); }
+  .turn { color: var(--analysis); font-weight: 600; }
+  .grow { flex: 1 1 auto; min-width: 0; }
+  .btn-hold {
+    border: 0;
+    background: var(--analysis);
+    color: var(--parchment);
+    font: 600 12px/1 inherit;
+    padding: 8px 11px;
+    border-radius: 999px;
+  }
+
+  /* the standing strip */
+  .standing {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 30px;
+    padding: 0 12px;
+    margin: 6px 0;
+  }
+  .evalbar {
+    flex: 1 1 auto;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--barBlack);
+    border: 0.5px solid rgba(107, 69, 34, 0.35);
+    overflow: hidden;
+    position: relative;
+  }
+  .evalbar i { display: block; height: 100%; background: var(--barWhite); }
+  .evalbar::after {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 50%;
+    width: 1px;
+    background: var(--analysis);
+  }
+  .score {
+    font: 600 20px/1 ui-rounded, -apple-system, system-ui, sans-serif;
+    font-variant-numeric: tabular-nums;
+    color: var(--analysis);
+  }
+  .score.mate { color: var(--alarm); }
+
+  /* board */
+  .boardwrap { position: relative; width: 402px; max-width: 100%; aspect-ratio: 1; flex: 0 0 auto; }
+  .squares { display: grid; grid-template-columns: repeat(8, 1fr); width: 100%; height: 100%; }
+  .sq { position: relative; display: grid; place-items: center; }
+  .sq.l { background: var(--boardLight); }
+  .sq.d { background: var(--boardDark); }
+  .sq.last::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--analysis);
+    opacity: 0.28;
+  }
+  .glyph {
+    font-size: 40px;
+    line-height: 1;
+    position: relative;
+    z-index: 2;
+    user-select: none;
+  }
+  .glyph.w { color: var(--pieceW); text-shadow: 0 0 1px var(--pieceWEdge), 0 0 2px var(--pieceWEdge), 1px 1px 0 var(--pieceWEdge), -1px 1px 0 var(--pieceWEdge); }
+  .glyph.b { color: #1B120A; text-shadow: 0 0 1px rgba(255, 250, 240, 0.5); }
+  .coord {
+    position: absolute;
+    bottom: 1px;
+    right: 3px;
+    font-size: 8px;
+    color: rgba(60, 40, 22, 0.5);
+    z-index: 1;
+  }
+  .arrows { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+  .arrows text {
+    font: 700 0.28px/1 ui-rounded, -apple-system, system-ui, sans-serif;
+    fill: #fff;
+    text-anchor: middle;
+    dominant-baseline: central;
+  }
+  .boardnote {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    z-index: 4;
+    background: rgba(23, 17, 12, 0.86);
+    color: #F7EDE1;
+    padding: 8px 11px;
+    border-radius: 12px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .boardnote b { color: #FFCE9E; font-weight: 600; }
+
+  /* record */
+  .record {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    height: 46px;
+    flex: 0 0 auto;
+  }
+  .stepper {
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    background: var(--chipRest);
+    display: grid;
+    place-items: center;
+    color: var(--inkSoft);
+    font-size: 12px;
+  }
+  .cards { display: flex; gap: 6px; overflow: hidden; flex: 1 1 auto; }
+  .movecard {
+    background: var(--chipRest);
+    border-radius: 9px;
+    padding: 5px 8px;
+    font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .movecard.now { background: var(--analysis); color: var(--parchment); }
+
+  /* the area under the record — what the four drafts are about */
+  .under {
+    flex: 1 1 auto;
+    min-height: 0;
+    border-top: 0.5px solid var(--hairline);
+    overflow: auto;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+  .pad { padding: 10px 16px; }
+  .cap { font-size: 12px; color: var(--inkSoft); }
+  .cap2 { font-size: 11px; color: var(--inkSoft); }
+  .body { font-size: 13px; color: var(--ink); }
+  .mono { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--chipRest);
+    color: var(--inkSoft);
+    border: 0;
+    border-radius: 999px;
+    padding: 7px 12px;
+    font: 13px/1 inherit;
+    cursor: pointer;
+  }
+  .chip.on { color: var(--mine); }
+  .chip.teal.on { color: var(--analysis); }
+  .chiprow { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; }
+  .stack { display: flex; flex-direction: column; gap: 6px; }
+  .sectiontitle { font-size: 12px; color: var(--inkSoft); letter-spacing: 0.08em; }
+  .ghost {
+    border: 0;
+    background: transparent;
+    color: var(--analysis);
+    font: 600 12px/1 inherit;
+    padding: 6px 0;
+    cursor: pointer;
+  }
+  .rule { height: 0.5px; background: var(--hairline); }
+
+  /* the news bar — the one new thing all four drafts have to place */
+  .news {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    cursor: pointer;
+    font: inherit;
+    padding: 10px 14px;
+    background: color-mix(in srgb, var(--alarm) 14%, var(--parchment));
+    box-shadow: inset 3px 0 0 var(--alarm);
+    color: var(--ink);
+  }
+  .news.ours {
+    background: color-mix(in srgb, var(--mine) 14%, var(--parchment));
+    box-shadow: inset 3px 0 0 var(--mine);
+  }
+  .news .n {
+    font: 700 15px/1 ui-rounded, -apple-system, system-ui, sans-serif;
+    font-variant-numeric: tabular-nums;
+    color: var(--alarm);
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--alarm) 22%, transparent);
+  }
+  .news.ours .n { color: var(--mine); background: color-mix(in srgb, var(--mine) 22%, transparent); }
+  .news .t { flex: 1 1 auto; font-size: 13px; line-height: 1.45; }
+  .news .t em { font-style: normal; color: var(--inkSoft); font-size: 11px; display: block; }
+  .news .go { color: var(--inkSoft); font-size: 12px; flex: 0 0 auto; }
+  .linechips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .linechip {
+    font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 4px 7px;
+    border-radius: 7px;
+    background: var(--chipRest);
+    color: var(--ink);
+    display: inline-flex;
+    gap: 5px;
+    align-items: center;
+  }
+  .linechip b {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font: 700 9px/1 ui-rounded, system-ui, sans-serif;
+    color: #fff;
+  }
+
+  /* B: drawers */
+  .segbar {
+    display: flex;
+    gap: 4px;
+    padding: 8px 16px 0;
+    flex: 0 0 auto;
+  }
+  .seg {
+    flex: 1 1 0;
+    border: 0;
+    background: var(--chipRest);
+    color: var(--inkSoft);
+    font: 13px/1 inherit;
+    padding: 9px 0;
+    border-radius: 10px;
+    cursor: pointer;
+  }
+  .seg.on { background: var(--analysis); color: var(--parchment); font-weight: 600; }
+  .drawer { overflow: auto; flex: 1 1 auto; }
+
+  /* C: the floating answer */
+  .float {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    z-index: 6;
+    background: var(--raised);
+    border: 0.5px solid var(--hairline);
+    border-radius: 16px;
+    box-shadow: 0 12px 28px -14px rgba(20, 12, 6, 0.6);
+    padding: 12px 14px;
+  }
+  .gesture {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    font-size: 11px;
+    color: var(--inkSoft);
+    padding: 8px 16px;
+  }
+
+  /* D: the deck */
+  .deck { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+  .card {
+    flex: 1 1 auto;
+    margin: 10px 14px 6px;
+    background: var(--raised);
+    border: 0.5px solid var(--hairline);
+    border-radius: 16px;
+    padding: 12px 14px;
+    overflow: auto;
+  }
+  .card.newscard { border-color: color-mix(in srgb, var(--alarm) 55%, var(--hairline)); }
+  .dots { display: flex; gap: 6px; justify-content: center; padding: 4px 0 10px; align-items: center; }
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--chipRest);
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+  }
+  .dot.on { background: var(--inkSoft); }
+  .dot.hot { background: var(--alarm); box-shadow: 0 0 0 3px color-mix(in srgb, var(--alarm) 22%, transparent); }
+  .swipe { display: flex; justify-content: space-between; padding: 0 14px 6px; }
+
+  /* A: the sheet */
+  .sheet {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 7;
+    background: var(--raised);
+    border-top: 0.5px solid var(--hairline);
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -14px 30px -18px rgba(20, 12, 6, 0.5);
+    padding: 12px 16px 18px;
+  }
+  .sheetrow {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    color: var(--ink);
+    padding: 10px 0;
+    border-bottom: 0.5px solid var(--hairline);
+    cursor: pointer;
+  }
+  .sheetrow:last-of-type { border-bottom: 0; }
+  .sheetrow small { color: var(--inkSoft); font-size: 11px; }
+  .sheetrow[disabled] { opacity: 0.38; cursor: default; }
+
+  /* ------------------------------------------------------- the argument panel */
+  aside { position: sticky; top: 22px; display: flex; flex-direction: column; gap: 14px; }
+  .arg {
+    background: var(--labPanel);
+    border: 1px solid var(--hairline);
+    border-radius: 16px;
+    padding: 16px 18px;
+  }
+  .arg h2 {
+    margin: 0 0 2px;
+    font: 600 17px/1.3 -apple-system, "PingFang SC", system-ui, sans-serif;
+  }
+  .arg .kicker {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    color: var(--labSoft);
+    text-transform: uppercase;
+    margin: 0 0 10px;
+  }
+  dl { margin: 0; display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 8px 12px; }
+  dt { font-size: 12px; color: var(--labSoft); }
+  dd { margin: 0; font-size: 13px; line-height: 1.6; }
+  dd .mono { font-size: 12px; }
+  .cost { color: var(--alarm); }
+  .shared { font-size: 12px; color: var(--labSoft); line-height: 1.65; }
+  .shared b { color: var(--labInk); font-weight: 600; }
+
+  /* ------------------------------------------------------------- switchers */
+  .switcher {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    background: color-mix(in srgb, var(--labPanel) 92%, transparent);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid var(--hairline);
+    padding: 10px 16px;
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .group { display: flex; gap: 6px; align-items: center; }
+  .group > span {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: var(--labSoft);
+    margin-right: 2px;
+  }
+  .tab {
+    border: 1px solid var(--hairline);
+    background: transparent;
+    color: var(--labInk);
+    font: 13px/1 inherit;
+    padding: 8px 12px;
+    border-radius: 9px;
+    cursor: pointer;
+  }
+  .tab.on { background: var(--labInk); color: var(--labPanel); border-color: var(--labInk); }
+  .tab kbd {
+    font: 10px ui-monospace, Menlo, monospace;
+    opacity: 0.55;
+    margin-left: 5px;
+  }
+  button:focus-visible, .dot:focus-visible { outline: 2px solid var(--analysis); outline-offset: 2px; }
+  @media (prefers-reduced-motion: no-preference) {
+    .news, .card, .float { transition: background 0.18s ease; }
+  }
+</style>
+
+<header>
+  <h1>棋盘之下四稿</h1>
+  <p class="lede">
+    一次性原型，不进 <code>main</code>。棋盘下面现在是六个开关（练习 · 问一格 · 战术 · 这步的要害 ·
+    走马灯 · 五步计划）加十段说明，按写代码的顺序竖着摞着。四稿各自回答同一个问题：
+    <b>这一摞怎么收</b>，以及新来的「N 步杀」——它不是开关，是<b>消息</b>——摆在哪里。
+    局面是真的：Opera Game 第 16 手（<span class="mono">Qb8+ Nxb8 Rd8#</span>，2 步杀）和意大利开局第 8 手。
+    点消息条就画箭头。
+  </p>
+</header>
+
+<div class="stage">
+  <div class="phone" id="phone"></div>
+  <aside id="argument"></aside>
+</div>
+
+<nav class="switcher" aria-label="原型开关">
+  <div class="group" id="variants"><span>稿</span></div>
+  <div class="group" id="scenarios"><span>局面</span></div>
+  <div class="group" id="modes"><span>引擎</span></div>
+</nav>
+
+<script>
+  // ---------------------------------------------------------------- positions
+  const FEN = {
+    // Opera Game, Morphy–Duke of Brunswick & Count Isouard, Paris 1858, before 16.Qb8+.
+    // 16.Qb8+ Nxb8 17.Rd8# — a mate in two anybody can check.
+    opera: "4kb1r/p2n1ppp/4q3/4p1B1/4P3/1Q6/PPP2PPP/2KR4",
+    // The same game five plies earlier, White to move: 13.Rxd7! is the shot.
+    shot: "3rkb1r/p2nqppp/5n2/1B2p1B1/4P3/1Q6/PPP2PPP/2KR3R",
+    // The Italian eight plies in — the repo's own screenshot fixture.
+    italian: "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2P2N2/PP1P1PPP/R1BQK2R",
+  };
+
+  const GLYPH = { p: "♟", n: "♞", b: "♝", r: "♜", q: "♛", k: "♚" };
+
+  const SCENARIOS = {
+    mine: {
+      label: "你有 2 步杀",
+      fen: FEN.opera,
+      youAre: "w",
+      toMove: "w",
+      flipped: false,
+      last: ["d7", "f6"],
+      moves: ["…", "13.Rxd7", "Rxd7", "14.Rd1", "Qe6", "15.Bxd7+", "Nxd7"],
+      eval: 1,
+      score: "#2",
+      mate: {
+        n: 2,
+        whose: "ours",
+        head: "你有 2 步杀",
+        sentence: "Qb8+ 送后，马只能吃；Rd8 将死，d8 有 g5 的象守着。",
+        line: [
+          { san: "Qb8+", from: "b3", to: "b8", mine: true },
+          { san: "Nxb8", from: "d7", to: "b8", mine: false },
+          { san: "Rd8#", from: "d1", to: "d8", mine: true },
+        ],
+      },
+    },
+    theirs: {
+      label: "对方 2 步杀你",
+      fen: FEN.opera,
+      youAre: "b",
+      toMove: "w",
+      flipped: true,
+      last: ["d7", "f6"],
+      moves: ["…", "13.Rxd7", "Rxd7", "14.Rd1", "Qe6", "15.Bxd7+", "Nxd7"],
+      eval: 0,
+      score: "#-2",
+      mate: {
+        n: 2,
+        whose: "theirs",
+        head: "对方 2 步杀",
+        sentence: "白 Qb8+ 之后你只能 Nxb8，Rd8 将死 —— d8 有 g5 的象守着，吃不掉。",
+        line: [
+          { san: "Qb8+", from: "b3", to: "b8", mine: false },
+          { san: "Nxb8", from: "d7", to: "b8", mine: true },
+          { san: "Rd8#", from: "d1", to: "d8", mine: false },
+        ],
+      },
+    },
+    tactic: {
+      label: "有战术，没有杀",
+      fen: FEN.shot,
+      youAre: "w",
+      toMove: "w",
+      flipped: false,
+      last: ["a8", "d8"],
+      moves: ["…", "11.Bxb5+", "Nbd7", "12.O-O-O", "Rd8"],
+      eval: 0.78,
+      score: "+3.4",
+      tactic: {
+        san: "Rxd7",
+        from: "d1",
+        to: "d7",
+        sentence: "Rxd7 吃 d7 的马，这笔赚",
+        line: [
+          { san: "Rxd7", from: "d1", to: "d7", mine: true },
+          { san: "Rxd7", from: "d8", to: "d7", mine: false },
+          { san: "Rd1", from: "h1", to: "d1", mine: true },
+          { san: "Qe6", from: "e7", to: "e6", mine: false },
+          { san: "Bxd7+", from: "b5", to: "d7", mine: true },
+        ],
+      },
+    },
+    quiet: {
+      label: "安静局面",
+      fen: FEN.italian,
+      youAre: "w",
+      toMove: "w",
+      flipped: false,
+      last: ["g8", "f6"],
+      moves: ["6.c3", "Nf6"],
+      eval: 0.54,
+      score: "+0.38",
+    },
+  };
+
+  const VARIANTS = {
+    A: {
+      name: "一条会说话的横条",
+      kicker: "draft a — one line, one thing",
+      claim: "棋盘下面永远只有一条横条：一句话，最多两个按钮。谁占这条横条由局面决定 —— 杀 › 战术 › 考一遍的问题 › 你点的那一格 › 没事可说时的「问一格 · 更多」。六个常驻开关全部收进「更多」，一次只开一个。",
+      news: "杀直接占掉横条，练习也占。它不是意见，是事实。",
+      practice: "照说。练习挡的是引擎的<b>分数和推荐</b>，不是「你三步之后不在了」这种事实 —— 要为此在 ADR-0015 上加一句。",
+      cost: "一次只开一个：今天能同时看「这步的要害」和「走马灯」，这一稿不能。",
+      code: "GameScreen 的 scanner / plan / layers / study 四段合成一个 <span class=\"mono\">underBar</span> + 一个 sheet；GameSession 多一个 <span class=\"mono\">news</span> 属性做优先级裁决。",
+    },
+    B: {
+      name: "三格抽屉",
+      kicker: "draft b — ask · plan · review",
+      claim: "记录条下面钉一个三格分段控件：问 / 谋 / 复盘。问＝问一格 · 战术 · 杀；谋＝五步计划 · 走马灯 · 要害；复盘＝重算 · 最贵三步 · 考一遍。一次只开一格，说明文字全留着。",
+      news: "杀是钉在分段控件<b>上面</b>的横幅，哪一格开着都在。",
+      practice: "只报数不报招：练习时横幅只说「有 2 步杀」，点一下才给招和箭头 —— 那一下就是 ADR-0015 要的「明确一按」。",
+      cost: "44pt 的常驻栏永远在那儿；新手得先学会「谋」是什么意思才敢点。",
+      code: "改动最小：现有各段几乎原样搬进抽屉，GameScreen 多一个 <span class=\"mono\">@State drawer</span>。",
+    },
+    C: {
+      name: "棋盘自己回答",
+      kicker: "draft c — the board is the interface",
+      claim: "棋盘下面什么都没有，一个开关都不留。点一格＝问一格，长按＝战术，往左划记录条＝走马灯。答案是浮在棋盘下沿的一张卡，点开外面就没了。没有任何东西是「开着」的状态。",
+      news: "箭头<b>直接画在棋盘上</b>（淡的、带号），一个字都不说；标准条上只多一个「杀 2」。",
+      practice: "最尊重练习：没有句子，只有形。想看话就点那两个字。",
+      cost: "手势看不见，没人教就没人会；这个 app 赖以说话的那些句子无处可放。",
+      code: "改动最大：所有说明文字要重写成卡片，长按 / 划动手势得进 BoardView，<span class=\"mono\">isFindingTactics</span> 这类布尔状态全删。",
+    },
+    D: {
+      name: "一叠卡片",
+      kicker: "draft d — a deck, not a scroll",
+      claim: "记录条下面是一叠横着翻的卡，一次一张，底下一排点。卡的顺序由局面排：杀 › 战术 › 要害 › 走马灯 › 五步计划 › 复盘 › 最贵三步 › 变着。竖着的滚动条没了 ——「这么多一连串」变成八个点。",
+      news: "插一张卡到最前面，点变金色，但<b>不自动翻过去</b>。",
+      practice: "完整保留：app 从不主动开口，你得划过去。",
+      cost: "得划才看见的杀，就是会漏掉的杀 —— 这一稿把用户的原话「直接给予提示」打了折。",
+      code: "中等：各段原样变成卡，外面套一个 TabView(.page)；要新写一个「这个局面该排哪几张卡」的排序函数。",
+    },
+  };
+
+  // Wrapped: an artifact host serves this from a sandboxed opaque origin, where reading the
+  // query and writing history both throw — and a throw here would leave a blank page.
+  let url = new URLSearchParams("");
+  try { url = new URLSearchParams(location.search); } catch (error) { /* sandboxed */ }
+  const state = {
+    variant: VARIANTS[url.get("v")] ? url.get("v") : "A",
+    scenario: SCENARIOS[url.get("s")] ? url.get("s") : "mine",
+    practice: url.get("practice") === "1",
+    arrows: url.get("arrows") === "1", // has the news been tapped
+    sheet: false,
+    drawer: "ask",
+    card: 0,
+    floatOpen: false,
+  };
+
+  // ------------------------------------------------------------------- board
+  function squares(fen) {
+    const rows = fen.split(" ")[0].split("/");
+    const out = {};
+    rows.forEach((row, r) => {
+      let file = 0;
+      for (const ch of row) {
+        if (/\d/.test(ch)) {
+          file += Number(ch);
+          continue;
+        }
+        const name = "abcdefgh"[file] + (8 - r);
+        out[name] = { kind: ch.toLowerCase(), colour: ch === ch.toUpperCase() ? "w" : "b" };
+        file += 1;
+      }
+    });
+    return out;
+  }
+
+  function place(name, flipped) {
+    const file = "abcdefgh".indexOf(name[0]);
+    const rank = Number(name[1]) - 1;
+    return flipped
+      ? { col: 7 - file, row: rank }
+      : { col: file, row: 7 - rank };
+  }
+
+  function centre(name, flipped) {
+    const p = place(name, flipped);
+    return { x: p.col + 0.5, y: p.row + 0.5 };
+  }
+
+  function board(scene, arrows) {
+    const pieces = squares(scene.fen);
+    let cells = "";
+    for (let row = 0; row < 8; row++) {
+      for (let col = 0; col < 8; col++) {
+        const file = scene.flipped ? 7 - col : col;
+        const rank = scene.flipped ? row : 7 - row;
+        const name = "abcdefgh"[file] + (rank + 1);
+        const light = (file + rank) % 2 === 1;
+        const piece = pieces[name];
+        const last = scene.last && scene.last.includes(name) ? " last" : "";
+        cells +=
+          `<div class="sq ${light ? "l" : "d"}${last}">` +
+          (piece ? `<span class="glyph ${piece.colour}">${GLYPH[piece.kind]}</span>` : "") +
+          (col === 0 || row === 7 ? `<span class="coord">${name}</span>` : "") +
+          `</div>`;
+      }
+    }
+    return `<div class="boardwrap">
+      <div class="squares">${cells}</div>
+      ${arrowLayer(scene, arrows)}
+    </div>`;
+  }
+
+  // The one mechanic that does not vary between the drafts: numbered arrows, the mover's
+  // violet and the answers' red — exactly BoardView.drawPlanArrow.
+  function arrowLayer(scene, arrows) {
+    if (!arrows || !arrows.length) return "";
+    const parts = arrows.map((step, index) => {
+      const a = centre(step.from, scene.flipped);
+      const b = centre(step.to, scene.flipped);
+      const angle = Math.atan2(b.y - a.y, b.x - a.x);
+      const head = 0.3;
+      const tipX = b.x - Math.cos(angle) * 0.06;
+      const tipY = b.y - Math.sin(angle) * 0.06;
+      const baseX = tipX - Math.cos(angle) * head;
+      const baseY = tipY - Math.sin(angle) * head;
+      const wing = 0.17;
+      const colour = step.mine ? "var(--mine)" : "var(--alarm)";
+      const dim = step.dim ? 0.34 : 0.85;
+      const label = {
+        x: a.x + (b.x - a.x) / 3,
+        y: a.y + (b.y - a.y) / 3,
+      };
+      return `<g opacity="${dim}">
+        <line x1="${a.x}" y1="${a.y}" x2="${baseX}" y2="${baseY}"
+              stroke="${colour}" stroke-width="0.1" stroke-linecap="round"></line>
+        <polygon points="${tipX},${tipY}
+                         ${baseX - Math.sin(angle) * -wing},${baseY + Math.cos(angle) * -wing}
+                         ${baseX + Math.sin(angle) * -wing},${baseY - Math.cos(angle) * -wing}"
+                 fill="${colour}"></polygon>
+        <circle cx="${label.x}" cy="${label.y}" r="0.19" fill="${colour}"></circle>
+        <text x="${label.x}" y="${label.y}">${index + 1}</text>
+      </g>`;
+    });
+    return `<svg class="arrows" viewBox="0 0 8 8" aria-hidden="true">${parts.join("")}</svg>`;
+  }
+
+  function lineChips(line) {
+    return `<div class="linechips">${line
+      .map(
+        (step, index) =>
+          `<span class="linechip"><b style="background:${
+            step.mine ? "var(--mine)" : "var(--alarm)"
+          }">${index + 1}</b>${step.san}</span>`
+      )
+      .join("")}</div>`;
+  }
+
+  // ------------------------------------------------------------- phone chrome
+  function playerBar(colour, scene) {
+    const live = scene.toMove === colour;
+    const you = scene.youAre === colour;
+    return `<div class="side ${live ? "live" : ""}">
+      <span class="swatch ${colour}"></span>
+      <span class="who">${colour === "w" ? "白" : "黑"}</span>
+      <span>${you ? "自己走" : "引擎 3 秒"}</span>
+      ${live ? '<span class="turn">该走了</span>' : ""}
+      <span class="grow"></span>
+      ${live && !you ? '<button class="btn-hold">让引擎走</button>' : ""}
+      <span style="color:var(--inkSoft)">⌄</span>
+    </div>`;
+  }
+
+  function standing(scene) {
+    if (state.practice) {
+      return `<div class="standing">
+        <button class="chip" style="padding:4px 9px">👁 练习</button>
+        <span class="grow"></span>
+        ${
+          state.variant === "C" && scene.mate
+            ? `<span class="score mate">杀 ${scene.mate.n}</span>`
+            : ""
+        }
+      </div>`;
+    }
+    return `<div class="standing">
+      <button class="chip teal on" style="padding:4px 7px">👁</button>
+      <span class="evalbar"><i style="width:${Math.round(scene.eval * 100)}%"></i></span>
+      <span class="score ${scene.score.startsWith("#") ? "mate" : ""}">${scene.score}</span>
+      <span class="cap2">深 26</span>
+    </div>`;
+  }
+
+  function record(scene) {
+    const cards = scene.moves
+      .map(
+        (m, i) =>
+          `<span class="movecard ${i === scene.moves.length - 1 ? "now" : ""}">${m}</span>`
+      )
+      .join("");
+    return `<div class="record">
+      <span class="stepper">‹</span>
+      <div class="cards">${cards}</div>
+      <span class="stepper">›</span>
+    </div>`;
+  }
+
+  // ------------------------------------------------------------- draft A
+  function draftA(scene) {
+    const items = [
+      ["这步的要害", "上一步换手的格子里，引擎用得上的那一两个", !scene.mate],
+      ["走马灯", "把引擎那条线在棋盘上走一遍", true],
+      ["五步计划", "自己走，最多五步，说一个理由", true],
+      ["复盘", "统一深度重算全局", true],
+      ["最贵三步", "这局得失最大的三步", true],
+    ];
+    let bar;
+    if (scene.mate) {
+      bar = newsBar(scene.mate);
+    } else if (scene.tactic && !state.practice) {
+      bar = `<button class="news ours" onclick="tap('arrows')">
+        <span class="n">术</span>
+        <span class="t">有战术：${scene.tactic.sentence}<em>点一下，把这条线画出来</em></span>
+        <span class="go">${state.arrows ? "收起" : "看线 ›"}</span>
+      </button>`;
+    } else {
+      bar = `<div class="pad" style="display:flex;align-items:center;gap:9px">
+        <button class="chip">☝ 问一格</button>
+        <span class="cap grow">这个局面没什么好说的。想问就点一格。</span>
+        <button class="ghost" onclick="tap('sheet')">更多 ›</button>
+      </div>`;
+    }
+    const detail =
+      state.arrows && (scene.mate || scene.tactic)
+        ? `<div class="pad stack">
+            ${lineChips((scene.mate || scene.tactic).line)}
+            <span class="cap2">箭头就在棋盘上，紫色是你的，红色是对方的。点棋盘任意处收起。</span>
+          </div>`
+        : "";
+    return `${bar}${detail}
+      <div class="rule"></div>
+      <div class="pad stack">
+        <span class="sectiontitle">这一步</span>
+        <span class="cap">14.Rd1 之后的变着 2 条 · 备注 0 条 · 棋子没改过</span>
+        <button class="ghost" onclick="tap('sheet')">还能问什么 ›</button>
+      </div>
+      ${
+        state.sheet
+          ? `<div class="sheet">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                <b style="font-size:14px">还能问什么</b>
+                <span class="grow"></span>
+                <button class="ghost" onclick="tap('sheet')">收起</button>
+              </div>
+              ${items
+                .map(
+                  ([name, note, ok]) =>
+                    `<button class="sheetrow" ${ok ? "" : "disabled"} onclick="tap('sheet')">
+                      <span>${name}</span><span class="grow"></span><small>${note}</small>
+                    </button>`
+                )
+                .join("")}
+              <span class="cap2">一次只开一个，开了就占上面那条横条。</span>
+            </div>`
+          : ""
+      }`;
+  }
+
+  function newsBar(mate) {
+    const ours = mate.whose === "ours";
+    if (state.practice && state.variant === "B" && !state.arrows) {
+      return `<button class="news ${ours ? "ours" : ""}" onclick="tap('arrows')">
+        <span class="n">${mate.n}</span>
+        <span class="t">${ours ? "你这里有 " : "对方这里有 "}${mate.n} 步杀。<em>招不给你 —— 自己找。点一下才给。</em></span>
+        <span class="go">给我看 ›</span>
+      </button>`;
+    }
+    return `<button class="news ${ours ? "ours" : ""}" onclick="tap('arrows')">
+      <span class="n">${mate.n}</span>
+      <span class="t">${mate.head}：${mate.sentence}<em>${
+        state.arrows ? "棋盘上三个箭头，按顺序" : "点一下，把这几步画在棋盘上"
+      }</em></span>
+      <span class="go">${state.arrows ? "收起" : "看 ›"}</span>
+    </button>`;
+  }
+
+  // ------------------------------------------------------------- draft B
+  function draftB(scene) {
+    const tabs = [
+      ["ask", "问"],
+      ["plan", "谋"],
+      ["review", "复盘"],
+    ];
+    let panel = "";
+    if (state.drawer === "ask") {
+      panel = `<div class="pad stack">
+        <div class="chiprow">
+          <button class="chip">☝ 问一格</button>
+          <button class="chip teal ${scene.tactic || scene.mate ? "on" : ""}">✳ 战术</button>
+        </div>
+        ${
+          scene.tactic && !state.practice
+            ? `<span class="cap">有战术：${scene.tactic.sentence}</span>`
+            : scene.mate
+              ? `<span class="cap">这个局面先说杀，上面那条。</span>`
+              : `<span class="cap">点棋盘上任意一格，看你哪些子能过去。</span>`
+        }
+        ${
+          state.arrows && (scene.mate || scene.tactic)
+            ? lineChips((scene.mate || scene.tactic).line)
+            : ""
+        }
+      </div>`;
+    } else if (state.drawer === "plan") {
+      panel = `<div class="pad stack">
+        <div class="chiprow">
+          <button class="chip">☰ 五步计划</button>
+          <button class="chip">▷ 走马灯</button>
+          <button class="chip">▦ 这步的要害</button>
+        </div>
+        <span class="cap">在棋盘上随便走。走一步，下面就重算一次后面五步。</span>
+        <span class="cap2">走的这条线不进棋谱，退出就回到原来的位置。</span>
+      </div>`;
+    } else {
+      panel = `<div class="pad stack">
+        <span class="sectiontitle">这局最贵的三步</span>
+        <div class="chiprow">
+          <span class="linechip"><b style="background:var(--alarm)">1</b>15…Nxd7</span>
+          <span class="linechip"><b style="background:var(--alarm)">2</b>9…b5</span>
+          <span class="linechip"><b style="background:var(--alarm)">3</b>3…Bg4</span>
+        </div>
+        <span class="cap">引擎按统一深度重算了全局，这三步的得失最大，从大到小排。</span>
+        <button class="ghost">考一遍这三步 ›</button>
+      </div>`;
+    }
+    return `${scene.mate ? newsBar(scene.mate) : ""}
+      <div class="segbar">
+        ${tabs
+          .map(
+            ([key, name]) =>
+              `<button class="seg ${state.drawer === key ? "on" : ""}" onclick="tap('drawer','${key}')">${name}</button>`
+          )
+          .join("")}
+      </div>
+      <div class="drawer">${panel}</div>`;
+  }
+
+  // ------------------------------------------------------------- draft C
+  function draftC(scene) {
+    return `<div class="gesture">
+        <span>点一格＝问它</span><span>·</span><span>长按＝战术</span><span>·</span><span>划记录条＝走马灯</span>
+      </div>
+      <div class="pad stack">
+        <span class="cap2">棋盘下面不留任何开关。要什么，在棋盘上要。</span>
+      </div>`;
+  }
+
+  function floatCard(scene) {
+    if (!scene.mate || !state.arrows) return "";
+    const ours = scene.mate.whose === "ours";
+    return `<div class="float">
+      <div style="display:flex;align-items:baseline;gap:8px">
+        <b style="font-size:14px;color:${ours ? "var(--mine)" : "var(--alarm)"}">${scene.mate.head}</b>
+        <span class="grow"></span>
+        <button class="ghost" onclick="tap('arrows')">收起</button>
+      </div>
+      <div class="cap" style="margin:4px 0 8px">${scene.mate.sentence}</div>
+      ${lineChips(scene.mate.line)}
+    </div>`;
+  }
+
+  // ------------------------------------------------------------- draft D
+  function draftD(scene) {
+    const cards = [];
+    if (scene.mate) {
+      cards.push({
+        hot: true,
+        title: `${scene.mate.head}`,
+        body: `<div class="cap" style="margin:4px 0 8px">${scene.mate.sentence}</div>
+          ${lineChips(scene.mate.line)}
+          <button class="ghost" onclick="tap('arrows')">${
+            state.arrows ? "把箭头收起" : "画在棋盘上（3 个箭头）"
+          }</button>`,
+      });
+    }
+    if (scene.tactic) {
+      cards.push({
+        title: "战术",
+        body: `<div class="cap" style="margin:4px 0 8px">${scene.tactic.sentence}</div>
+          ${lineChips(scene.tactic.line)}
+          <button class="ghost" onclick="tap('arrows')">${
+            state.arrows ? "把箭头收起" : "画在棋盘上（5 个箭头）"
+          }</button>`,
+      });
+    }
+    cards.push({
+      title: "问一格",
+      body: `<div class="cap" style="margin:4px 0 8px">点棋盘上任意一格，看你哪些子能过去。</div>
+        <button class="chip">☝ 开始问</button>`,
+    });
+    cards.push({
+      title: "这步的要害",
+      body: `<div class="cap">上一步换手的格子里，引擎接下来用得上的那一两个。</div>`,
+    });
+    cards.push({
+      title: "五步计划",
+      body: `<div class="cap">自己在棋盘上走，最多五步，然后说一个理由。</div>`,
+    });
+    cards.push({
+      title: "复盘",
+      body: `<div class="cap">统一深度重算全局，然后给最贵的三步。</div>`,
+    });
+    const index = Math.min(state.card, cards.length - 1);
+    const card = cards[index];
+    return `<div class="deck">
+      <div class="card ${card.hot ? "newscard" : ""}">
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <b style="font-size:15px;color:${card.hot ? "var(--alarm)" : "var(--ink)"}">${card.title}</b>
+          <span class="grow"></span>
+          <span class="cap2">${index + 1} / ${cards.length}</span>
+        </div>
+        ${card.body}
+      </div>
+      <div class="swipe">
+        <button class="ghost" onclick="tap('card',${index - 1})">‹ 前一张</button>
+        <button class="ghost" onclick="tap('card',${index + 1})">后一张 ›</button>
+      </div>
+      <div class="dots">
+        ${cards
+          .map(
+            (c, i) =>
+              `<button class="dot ${i === index ? "on" : ""} ${c.hot && i !== index ? "hot" : ""}"
+                 onclick="tap('card',${i})" aria-label="第 ${i + 1} 张"></button>`
+          )
+          .join("")}
+      </div>
+    </div>`;
+  }
+
+  // ------------------------------------------------------------------ render
+  function visibleArrows(scene) {
+    if (state.variant === "C" && scene.mate) {
+      // Draft C draws them at rest, dimmed and wordless; a tap only lights them and
+      // brings the sentence.
+      return scene.mate.line.map((step) => ({ ...step, dim: !state.arrows }));
+    }
+    if (!state.arrows) {
+      if (scene.tactic && !state.practice && state.variant !== "D") {
+        return [{ ...scene.tactic, mine: true }];
+      }
+      return [];
+    }
+    const source = scene.mate || scene.tactic;
+    return source ? source.line : [];
+  }
+
+  function remember() {
+    const next = new URLSearchParams({
+      v: state.variant,
+      s: state.scenario,
+      arrows: state.arrows ? "1" : "0",
+      practice: state.practice ? "1" : "0",
+    });
+    try {
+      history.replaceState(null, "", "?" + next.toString());
+    } catch (error) { /* sandboxed */ }
+  }
+
+  function render() {
+    remember();
+    const scene = SCENARIOS[state.scenario];
+    const under = { A: draftA, B: draftB, C: draftC, D: draftD }[state.variant](scene);
+    const top = scene.flipped ? "w" : "b";
+    const bottom = scene.flipped ? "b" : "w";
+    document.getElementById("phone").innerHTML = `
+      <div class="navbar"><span>⇅ 翻转</span><span>⋯</span></div>
+      ${playerBar(top, scene)}
+      ${board(scene, visibleArrows(scene))}
+      ${standing(scene)}
+      ${playerBar(bottom, scene)}
+      ${record(scene)}
+      <div class="under">${under}</div>
+      ${state.variant === "C" ? floatCard(scene) : ""}
+    `;
+
+    const v = VARIANTS[state.variant];
+    document.getElementById("argument").innerHTML = `
+      <div class="arg">
+        <p class="kicker">${v.kicker}</p>
+        <h2>${state.variant} · ${v.name}</h2>
+        <dl>
+          <dt>主张</dt><dd>${v.claim}</dd>
+          <dt>杀怎么说</dt><dd>${v.news}</dd>
+          <dt>练习怎么办</dt><dd>${v.practice}</dd>
+          <dt>代价</dt><dd class="cost">${v.cost}</dd>
+          <dt>要动的码</dt><dd>${v.code}</dd>
+        </dl>
+      </div>
+      <div class="arg shared">
+        <b>四稿共用的那一件事</b><br>
+        「点一下 → 多个箭头」在四稿里一模一样，因为那是要加的功能本身，不是四稿的分歧：编号箭头，
+        紫色＝走这步的是你，红色＝对方，号码在箭杆三分之一处 —— 就是今天 五步计划 已经在画的
+        <span class="mono">PlanArrow</span>。杀的线走 <span class="mono">startWalk(line:)</span> 已有的路，
+        <span class="mono">Analysis.best.score</span> 是 <span class="mono">.mate(±n)</span> 时就有消息。
+        <br><br>
+        <b>分歧只有两处</b>：一，这一摞开关收成什么形状；二，杀这条消息<b>能不能盖过练习</b>——
+        A 盖，B 只报数不报招，C 只画不说话，D 等你划过去。
+        <br><br>
+        <b>±n 一个口就够</b>：引擎的分数永远是走棋一方的视角，<span class="mono">.mate(+2)</span> 是该走的一方
+        两步杀，<span class="mono">.mate(-2)</span> 是该走的一方两步被杀。「我方的还是对方的」不是两套逻辑，
+        是同一个数配上 <span class="mono">youAre</span> 换一句话、换一个颜色。
+      </div>
+    `;
+
+    const tabs = [
+      ["variants", Object.keys(VARIANTS).map((k) => [k, `${k} · ${VARIANTS[k].name}`]), "variant"],
+      ["scenarios", Object.keys(SCENARIOS).map((k) => [k, SCENARIOS[k].label]), "scenario"],
+    ];
+    for (const [id, entries, key] of tabs) {
+      const host = document.getElementById(id);
+      host.querySelectorAll(".tab").forEach((el) => el.remove());
+      for (const [value, label] of entries) {
+        const button = document.createElement("button");
+        button.className = "tab" + (state[key] === value ? " on" : "");
+        button.textContent = label;
+        button.onclick = () => {
+          state[key] = value;
+          state.arrows = false;
+          state.sheet = false;
+          state.card = 0;
+          render();
+        };
+        host.append(button);
+      }
+    }
+    const modes = document.getElementById("modes");
+    modes.querySelectorAll(".tab").forEach((el) => el.remove());
+    for (const [value, label] of [[false, "开口"], [true, "练习（闭嘴）"]]) {
+      const button = document.createElement("button");
+      button.className = "tab" + (state.practice === value ? " on" : "");
+      button.textContent = label;
+      button.onclick = () => {
+        state.practice = value;
+        state.arrows = false;
+        render();
+      };
+      modes.append(button);
+    }
+  }
+
+  function tap(what, value) {
+    if (what === "arrows") state.arrows = !state.arrows;
+    if (what === "sheet") state.sheet = !state.sheet;
+    if (what === "drawer") state.drawer = value;
+    if (what === "card") state.card = Math.max(0, value);
+    render();
+  }
+
+  document.addEventListener("keydown", (event) => {
+    const keys = { 1: "A", 2: "B", 3: "C", 4: "D" };
+    if (keys[event.key]) {
+      state.variant = keys[event.key];
+      state.arrows = false;
+      state.sheet = false;
+      state.card = 0;
+      render();
+    }
+    if (event.key === "ArrowRight") tap("card", state.card + 1);
+    if (event.key === "ArrowLeft") tap("card", state.card - 1);
+  });
+
+  render();
+</script>
