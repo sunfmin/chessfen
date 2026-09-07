@@ -474,6 +474,105 @@ struct GameScreenScreenshots {
         #expect(session.analysis == nil)
     }
 
+    // ------------------------------------------------------------------- the news
+
+    /// Morphy's opera game, one move before 16.Qb8+, with practice on and only the finder on.
+    ///
+    /// The screenshot the feature is answerable to: nobody asked, the deck is open at the news
+    /// rather than at 问一格, the line is on the chips in the order it goes, and there is still not
+    /// a Score anywhere (docs/adr/0015, 0023).
+    @Test("a mate on the board opens the deck by itself and says whose it is")
+    func mateNewsIsOurs() async throws {
+        let opera = "4kb1r/p2n1ppp/4q3/4p1B1/4P3/1Q6/PPP2PPP/2KR4 w - - 0 1"
+        let game = try #require(Game(startFEN: opera))
+        let engine = ScriptedEngine(
+            [],
+            byPosition: [
+                game.state.fen: Analysis(
+                    depth: 10,
+                    lines: [
+                        Line(
+                            score: .mate(in: 2),
+                            uciMoves: ["b3b8", "d7b8", "d1d8"],
+                            san: ["Qb8+", "Nxb8", "Rd8#"]
+                        )
+                    ]
+                )
+            ]
+        )
+        let session = GameSession.fresh(game, controllers: [.white: .hand, .black: .engine])
+        session.attach(engine: engine, library: nil)
+        session.setFindingTactics(true)
+        await hop()
+
+        let rendered = await ScreenImage.write("game-mate-news-ours") {
+            screen(session, engine: engine)
+        }
+
+        // The card the deck dealt itself to, wearing whose mate it is in its own title.
+        #expect(rendered.says("你有 2 步杀"))
+        #expect(rendered.says("你起手 Qb8+，对方只有一个应手，Rd8# 将死。"))
+        // The line, numbered to match the arrows the board is drawing.
+        #expect(rendered.says("Qb8+"))
+        #expect(rendered.says("Nxb8"))
+        #expect(rendered.says("Rd8#"))
+        #expect(rendered.says("把箭头收起"), "arriving drew them, and one press takes them off")
+        #expect(rendered.says("这几步没有走进棋谱"))
+        #expect(session.mateNews?.arrows.count == 3)
+        // Practice is untouched: the mate is a fact, and a Score would be an opinion.
+        #expect(session.isPractising)
+        #expect(session.analysis == nil)
+        #expect(!rendered.says("建议"), "no recommendation, because that is an opinion")
+        #expect(!rendered.says("深 "), "and no depth, because no search of ours was running")
+        // The deck is not on the card it usually opens: the dots name every card, so what says
+        // which one is showing is the card's own subtitle.
+        #expect(rendered.says("几步之内有人要被将死了"))
+        #expect(!rendered.says("我哪些子能走到这一格"))
+    }
+
+    /// The same game one move on, from the other seat: 16.Qb8+ is on the board, the player is
+    /// Black, and Black is the one being mated. One signed number, one code path, the other voice
+    /// — and the line opens with the player's own best try rather than the opponent's plan, which
+    /// is a different sentence and says so (docs/adr/0023).
+    @Test("the opponent's mate is the same news in the other voice, and opens with your own move")
+    func mateNewsIsTheirs() async throws {
+        let afterCheck = "1Q2kb1r/p2n1ppp/4q3/4p1B1/4P3/8/PPP2PPP/2KR4 b - - 0 1"
+        let game = try #require(Game(startFEN: afterCheck))
+        let engine = ScriptedEngine(
+            [],
+            byPosition: [
+                game.state.fen: Analysis(
+                    depth: 10,
+                    lines: [
+                        Line(
+                            score: .mate(in: 1),
+                            uciMoves: ["d7b8", "d1d8"],
+                            san: ["Nxb8", "Rd8#"]
+                        )
+                    ]
+                )
+            ]
+        )
+        let session = GameSession.fresh(game, controllers: [.white: .engine, .black: .hand])
+        session.attach(engine: engine, library: nil)
+        session.setFindingTactics(true)
+        await hop()
+
+        let rendered = await ScreenImage.write("game-mate-news-theirs") {
+            screen(session, engine: engine)
+        }
+
+        #expect(rendered.says("对方 1 步杀"))
+        #expect(rendered.says("你怎么走都躲不掉"))
+        #expect(rendered.says("引擎给的最好一手是 Nxb8"))
+        #expect(rendered.says("Rd8# 将死"))
+        #expect(session.mateNews?.isOurs == false)
+        // Your own move is the near colour and the mate is the far one, whoever the news is about.
+        #expect(session.mateNews?.arrows.map(\.isYours) == [true, false])
+        #expect(session.isPractising)
+        #expect(rendered.says("被将"), "and the bar says what the board already shows")
+    }
+
     /// The same game, the same engine, the same moves played into it — and nothing whispered.
     /// This is the screenshot the default is answerable to: a person reading it should not be able
     /// to work out what the engine thinks of the position, and should be in no doubt that the app

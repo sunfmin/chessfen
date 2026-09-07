@@ -77,6 +77,10 @@ struct GameScreen: View {
     /// its dot is lit and the rest is your move (docs/adr/0023).
     private var opensOn: Card {
         if let opening { return opening }
+        // News before work: a mate on the board is the reason 「直接给予提示」 was asked for, and a
+        // coloured dot among five is not a prompt (docs/adr/0023). Only ever the latest position —
+        // a past Ply is a Drill and is handed no mate at all.
+        if session.mateNews != nil { return .mate }
         if isPast {
             if session.isStudying || session.guess != nil { return .drill }
             return .key
@@ -2001,6 +2005,12 @@ struct GameScreen: View {
         // A move offered at a past Ply is the question being answered, so the deck goes to it.
         .onChange(of: session.guess?.san) { _, now in
             if now != nil { card = .drill }
+        }
+        // And a mate that turns up mid-game takes the eye, which is the whole of 「直接给予提示」
+        // on a deck (docs/adr/0023). On the way in only: a 2 步杀 becoming a 1 步杀 is the same
+        // news twice, and would drag somebody back to a card they had deliberately swiped away.
+        .onChange(of: session.mateNews == nil) { was, now in
+            if was, !now { card = .mate }
         }
     }
 
