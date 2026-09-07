@@ -560,6 +560,9 @@
     shot: "3rkb1r/p2nqppp/5n2/1B2p1B1/4P3/1Q6/PPP2PPP/2KR3R",
     // The Italian eight plies in — the repo's own screenshot fixture.
     italian: "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2P2N2/PP1P1PPP/R1BQK2R",
+    // The same Opera Game right after 13.Rxd7 — a past Ply, which is the only place
+    // 要害 / 走马灯 / 五步计划 / 考一遍 exist at all.
+    afterShot: "3rkb1r/p2Rqppp/5n2/1B2p1B1/4P3/1Q6/PPP2PPP/2K4R",
   };
 
   const GLYPH = { p: "♟", n: "♞", b: "♝", r: "♜", q: "♛", k: "♚" };
@@ -633,6 +636,40 @@
         ],
       },
     },
+    past: {
+      label: "在回看第 13 步",
+      fen: FEN.afterShot,
+      youAre: "w",
+      toMove: "b",
+      flipped: false,
+      atPast: true,
+      last: ["d1", "d7"],
+      moves: ["12.O-O-O", "Rd8", "13.Rxd7", "Rxd7", "14.Rd1", "Qe6"],
+      nowIndex: 2,
+      eval: 0.82,
+      score: "+3.4",
+      // A past Ply is a Drill: the finder does not speak here, and neither does the mate
+      // announcement (docs/adr/0022). What lives here is the other four.
+      key: {
+        square: "d7",
+        note: "d7 归白了：车站上去，你的兵赶不走它 —— c 兵和 e 兵都到不了 d7。引擎接下来两步还围着这一格转：Rxd7 之后 14.Rd1 又冲它来。",
+      },
+      walk: {
+        line: [
+          { san: "Rxd7", from: "d8", to: "d7", mine: false },
+          { san: "Rd1", from: "h1", to: "d1", mine: true },
+          { san: "Qe6", from: "e7", to: "e6", mine: false },
+          { san: "Bxd7+", from: "b5", to: "d7", mine: true },
+          { san: "Nxd7", from: "f6", to: "d7", mine: false },
+        ],
+        outcome: "五步走完：你多一个子，黑王还钉在 e8 没能动，d 线归你。",
+      },
+      worst: [
+        { rank: 1, san: "15…Nxd7", lost: "3.4" },
+        { rank: 2, san: "9…b5", lost: "1.8" },
+        { rank: 3, san: "3…Bg4", lost: "0.9" },
+      ],
+    },
     quiet: {
       label: "安静局面",
       fen: FEN.italian,
@@ -677,11 +714,11 @@
     D: {
       name: "一叠卡片",
       kicker: "draft d — a deck, not a scroll",
-      claim: "记录条下面是一叠横着翻的卡，一次一张，底下一排点。卡的顺序由局面排：杀 › 战术 › 要害 › 走马灯 › 五步计划 › 复盘 › 最贵三步 › 变着。竖着的滚动条没了 ——「这么多一连串」变成八个点。",
+      claim: "记录条下面是一叠横着翻的卡，一次一张，底下一排点。竖着的滚动条没了 ——「这么多一连串」变成六七个点。<br><br>三条规矩：① <b>卡由局面排</b>，这儿做不了的事不占一张卡（最新局面四张，回看过去某一步六张）；② 每张卡标题下面一行<b>「这张卡回答什么」</b>；③ <b>复盘和最贵三步合成一张</b> —— 三步是那一遍重算的产物，没重算过它不存在。缺的东西列在最后一张，并说清怎么补。",
       news: "插一张卡到最前面，点变金色，但<b>不自动翻过去</b>。",
       practice: "完整保留：app 从不主动开口，你得划过去。",
-      cost: "得划才看见的杀，就是会漏掉的杀 —— 这一稿把用户的原话「直接给予提示」打了折。",
-      code: "中等：各段原样变成卡，外面套一个 TabView(.page)；要新写一个「这个局面该排哪几张卡」的排序函数。",
+      cost: "得划才看见的杀，就是会漏掉的杀 —— 这一稿把「直接给予提示」打了折。金点子是唯一的补救，而一个点能不能算「提示」，得你说。",
+      code: "中等：各段原样变成卡，外面套一个 <span class=\"mono\">TabView(.page)</span>；要新写一个 <span class=\"mono\">deck(for:)</span> —— 这个局面该排哪几张卡、缺的那几张缺什么。",
     },
   };
 
@@ -837,16 +874,15 @@
   }
 
   function record(scene) {
+    const now = scene.nowIndex ?? scene.moves.length - 1;
     const cards = scene.moves
-      .map(
-        (m, i) =>
-          `<span class="movecard ${i === scene.moves.length - 1 ? "now" : ""}">${m}</span>`
-      )
+      .map((m, i) => `<span class="movecard ${i === now ? "now" : ""}">${m}</span>`)
       .join("");
     return `<div class="record">
       <span class="stepper">‹</span>
       <div class="cards">${cards}</div>
       <span class="stepper">›</span>
+      ${scene.atPast ? '<span class="stepper" title="回到最新">⏭</span>' : ""}
     </div>`;
   }
 
@@ -1015,12 +1051,18 @@
   }
 
   // ------------------------------------------------------------- draft D
-  function draftD(scene) {
+  //
+  // The deck is built from the position, not from a fixed list: a card that cannot do
+  // anything here is not a page to swipe past. What is missing goes on one last card that
+  // says what would buy it — because the chain has real dependencies (复盘 → 最贵三步,
+  // 一个过去的 Ply → 要害 / 走马灯 / 五步计划).
+  function deckFor(scene) {
     const cards = [];
     if (scene.mate) {
       cards.push({
         hot: true,
-        title: `${scene.mate.head}`,
+        title: scene.mate.head,
+        sub: "对面（或者你）几步之内就被将死了",
         body: `<div class="cap" style="margin:4px 0 8px">${scene.mate.sentence}</div>
           ${lineChips(scene.mate.line)}
           <button class="ghost" onclick="tap('arrows')">${
@@ -1028,9 +1070,10 @@
           }</button>`,
       });
     }
-    if (scene.tactic) {
+    if (scene.tactic && !scene.atPast) {
       cards.push({
         title: "战术",
+        sub: "这一步有没有一记赢子的",
         body: `<div class="cap" style="margin:4px 0 8px">${scene.tactic.sentence}</div>
           ${lineChips(scene.tactic.line)}
           <button class="ghost" onclick="tap('arrows')">${
@@ -1038,32 +1081,98 @@
           }</button>`,
       });
     }
+    if (!scene.atPast) {
+      cards.push({
+        title: "问一格",
+        sub: "我哪些子能走到这一格，走过去值不值",
+        body: `<div class="cap" style="margin:4px 0 8px">点任意一格：先给能过去的子，再给买到什么、赔掉什么。引擎的意见排最后，而且要你点。</div>
+          <button class="chip">☝ 开始问</button>`,
+      });
+    }
+    if (scene.key) {
+      cards.push({
+        title: "这步的要害",
+        sub: "刚走的这步，把哪一格变成了要紧的地方",
+        body: `<div class="cap" style="margin:4px 0 8px">
+            <span class="linechip"><b style="background:var(--mine)">1</b>${scene.key.square}</span>
+          </div>
+          <div class="body" style="font-size:12px">${scene.key.note}</div>
+          <div class="cap2" style="margin-top:6px">换手的格子十来个，只给引擎真用上的那一两个。</div>`,
+      });
+    }
+    if (scene.walk) {
+      cards.push({
+        title: "走马灯",
+        sub: "引擎说的后面五步，在盘上走一遍给我看",
+        body: `<div class="cap" style="margin:4px 0 8px">${lineChips(scene.walk.line)}</div>
+          <div class="body" style="font-size:12px">${scene.walk.outcome}</div>
+          <button class="ghost" onclick="tap('arrows')">${
+            state.arrows ? "把箭头收起" : "画在棋盘上（5 个箭头）"
+          }</button>
+          <div class="cap2">走完退出，局面原样回来，棋谱里什么都不留。</div>`,
+      });
+    }
+    if (scene.atPast) {
+      cards.push({
+        title: "五步计划",
+        sub: "我自己走五步，说一个理由，让它判我对不对",
+        body: `<div class="cap" style="margin:4px 0 8px">在棋盘上随便走。走一步，就重算一次后面五步 —— 紫色是你的，红色是对方最好的应手。</div>
+          <div class="cap2">最多五步：再长对方回得太多，对错就没法判了。走完说一个理由，交卷。</div>`,
+      });
+      cards.push({
+        title: "复盘",
+        sub: "用同一个深度把整局重算，让每步的分能互相比",
+        body: `<div class="cap" style="margin:4px 0 8px">重算过 21 步。这局得失最大的三步，按大小排 —— 局内排名，不跟阈值比。点一个，棋盘跳过去、引擎闭嘴，就是一次「考一遍」。</div>
+          <div class="linechips">${(scene.worst || [])
+            .map(
+              (w) =>
+                `<span class="linechip"><b style="background:var(--alarm)">${w.rank}</b>${w.san} <span style="color:var(--inkSoft)">−${w.lost}</span></span>`
+            )
+            .join("")}</div>
+          <div class="cap2" style="margin-top:6px">「最贵三步」不是另一张卡：它就是这一遍重算的产物，没重算过它不存在。</div>`,
+      });
+    }
     cards.push({
-      title: "问一格",
-      body: `<div class="cap" style="margin:4px 0 8px">点棋盘上任意一格，看你哪些子能过去。</div>
-        <button class="chip">☝ 开始问</button>`,
+      title: "变着",
+      sub: "走过又退回去的那些线，还留着",
+      body: `<div class="cap">2 条。悔棋不丢东西 —— 退回去的那条挂在那一步下面，PGN 的括号本来就是干这个的。</div>`,
     });
+    // What this position cannot answer, and what would buy it.
+    const missing = [];
+    if (!scene.atPast) {
+      missing.push(["这步的要害 · 走马灯 · 五步计划 · 考一遍", "要先用记录条退到过去某一步 —— 最新局面上没有「刚走的这步」可说"]);
+      missing.push(["复盘 · 最贵三步", "要先打开引擎意见，让它按统一深度把整局重算一遍"]);
+    } else {
+      missing.push(["杀 · 战术 · 问一格", "回看过去某一步时它们不开口 —— 那是一次考一遍，答案得你先给"]);
+    }
     cards.push({
-      title: "这步的要害",
-      body: `<div class="cap">上一步换手的格子里，引擎接下来用得上的那一两个。</div>`,
+      quiet: true,
+      title: "这儿还问不了的",
+      sub: "缺什么，以及怎么补",
+      body: missing
+        .map(
+          ([what, why]) =>
+            `<div style="margin-bottom:8px"><div class="body" style="font-size:12px">${what}</div><div class="cap2">${why}</div></div>`
+        )
+        .join(""),
     });
-    cards.push({
-      title: "五步计划",
-      body: `<div class="cap">自己在棋盘上走，最多五步，然后说一个理由。</div>`,
-    });
-    cards.push({
-      title: "复盘",
-      body: `<div class="cap">统一深度重算全局，然后给最贵的三步。</div>`,
-    });
+    return cards;
+  }
+
+  function draftD(scene) {
+    const cards = deckFor(scene);
     const index = Math.min(state.card, cards.length - 1);
     const card = cards[index];
     return `<div class="deck">
-      <div class="card ${card.hot ? "newscard" : ""}">
+      <div class="card ${card.hot ? "newscard" : ""}" style="${
+        card.quiet ? "background:transparent;border-style:dashed" : ""
+      }">
         <div style="display:flex;align-items:baseline;gap:8px">
           <b style="font-size:15px;color:${card.hot ? "var(--alarm)" : "var(--ink)"}">${card.title}</b>
           <span class="grow"></span>
           <span class="cap2">${index + 1} / ${cards.length}</span>
         </div>
+        <div class="cap2" style="margin:1px 0 7px">${card.sub}</div>
         ${card.body}
       </div>
       <div class="swipe">
@@ -1075,7 +1184,7 @@
           .map(
             (c, i) =>
               `<button class="dot ${i === index ? "on" : ""} ${c.hot && i !== index ? "hot" : ""}"
-                 onclick="tap('card',${i})" aria-label="第 ${i + 1} 张"></button>`
+                 onclick="tap('card',${i})" aria-label="第 ${i + 1} 张：${c.title}"></button>`
           )
           .join("")}
       </div>
@@ -1090,12 +1199,12 @@
       return scene.mate.line.map((step) => ({ ...step, dim: !state.arrows }));
     }
     if (!state.arrows) {
-      if (scene.tactic && !state.practice && state.variant !== "D") {
+      if (scene.tactic && !scene.atPast && !state.practice && state.variant !== "D") {
         return [{ ...scene.tactic, mine: true }];
       }
       return [];
     }
-    const source = scene.mate || scene.tactic;
+    const source = scene.mate || scene.tactic || scene.walk;
     return source ? source.line : [];
   }
 
