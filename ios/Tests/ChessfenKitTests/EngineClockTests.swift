@@ -278,7 +278,7 @@ struct EngineClock {
         await hop()
 
         #expect(engine.budgets.last == .untilStopped)
-        #expect(engine.lines.last == 3)
+        #expect(engine.lines.last == 1, "a card walks one Line, not the old three-candidate panel")
         #expect(session.analysis?.bestMove == "d2d4")
         #expect(
             session.viewedContinuation == ["d4", "exd4"],

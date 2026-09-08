@@ -134,11 +134,6 @@ struct GameScreen: View {
                 .background {
                     Palette.raised.ignoresSafeArea(edges: .bottom)
                 }
-                // Drop into the home-indicator band: the cream already lives there, the
-                // names should too. Negative padding gives the card back what the offset
-                // would have left as a gap.
-                .offset(y: 16)
-                .padding(.bottom, -16)
         }
         // No title, and now nothing in its place either. The screen is a board; a word saying
         // "game" over the top of one is a row of a phone spent on something nobody was in any
@@ -1971,9 +1966,17 @@ struct GameScreen: View {
             if now != nil { card = .drill }
         }
         // Arriving starts the walk when a line is already in hand; a Stint that lands later
-        // has to start it then, or 走马灯 sits empty over a line that has just arrived.
-        .onChange(of: session.viewedContinuation.isEmpty) { _, empty in
-            if !empty, card == .walk, session.walk == nil { session.startWalk() }
+        // has to start it then, or 五步 sits empty over a line that has just arrived. The
+        // Line lengthens as the search deepens, and a walk still on its first ply takes that.
+        .onChange(of: session.viewedContinuation) { _, line in
+            if card == .walk, !line.isEmpty { session.startWalk() }
+        }
+        // The engine's own move takes the clock. When it puts it down, the card in front
+        // still wants a Line, and nobody will swipe again to ask.
+        .onChange(of: session.thinking) { _, now in
+            guard now == nil, wantsAdvice(card) else { return }
+            session.adviseForCard()
+            if card == .walk { session.startWalk() }
         }
         // And a mate that turns up mid-game takes the eye, which is the whole of 「直接给予提示」
         // on a deck (docs/adr/0023). On the way in only: a 2 步杀 becoming a 1 步杀 is the same
@@ -2096,7 +2099,6 @@ struct GameScreen: View {
             if session.scan == nil, session.guess == nil { session.armScanner() }
         case .walk:
             session.setShowsControlChange(true)
-            if session.walk == nil { session.startWalk() }
         case .mate:
             showsMateLine = true
             openFinder()
@@ -2104,6 +2106,7 @@ struct GameScreen: View {
         case .key: break
         }
         if wantsAdvice(now) { session.adviseForCard() }
+        if now == .walk { session.startWalk() }
     }
 
     /// Cards that read a Line spend a Stint on arrival, even during Practice. 练习 keeps its
@@ -2132,7 +2135,9 @@ struct GameScreen: View {
     private func isCardSearching(_ kind: Card) -> Bool {
         switch kind {
         case .drill: session.isAsking || session.isRevealing
-        default: wantsAdvice(kind) && session.isSearching && !session.isAdviceSpent
+        default:
+            wantsAdvice(kind) && session.thinking == nil && session.isSearching
+                && !session.isAdviceSpent
         }
     }
 

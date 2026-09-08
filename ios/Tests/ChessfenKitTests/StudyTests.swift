@@ -513,6 +513,19 @@ import Testing
         #expect(session.boardContinuation == ["Nf3", "Nc6", "Bb5"])
     }
 
+    @Test("a walk still on its first ply takes a longer Line as the search deepens")
+    func aWalkOnTheFirstPlyTakesALongerLine() throws {
+        let session = try reviewedSession(PositionalEngine([:]))
+        session.jump(toPly: 2)
+        session.startWalk(line: ["Nf3"])
+        #expect(session.walk?.line == ["Nf3"])
+        session.startWalk(line: ["Nf3", "Nc6", "Bb5"])
+        #expect(session.walk?.line == ["Nf3", "Nc6", "Bb5"], "五步 does not freeze on the first snapshot")
+        session.stepWalk(by: 1)
+        session.startWalk(line: ["Nf3", "Nc6", "Bb5", "a6"])
+        #expect(session.walk?.line == ["Nf3", "Nc6", "Bb5"], "a walk under way is not replaced")
+    }
+
     @Test("the transport stops at both ends instead of wrapping")
     func theCarouselClampsAtBothEnds() throws {
         let session = try reviewedSession(PositionalEngine([:]))

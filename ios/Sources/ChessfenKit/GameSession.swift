@@ -1335,15 +1335,21 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     public func startWalk(line: [String]? = nil) {
         // Not over a plan: the board would show one line and the arrows another, and the plan has a
         // transport of its own for exactly this.
-        guard walk == nil, planDraft == nil else { return }
+        guard planDraft == nil else { return }
+        // A walk already under way is not replaced: the person is reading it. One still sitting
+        // on the first ply may take a longer Line as the Stint deepens, so 五步 does not freeze
+        // on the first one-move snapshot.
+        if let walk, walk.step > 0 { return }
         let line = line ?? viewedContinuation
-        guard !line.isEmpty, let outcome = viewed.outcome(of: line) else { return }
+        guard !line.isEmpty, walk?.line != line else { return }
+        guard let outcome = viewed.outcome(of: line) else { return }
         endScan()
         // Watching the squares change hands is the whole point of playing it, so the layer comes on
         // with it — the same one exception a commit gets, and for the same reason (docs/adr/0015).
         showsControlChange = true
+        let quiet = walk != nil
         walk = Walk(line: line, step: 0, outcome: outcome)
-        Sounds.current.play(.move)
+        if !quiet { Sounds.current.play(.move) }
     }
 
     /// Steps the Line forward or back. Clamped at both ends rather than wrapping: a carousel that
@@ -1903,14 +1909,17 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// waiting on its answer while an unbounded one belongs to a screen (docs/adr/0009) — and this
     /// is the second kind however few seconds it runs for. The other is that cancelling is already
     /// how every search in this app ends, a thumb coming off 让引擎走 included.
-    private func advise(on position: Game, using engine: any Engine) {
+    private func advise(on position: Game, using engine: any Engine, lines: Int = 3) {
         isAdviceSpent = false
         searchProgress = nil
         searchTask = Task { [weak self] in
-            // Three lines, because this is the one search whose product is the panel's candidates
-            // rather than one move. What it recommends keeps changing as it deepens, and that is
-            // the honest picture of a search rather than a bug (docs/adr/0009).
-            for await snapshot in engine.analyse(position, budget: .untilStopped, lines: 3) {
+            // A card's Stint is one line — 五步 walks it, 要害 reads it — because each extra
+            // Line costs about a Depth, and the three-candidate panel is gone. Standing advice
+            // with the opinion on still asks for three, the honest picture of a search
+            // (docs/adr/0009).
+            for await snapshot in engine.analyse(
+                position, budget: .untilStopped, lines: max(1, lines)
+            ) {
                 if Task.isCancelled { return }
                 self?.record(snapshot)
             }
@@ -1962,7 +1971,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         }
         if searchTask != nil { return }
         stopSearching()
-        advise(on: viewed, using: engine)
+        advise(on: viewed, using: engine, lines: 1)
     }
 
     /// Cuts the engine's thinking short and takes whatever it likes best right now.

@@ -122,8 +122,8 @@ struct DeckRail<Card: Hashable>: View {
             .background(Palette.chipRest, in: Capsule())
             Spacer(minLength: 0)
         }
-        .padding(.top, 4)
-        .padding(.bottom, 4)
+        .padding(.top, 0)
+        .padding(.bottom, 6)
     }
 
     private func segment(_ card: Card) -> some View {
