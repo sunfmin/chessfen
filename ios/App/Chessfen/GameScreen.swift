@@ -666,7 +666,9 @@ struct GameScreen: View {
             let dx = value.translation.width
             guard abs(dy) > abs(dx) * 1.2, abs(dy) > 28 else { return }
             selected = nil
-            session.cycleFork(by: dy < 0 ? 1 : -1)
+            withAnimation(.snappy(duration: 0.22)) {
+                session.cycleFork(by: dy < 0 ? 1 : -1)
+            }
         }
     }
 
@@ -742,29 +744,42 @@ struct GameScreen: View {
 
     private func half(_ cell: PlyCell) -> some View {
         let on = cell.cursor == session.cursor
+        let forked = cell.siblingCount > 1
         let mark = cell.isTrunk ? Palette.ink : Palette.mine
-        let fill = on ? (cell.isTrunk ? Palette.analysis : Palette.mine) : Color.clear
-        return Button { walk(to: cell.cursor) } label: {
-            HStack(spacing: 2) {
+        return HStack(spacing: 3) {
+            if forked {
+                Button {
+                    withAnimation(.snappy(duration: 0.22)) {
+                        session.cycleFork(atPly: cell.cursor - 1, by: 1)
+                    }
+                } label: {
+                    ForkRail(current: cell.branchNumber ?? 1, of: cell.siblingCount, tint: mark)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("切换分支")
+                .accessibilityValue(cell.spoken)
+                .accessibilityHint("点一下换到下一条线")
+            }
+            Button { walk(to: cell.cursor) } label: {
                 Text(cell.san)
                     .font(on ? .notation.weight(.bold) : .notation)
-                if let number = cell.branchNumber, cell.siblingCount > 1 {
-                    Text("\(number)")
-                        .font(.caption2.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(on ? Palette.parchment : mark)
-                }
+                    .foregroundStyle(on && !forked ? Palette.parchment : mark)
+                    .padding(.horizontal, forked ? 3 : 5)
+                    .padding(.vertical, 2)
+                    .background {
+                        if on && !forked {
+                            RoundedRectangle(cornerRadius: 5).fill(Palette.analysis)
+                        } else if on && forked {
+                            RoundedRectangle(cornerRadius: 5).stroke(mark, lineWidth: 1.2)
+                        }
+                    }
             }
-            .foregroundStyle(on ? Palette.parchment : mark)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 2)
-            .background(fill, in: RoundedRectangle(cornerRadius: 5))
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
         .id(cell.cursor)
-        // Said the way somebody reading a game aloud says it. A bare "Nf6" out of VoiceOver is a
-        // move with no place in the game, and place is the whole of what this strip is for.
+        .accessibilityElement(children: forked ? .contain : .combine)
         .accessibilityLabel(cell.spoken)
-        .accessibilityHint("回到这一步")
+        .accessibilityHint(forked ? "上下滑动切换分支" : "回到这一步")
     }
 
     private func arrow(
@@ -2630,6 +2645,43 @@ struct PlyCell: Hashable {
         guard siblingCount > 1, let branchNumber else { return step }
         let kind = isTrunk ? "树干" : "树枝"
         return "\(step)，\(kind) \(branchNumber)/\(siblingCount)"
+    }
+}
+
+/// The tree, compressed to one column of ticks. PGN writes a fork as parentheses; this is
+/// that crease, thin enough to live in the scoresheet's own row. Each sibling is a ring on
+/// a spine, the current one filled — a number sitting after the SAN was being read as a
+/// move, which is the one thing a scoresheet cannot afford.
+struct ForkRail: View {
+    let current: Int
+    let of: Int
+    var tint: Color
+
+    private var ticks: Int { min(max(of, 2), 4) }
+
+    var body: some View {
+        let shown = tickIndex(current)
+        ZStack {
+            Capsule().fill(tint.opacity(0.3)).frame(width: 1.5)
+            VStack(spacing: ticks == 2 ? 7 : 3) {
+                ForEach(1...ticks, id: \.self) { n in
+                    let on = n == shown
+                    Circle()
+                        .strokeBorder(tint.opacity(on ? 1 : 0.38), lineWidth: 1.2)
+                        .background(Circle().fill(on ? tint : Color.clear))
+                        .frame(width: on ? 6 : 4.5, height: on ? 6 : 4.5)
+                }
+            }
+        }
+        .frame(width: 11, height: 28)
+        .contentShape(Rectangle())
+    }
+
+    private func tickIndex(_ current: Int) -> Int {
+        if of <= 4 { return min(max(current, 1), ticks) }
+        if current <= 1 { return 1 }
+        if current >= of { return ticks }
+        return min(2, ticks)
     }
 }
 

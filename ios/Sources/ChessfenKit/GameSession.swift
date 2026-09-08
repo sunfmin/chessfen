@@ -819,7 +819,14 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// Swipes the record onto the next (or previous) sibling at the fork the eye is on.
     /// The strip stays one line; the tree is what the swipe walks.
     public func cycleFork(by delta: Int) {
-        guard delta != 0, let ply = forkPly else { return }
+        guard let ply = forkPly else { return }
+        cycleFork(atPly: ply, by: delta, keepStanding: true)
+    }
+
+    /// Cycles the siblings of a named Ply. A tap on that ply's rail names it; a swipe on the
+    /// strip uses whichever fork the eye is already on, and tries not to jump the cursor.
+    public func cycleFork(atPly ply: Int, by delta: Int, keepStanding: Bool = false) {
+        guard delta != 0 else { return }
         let siblings = game.siblings(atPly: ply)
         guard siblings.count > 1 else { return }
         let current = siblings.firstIndex { $0.variationIndex == nil } ?? 0
@@ -828,7 +835,11 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         guard let index = next.variationIndex else { return }
         let standing = cursor
         guard game.promoteVariation(index, atPly: ply) else { return }
-        cursor = standing <= ply ? ply : ply + 1
+        if keepStanding {
+            cursor = standing <= ply ? ply : ply + 1
+        } else {
+            cursor = ply + 1
+        }
         adoptViewedAnalysis()
         save()
         retune()
