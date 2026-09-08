@@ -216,27 +216,23 @@ line — how many replies were the only legal move, whether the line reaches mat
 as numbered arrows, at most six Ply: 五步计划 stops at five for what can be checked, this stops
 at six for what can be seen. About whichever position is on screen, a past Ply included, and its
 card turns 战术发现器 on when you arrive at it — so the mate that was there all along is one
-swipe from being said. 杀 on screen.
+swipe from being said. 杀招 on screen.
 _Avoid_: mate alert, mate warning, checkmate hint, forced mate, tactic
 
 **一叠卡片**:
-What is under the board: one card at a time, paged sideways, with a row of ten dots. **The deck
-never changes shape** — the same ten cards in the same order whatever the position, so the fourth
-dot is the same card every time somebody looks; a card that cannot answer here says so on its own
-face (docs/adr/0023). Each carries a one-line subtitle under its name, because four of them are
-named after ideas somebody has to have been told about once. **The card you are on is the card
-that acts**: arriving turns its layer on — the scan, the walk, the squares, the mate's arrows,
-the finder — and leaving turns it off, so the board draws the one card in front of you and never
-the leftovers of three you swiped past. A swipe onto a card that reads a Line spends a Stint,
-even during Practice: the swipe is the asking, the board stays silent, and 走马灯 / 要害格 walk
-what that Stint found instead of waiting for a Review. The single exception is 复盘, which
-re-scores a whole game and writes what it finds, and keeps a press of its own. It occupies
-the room under the record; a body longer than that scrolls inside the card. The dots are a
-**grouped rail**: four clusters named 现在 / 这一步 /
-任何一格 / 这一局, so ten cards are findable without learning ten names, and the current tab wears
-its card's tint. Every body is built from the same six primitives — lede, move chips, numbered
-row, figures, note, actions — and the numbered badges are the numbers on the board's arrows.
-_Avoid_: tabs, carousel, sections, panels, accordion — and not 走马灯, which walks a Line
+What is under the board: one card at a time, paged sideways, five cards in one order —
+要害, 杀招, 战术, 五步, 练习. **The deck never changes shape**, so the first card is 要害
+every time somebody looks; a card that cannot answer here says so on its own face. Each
+carries a one-line subtitle under its name. **The card you are on is the card that acts**:
+arriving turns its layer on and leaving turns it off, so the board draws the one card in
+front of you. A swipe onto 要害 / 杀招 / 战术 / 五步 spends a Stint, even during Practice:
+the swipe is the asking and the board stays silent. 练习 does not — the player moves first,
+then the card says what the move bought, what it cost, and what the engine would have done
+(a past Ply is a Drill; pointing at a square is how you think before you commit). 复盘 is
+no longer a card: a uniform-depth pass is a press in the ⋯ menu. The dots are a grouped
+rail: 现在 (要害 / 杀招 / 战术) and 这一步 (五步 / 练习). It occupies the room under the
+record; a body longer than that scrolls inside the card.
+_Avoid_: tabs, carousel, sections, panels, accordion
 
 **Drill**:
 One question made out of a Game the app already holds: the position comes back with the
@@ -244,7 +240,7 @@ engine silent, and a move — with an Intent, when one is asked for — has to b
 before anything is revealed. The player's examination, as against a Review, which is the
 engine's report. Neither a screen of its own nor a mode: it is what the one board is when
 the engine's opinion is off and the Ply being looked at is a past one (docs/adr/0015).
-考一遍 on screen.
+练习 on screen.
 _Avoid_: puzzle, quiz, test, exercise, training — and not Review
 
 **Guess**:
@@ -272,20 +268,20 @@ _Avoid_: influence, coverage, heat map, territory, diff
 
 **要害格**:
 What this move is for, said first as a goal — 进攻, 防御, 交换 or 占位 — and then as the
-seven-verb claim that can be told false (攻 e5, 护 f2). The card 这步的要害. Available at
+seven-verb claim that can be told false (攻 e5, 护 f2). The card 要害. Available at
 any Ply the eye is on, the latest included — the last move of the position on screen, or
 the engine's next move when nothing has been played yet. Swiping onto the card is the
 asking. Distinct from a Control Change, which is every square that changed hands and makes
-no claim about any of them, and from the squares 走马灯 still follows along a Line.
+no claim about any of them, and from the squares 五步 still follows along a Line.
 _Avoid_: key square, weak square, hotspot, important square, highlight
 
-**走马灯**:
-Playing a Line out on the main board a Ply at a time, with the 要害格 layer following each
-step and one cumulative sentence saying where the whole line arrived. Ephemeral by
-definition: no Variation is made, nothing reaches the PGN, and leaving it restores the
-position exactly — a Line is a hypothesis and nothing was played. The concrete form of
-"seeing five moves ahead", as against being told that one should.
-_Avoid_: playback, animation, preview, autoplay, simulation
+**五步**:
+Playing the engine's Line out on the main board a Ply at a time, with the 要害格 layer
+following each step and one cumulative sentence saying where the whole line arrived.
+Ephemeral by definition: no Variation is made, nothing reaches the PGN, and leaving it
+restores the position exactly — a Line is a hypothesis and nothing was played. The
+concrete form of "seeing five moves ahead", as against being told that one should.
+_Avoid_: playback, animation, preview, autoplay, simulation, 走马灯
 
 **五步计划**:
 A Variation at most five Ply long, carrying one Intent judged over the whole line instead of
@@ -334,7 +330,7 @@ lights up; pick one and it is played as a Trial, with what it buys and what it c
 fixed templates over facts the rules code counted. The engine comes last and only on a tap,
 because the order is the design: your own reading first, the engine's afterwards. Reversed it
 is a hint button. Outside a Drill it is the whole of the layer — nothing draws itself, you ask.
-问一格 on screen.
+On the 练习 card: pointing at a square is how you think before you commit.
 _Avoid_: hint, suggestion, assistant, analysis mode, what-if
 
 **Trial**:

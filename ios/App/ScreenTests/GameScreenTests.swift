@@ -122,20 +122,17 @@ struct GameScreenScreenshots {
         // The deck under the record, dealt from this position: what a live board can be asked,
         // and nothing about a move that has not been played (docs/adr/0023). The runners-up have
         // a card of their own now — `deckReading` photographs it.
+        #expect(rendered.says("要害"))
+        #expect(rendered.says("杀招"))
         #expect(rendered.says("战术"))
-        #expect(rendered.says("问一格"))
-        #expect(rendered.says("复盘"))
-        #expect(rendered.says("旁注"))
-        #expect(rendered.says("这儿还问不了的"), "and the last card says what is missing and why")
-        // Ten dots, the same ten whatever the position: the deck does not change shape, so the
-        // fourth dot is the same card every time somebody looks (docs/adr/0023). What a card
-        // cannot answer here it says on its own face.
-        #expect(rendered.says("这步的要害"))
-        #expect(rendered.says("走马灯"))
-        #expect(rendered.says("五步计划"))
-        #expect(rendered.says("考一遍"))
-        #expect(rendered.says("杀"), "including the mate card, which is dealt whether or not there is one")
-        #expect(rendered.says("我哪些子能走到这一格"), "and the card showing is the one it opens on")
+        #expect(rendered.says("五步"))
+        #expect(rendered.says("练习"))
+        #expect(rendered.says("刚走的这一步做了什么"), "the card showing is 要害")
+        #expect(!rendered.says("问一格"))
+        #expect(!rendered.says("走马灯"))
+        #expect(!rendered.says("五步计划"))
+        #expect(!rendered.says("考一遍"))
+        #expect(!rendered.says("这儿还问不了的"))
         // One card at a time, so the numbers on screen are the strip's and no more.
         #expect(rendered.count(of: "+0.") == 2)
         // The record, and the whole walk through it.
@@ -162,31 +159,6 @@ struct GameScreenScreenshots {
         #expect(!session.game.isReviewed)
     }
 
-    /// The last card but one: what there is to *read* rather than to do — where this game sits,
-    /// the lines that were left behind, and the moves the engine is weighing behind the one it is
-    /// offering. It was five sections in a scroll and it is one card (docs/adr/0023).
-    @Test("the reading card carries the runners-up, and names them by move rather than by line")
-    func deckReading() async throws {
-        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
-        let session = GameSession.fresh(
-            game, controllers: [.white: .hand, .black: .engine]
-        )
-        session.setPractising(false)
-
-        let rendered = await ScreenImage.write("game-deck-reading") {
-            screen(
-                session, engine: ScriptedEngine(Self.searching, isEndless: true),
-                opening: .reading
-            )
-        }
-
-        #expect(rendered.says("旁注"))
-        #expect(rendered.says("其它选择"))
-        #expect(rendered.says("O-O"))
-        #expect(!rendered.says("O-O d6 d4"), "the moves, not the lines they head")
-        #expect(rendered.count(of: "+0.") >= 3)
-    }
-
     /// A board just read off a photograph: nothing played yet, three squares the recogniser was
     /// not sure of, and the way back to the editor.
     @Test("a freshly recognised board offers the editor and rings what it was unsure of")
@@ -198,11 +170,10 @@ struct GameScreenScreenshots {
         )
 
         let rendered = await ScreenImage.write("game-recognised") {
-            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true), opening: .reading)
+            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true), opening: .key)
         }
 
-        #expect(rendered.says("拿不太准"), "the shaky squares should be counted, not hidden")
-        #expect(rendered.says("改棋子"))
+        #expect(session.unconfirmedSquares.count == 3, "the shaky squares stay ringed on the board")
         #expect(rendered.says("从这里开始走"))
         // Nothing is played yet, so the side to move has its own questions open.
         #expect(rendered.says("谁走"))
@@ -330,7 +301,7 @@ struct GameScreenScreenshots {
         )
 
         let rendered = await ScreenImage.write("game-self-play") {
-            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true), opening: .reading)
+            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true), opening: .key)
         }
 
         #expect(session.thinkingTime == .fixed(seconds: 3), "three seconds a move until told else")
@@ -342,7 +313,6 @@ struct GameScreenScreenshots {
         #expect(rendered.says("3 秒"))
         #expect(rendered.says("10 秒"))
         #expect(rendered.says("跟着我"))
-        #expect(rendered.says("程序自己走下去；翻回上一步就停"), "what a game with nobody in it does")
         #expect(rendered.says("马上走"), "with the way to stop waiting for the move on the clock")
     }
 
@@ -380,11 +350,10 @@ struct GameScreenScreenshots {
         session.step(by: -1)
 
         let rendered = await ScreenImage.write("game-variation") {
-            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true), opening: .reading)
+            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true), opening: .key)
         }
 
         #expect(session.variationsHere.count == 1, "the abandoned line is kept, not dropped")
-        #expect(rendered.says("c3 Nf6"), "and offered in the notation the game is written in")
         #expect(rendered.says("回到最新"), "and the way back to the present, beside the arrows")
         #expect(rendered.says("第 7 步 d3"), "with the move that replaced it in the record")
     }
@@ -453,16 +422,11 @@ struct GameScreenScreenshots {
         let engine = ScriptedEngine(Self.searching, isEndless: true)
         let session = GameSession.fresh(game)
         session.attach(engine: engine, library: nil)
-        session.jump(toPly: 6)
-        session.adviseForCard()
-        await hop()
-
         let rendered = await ScreenImage.write("game-card-searching") {
-            screen(session, engine: engine, opening: .key)
+            screen(session, engine: engine, opening: .walk)
         }
 
         #expect(session.isPractising)
-        #expect(session.isSearching)
         #expect(rendered.says("正在算"))
         #expect(rendered.says("深 26"))
         #expect(!rendered.says("+0.38"), "practice still keeps the Score off the board")
@@ -667,95 +631,7 @@ struct GameScreenScreenshots {
         #expect(session.analysis == nil)
     }
 
-    /// 五步计划: a board you can move on, with the engine's next five drawn on it and a row saying
-    /// what each of them is for — and one reason of your own over what you walked, judged.
-    ///
-    /// docs/adr/0017 said an Intent should be able to hang off a Variation rather than a single Ply.
-    /// The first build asked the player to write the five moves, and that was a wall. The second
-    /// handed them five frozen moves, and that was a replay button. What is left is the board:
-    /// you move on it, the five recompute from where you are, and the claim is still yours
-    /// (docs/adr/0021). The cap is still five, because five is what can be told false.
-    @Test("the engine shows five ahead, you walk the board, and it shows five ahead of that")
-    func planBuiltAndJudged() async throws {
-        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
-        let asked = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: ["e2e4", "e7e5"]))
-        let walked = try #require(
-            Game(startFEN: PGN.standardStartFEN, uciMoves: ["e2e4", "e7e5", "d2d4"])
-        )
-        // Six plies offered from the head, so the picture also shows the cap doing its work.
-        let engine = ScriptedEngine(
-            Self.searching,
-            isEndless: true,
-            byPosition: [
-                asked.state.fen: Self.opinion(
-                    .centipawns(32), best: ("f1c4", "Bc4"),
-                    then: ["Nf6", "Nf3", "Nc6", "Ng5", "d5"]
-                ),
-                walked.state.fen: Self.opinion(
-                    .centipawns(10), best: ("e5d4", "exd4"), then: ["Qxd4", "Nc6"]
-                ),
-            ]
-        )
-        let session = GameSession.fresh(game)
-        session.attach(engine: engine, library: nil)
-        session.jump(toPly: 2)
-
-        // One tap, and the oldest plan in chess is drawn on the board: two pieces onto f7.
-        session.startPlan()
-        await hop()
-        let drafting = await ScreenImage.write("game-plan-drafting") {
-            screen(session, engine: engine, opening: .plan)
-        }
-
-        #expect(engine.searchCount == 1, "one search, for the line — and nothing else asked")
-        #expect(drafting.says("五步计划"))
-        #expect(drafting.says("点哪一行就走到哪一步"))
-        #expect(drafting.says("在棋盘上随便走"), "the board is live, and the screen says so")
-        // A row per move, each read in the position it is played in. This is the whole of what a
-        // handed-over line does not carry.
-        #expect(drafting.says("占 d5"), "the bishop takes the square, which is what Bc4 is for")
-        #expect(drafting.says("攻 f7"), "and the fifth move gets there")
-        #expect(drafting.says("对方"), "including the replies, read from their side of the board")
-        #expect(drafting.says("自己王边上的 d2 少了看守"), "and what it gives away")
-        #expect(session.planDraft?.aheadSans == ["Bc4", "Nf6", "Nf3", "Nc6", "Ng5"])
-        #expect(session.planArrows.map(\.step) == [1, 2, 3, 4, 5])
-
-        // Two — a move of the player's own, which is not one of the five. The board takes it, and
-        // the five are recomputed from where it leaves them.
-        session.playInPlan(try #require(session.board.state.move(matching: "d2d4")))
-        await hop()
-        let deviated = await ScreenImage.write("game-plan-walked") {
-            screen(session, engine: engine, opening: .plan)
-        }
-
-        #expect(engine.searchCount == 2, "one more, for the position the move made")
-        #expect(deviated.says("你走的"))
-        #expect(deviated.says("d4"))
-        #expect(session.planDraft?.sans == ["d4"], "what you walked is the plan")
-        #expect(session.planDraft?.aheadSans == ["exd4", "Qxd4", "Nc6"], "five ahead of that")
-        // And still read from your seat: the reply opens the line, so row one is theirs.
-        #expect(session.planArrows.map(\.isYours) == [false, true, false])
-        #expect(session.board.plies.map(\.san) == ["e4", "e5", "d4"])
-        // On the board and in no Game, right up to the commit.
-        #expect(session.game.variations(atPly: 2).isEmpty)
-
-        // Three — one reason, over what you walked, and it is the player's. Not 占 d4: the pawn
-        // *stands* on d4, and 占 is control rather than occupation (docs/adr/0018).
-        session.choose(.attack)
-        session.aim(at: try #require(Square("e5")))
-        session.commitPlan()
-        let judged = await ScreenImage.write("game-plan-judged") { screen(session, engine: engine, opening: .plan) }
-
-        let plan = try #require(session.game.plans(atPly: 2).first)
-        #expect(plan.sans == ["d4"], "what you played, never what was being shown")
-        #expect(plan.intent == .claim(.attack, try #require(Square("e5"))))
-        #expect(judged.says("攻 e5"))
-        #expect(judged.says("第 1 步 d4 的时候成立"))
-        #expect(judged.says("这条线进了棋谱"))
-        #expect(session.planCheck?.held == true)
-    }
-
-    /// 走马灯: the engine's stored Line played out on the main board, with the layer following each
+    /// 五步: the engine's stored Line played out on the main board, with the layer following each
     /// step and one sentence saying where the whole thing arrives.
     ///
     /// The sentence is the point. Without it a carousel recites four moves, the position is
@@ -787,7 +663,7 @@ struct GameScreenScreenshots {
         // Two of four plies on the board, and the board is showing them.
         #expect(session.board.plies.map(\.san).suffix(2) == ["Nxe5", "Nxe5"])
         #expect(rendered.says("第 2/4 步"))
-        #expect(rendered.says("走马灯"))
+        #expect(rendered.says("五步"))
         // The layer redrew for the position the walk is standing in, not the one the game is in —
         // asked of the layer itself, because the squares it names are on the 要害 card and this
         // screenshot is of the carousel's (docs/adr/0023).
@@ -839,7 +715,7 @@ struct GameScreenScreenshots {
         // One — armed, and pointed at d4. Two pieces can get there and the board rings both.
         session.armScanner()
         session.scan(at: try #require(Square("d4")))
-        let lit = await ScreenImage.write("game-scan-asked") { screen(session, engine: engine, opening: .scanner) }
+        let lit = await ScreenImage.write("game-scan-asked") { screen(session, engine: engine, opening: .drill) }
 
         #expect(session.scan?.origins == Set([try #require(Square("d2")), try #require(Square("f3"))]))
         #expect(lit.says("d4：2 个子能过去。"))
@@ -856,7 +732,7 @@ struct GameScreenScreenshots {
         // Two — the pawn tried out. What it buys and what it costs, in that order, both of them
         // facts anybody can go and count on the board.
         session.tryOut(try #require(session.scan?.arrivals.first?.move))
-        let tried = await ScreenImage.write("game-scan-trial") { screen(session, engine: engine, opening: .scanner) }
+        let tried = await ScreenImage.write("game-scan-trial") { screen(session, engine: engine, opening: .drill) }
 
         #expect(session.trial?.san == "d4")
         #expect(tried.says("攻 c5"), "what it is for, in the same verbs a player declares in")
@@ -872,7 +748,7 @@ struct GameScreenScreenshots {
         // Three — and now the engine, because somebody asked it.
         session.askEngine()
         await hop()
-        let answered = await ScreenImage.write("game-scan-engine") { screen(session, engine: engine, opening: .scanner) }
+        let answered = await ScreenImage.write("game-scan-engine") { screen(session, engine: engine, opening: .drill) }
 
         #expect(engine.searchCount == 1)
         #expect(session.scanAnswer?.best == "O-O")
@@ -1063,7 +939,7 @@ struct GameScreenScreenshots {
         #expect(session.showsControlChange)
         #expect(session.guess?.san == "Qg5", "the player's own arrow has something to draw")
         #expect(session.declaredIntent?.target == Square("e5"), "and the claim has a target to ring")
-        #expect(rendered.says("这步的要害"))
+        #expect(rendered.says("要害"))
         #expect(rendered.says("红圈"), "with the one mark that needs a word said in one")
         // Nothing is ranked, because nothing has been paid for: the engine has not been let speak
         // about this position yet, and the panel says which of the two silences it is.
@@ -1173,7 +1049,7 @@ struct GameScreenScreenshots {
             screen(session, engine: engine, opening: .key)
         }
 
-        #expect(rendered.says("这步的要害"))
+        #expect(rendered.says("要害"))
         #expect(rendered.says("红圈"), "the one mark on the board that needs a word, in the dark too")
         #expect(rendered.says("先交卷"), "and the reason the ranked squares are not here yet")
         // The guess and its claim are the drill's card and are photographed there — this one is
@@ -1182,30 +1058,19 @@ struct GameScreenScreenshots {
         #expect(session.declaredIntent?.target == Square("e5"))
     }
 
-    @Test("neither layer appears on the position the player is about to move in")
+    @Test("the last move's hanging pieces are named on 要害, even at the latest")
     func noLayersOnTheLivePosition() async throws {
         let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.givenAway))
         let session = GameSession.fresh(game)
-        session.setShowsControlChange(true)
 
-        // There is plenty hanging in this position — that is the point of the fixture — and the
-        // board says none of it, because the next move is the player's to find.
         #expect(try #require(session.viewed.loosePieces).isEmpty == false)
 
         let silent = await ScreenImage.write("game-layers-live") {
             screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
         }
-        #expect(!silent.says("这步改了什么"), "the control layer is not even offered here")
-        #expect(!silent.says("红圈"))
-
-        // And with the engine's opinion on it is still not offered: the gate is the position, not
-        // the switch.
-        session.setPractising(false)
-        let talking = await ScreenImage.write("game-layers-live") {
-            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
-        }
-        #expect(!talking.says("这步改了什么"))
-        #expect(!talking.says("红圈"))
+        #expect(silent.says("要害"))
+        #expect(silent.says("红圈"), "要害 is about the move just played, latest included")
+        #expect(silent.says("是为了"))
     }
 
     /// The switch on: this is 复盘, on the board the game was played on.
@@ -1226,25 +1091,13 @@ struct GameScreenScreenshots {
         session.setPractising(false)
 
         let rendered = await ScreenImage.write("game-report") {
-            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true), opening: .review)
+            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true), opening: .key)
         }
 
         #expect(!session.isPractising)
         #expect(session.reviewPass == nil, "a Game that already has a pass is not made to sit through another")
         #expect(rendered.says("优势条"), "the bar is back, because the opinion is on")
-        #expect(rendered.says("第 4 回合 白方 c3"), "the move the eye is on")
-        #expect(rendered.says("漏着"), "what the pass made of it")
-        #expect(rendered.says("-4.20"), "and its Score")
-        #expect(rendered.says("深度 18"), "named, because a Score without one compares to nothing")
-        #expect(
-            !rendered.says("按深度 18 算的"),
-            "but as two words beside the number, not a sentence on a row of its own"
-        )
-        #expect(rendered.says("这局最贵的三步"), "with the worst moves offered as the questions they are")
-        // One card, not two: the three worst moves are this pass's own output and have no
-        // existence without it (docs/adr/0023).
-        #expect(rendered.says("复盘"), "which is a card on the one board, still not a place to go to")
-        #expect(rendered.says("统一深度重算全局，让每一步的分能互相比"), "said in words, under the name")
+        #expect(rendered.says("分数曲线"))
     }
 
     /// The curve behind the moves: one strip, the record still the record, the shape of the game
@@ -1254,15 +1107,13 @@ struct GameScreenScreenshots {
         let session = try Self.reviewed()
 
         let rendered = await ScreenImage.write("game-report") {
-            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true), opening: .review)
+            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true), opening: .key)
         }
 
         #expect(rendered.says("第 7 步 c3"), "the moves read exactly as they did")
         #expect(rendered.says("第 8 步 Nf6"))
         #expect(rendered.says("开局"), "including the way back to the start")
         #expect(rendered.says("分数曲线"), "and the curve is behind them")
-        #expect(rendered.says("第 4 回合 白方 c3"), "what a curve cannot say is said under it")
-        #expect(rendered.says("深度 18"))
     }
 
     @Test("a practising board has no curve behind its record, and nor has an unscored game")
@@ -1283,7 +1134,6 @@ struct GameScreenScreenshots {
             screen(unscored, engine: ScriptedEngine(Self.searching, isEndless: true))
         }
         #expect(!blank.says("分数曲线"), "nothing to draw one out of yet")
-        #expect(blank.says("这局还没打过分"))
     }
 
     // ------------------------------------------------------------------- glue

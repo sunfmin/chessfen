@@ -6,8 +6,8 @@ import Testing
 
 /// The deck under the board, one card per picture (docs/adr/0023).
 ///
-/// Ten cards, ten PNGs, each with something real on it — a mate with its arrows, a shot, a
-/// question with its verbs, a ranked square with its sentence. The other suite photographs the
+/// Five cards, five PNGs, each with something real on it — a purpose, a mate with its arrows, a
+/// shot, a walked line, a question with its verbs. The other suite photographs the
 /// *screen* in the states a game passes through; this one photographs the *cards*, side by side
 /// and comparable, which is what anybody redesigning them has to be able to lay out on a table.
 ///
@@ -84,9 +84,24 @@ struct DeckGallery {
         .environment(GameLibrary())
     }
 
-    // ------------------------------------------------------------------ 1 · 杀
+    // ------------------------------------------------------------------ 1 · 要害
 
-    @Test("1 · 杀 — the news, with the line numbered on the board")
+    @Test("1 · 要害 — what this move is for")
+    func key() async throws {
+        let (session, engine) = try await layered()
+        session.commitGuess()
+        await hop()
+
+        let rendered = await ScreenImage.write("deck-01-key") {
+            screen(session, engine: engine, opening: .key)
+        }
+        #expect(rendered.says("要害"))
+        #expect(!session.viewedContinuation.isEmpty, "the reveal paid for the line this reads")
+    }
+
+    // ------------------------------------------------------------------ 2 · 杀招
+
+    @Test("2 · 杀招 — the news, with the line numbered on the board")
     func mate() async throws {
         // Morphy's opera game before 16.Qb8+: White mates in two and Black's reply is forced.
         let game = try #require(Game(startFEN: "4kb1r/p2n1ppp/4q3/4p1B1/4P3/1Q6/PPP2PPP/2KR4 w - - 0 1"))
@@ -109,7 +124,7 @@ struct DeckGallery {
         session.attach(engine: engine, library: nil)
         await hop()
 
-        let rendered = await ScreenImage.write("deck-01-mate") {
+        let rendered = await ScreenImage.write("deck-02-mate") {
             screen(session, engine: engine, opening: .mate)
         }
         #expect(rendered.says("你有 2 步杀"))
@@ -143,9 +158,40 @@ struct DeckGallery {
         #expect(rendered.says("战术"))
     }
 
-    // ------------------------------------------------------------------ 3 · 考一遍
+    // ------------------------------------------------------------------ 3 · 战术 is above
 
-    @Test("3 · 考一遍 — the question, answered, with all three moves side by side")
+    // ------------------------------------------------------------------ 4 · 五步
+
+    @Test("4 · 五步 — two of four plies walked, and where the whole line arrives")
+    func walk() async throws {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
+        let engine = ScriptedEngine(Self.searching, isEndless: true)
+        let session = GameSession.fresh(game)
+        session.attach(engine: engine, library: nil)
+        session.applyReview(
+            game.plies.indices.map { ply in
+                ReviewedPly(
+                    score: .centipawns(20),
+                    line: ply == 5 ? ["Nxe5", "Nxe5", "d4", "Bd6"] : []
+                )
+            },
+            startEvaluation: nil,
+            depth: 18
+        )
+        session.jump(toPly: 6)
+        session.startWalk()
+        session.stepWalk(by: 2)
+
+        let rendered = await ScreenImage.write("deck-04-walk") {
+            screen(session, engine: engine, opening: .walk)
+        }
+        #expect(rendered.says("五步"))
+        #expect(rendered.says("第 2/4 步"))
+    }
+
+    // ------------------------------------------------------------------ 5 · 练习
+
+    @Test("5 · 练习 — the question, answered, with all three moves side by side")
     func drill() async throws {
         let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
         let asked = try #require(
@@ -180,26 +226,11 @@ struct DeckGallery {
         session.commitGuess()
         await hop()
 
-        let rendered = await ScreenImage.write("deck-03-drill") {
+        let rendered = await ScreenImage.write("deck-05-drill") {
             screen(session, engine: engine, opening: .drill)
         }
-        #expect(rendered.says("考一遍"))
+        #expect(rendered.says("练习"))
         #expect(rendered.says("d4"))
-    }
-
-    // ------------------------------------------------------------------ 4 · 这步的要害
-
-    @Test("4 · 这步的要害 — what this move is for")
-    func key() async throws {
-        let (session, engine) = try await layered()
-        session.commitGuess()
-        await hop()
-
-        let rendered = await ScreenImage.write("deck-04-key") {
-            screen(session, engine: engine, opening: .key)
-        }
-        #expect(rendered.says("这步的要害"))
-        #expect(!session.viewedContinuation.isEmpty, "the reveal paid for the line this reads")
     }
 
     /// The position right after White threw the knight away, with a Guess on the board that is not
@@ -232,154 +263,5 @@ struct DeckGallery {
         session.choose(.attack)
         session.aim(at: try #require(Square("e5")))
         return (session, engine)
-    }
-
-    // ------------------------------------------------------------------ 5 · 走马灯
-
-    @Test("5 · 走马灯 — two of four plies walked, and where the whole line arrives")
-    func walk() async throws {
-        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
-        let engine = ScriptedEngine(Self.searching, isEndless: true)
-        let session = GameSession.fresh(game)
-        session.attach(engine: engine, library: nil)
-        session.applyReview(
-            game.plies.indices.map { ply in
-                ReviewedPly(
-                    score: .centipawns(20),
-                    line: ply == 5 ? ["Nxe5", "Nxe5", "d4", "Bd6"] : []
-                )
-            },
-            startEvaluation: nil,
-            depth: 18
-        )
-        session.jump(toPly: 6)
-        session.startWalk()
-        session.stepWalk(by: 2)
-
-        let rendered = await ScreenImage.write("deck-05-walk") {
-            screen(session, engine: engine, opening: .walk)
-        }
-        #expect(rendered.says("走马灯"))
-        #expect(rendered.says("第 2/4 步"))
-    }
-
-    // ------------------------------------------------------------------ 6 · 五步计划
-
-    @Test("6 · 五步计划 — five ahead, each row saying what it is for")
-    func plan() async throws {
-        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
-        let asked = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: ["e2e4", "e7e5"]))
-        let engine = ScriptedEngine(
-            Self.searching,
-            isEndless: true,
-            byPosition: [
-                asked.state.fen: Self.opinion(
-                    .centipawns(32), best: ("f1c4", "Bc4"),
-                    then: ["Nf6", "Nf3", "Nc6", "Ng5", "d5"]
-                )
-            ]
-        )
-        let session = GameSession.fresh(game)
-        session.attach(engine: engine, library: nil)
-        session.jump(toPly: 2)
-
-        let rendered = await ScreenImage.write("deck-06-plan") {
-            screen(session, engine: engine, opening: .plan)
-        }
-        await hop()
-        #expect(rendered.says("五步计划"))
-    }
-
-    // ------------------------------------------------------------------ 7 · 问一格
-
-    @Test("7 · 问一格 — a square asked about, a move tried out, and the engine last")
-    func scanner() async throws {
-        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
-        let asked = try #require(
-            Game(startFEN: PGN.standardStartFEN, uciMoves: Array(Self.italian.prefix(6)))
-        )
-        let engine = ScriptedEngine(
-            Self.searching,
-            isEndless: true,
-            byPosition: [
-                asked.state.fen: Self.opinion(
-                    .centipawns(45), best: ("e1g1", "O-O"), then: ["d6", "d4"]
-                )
-            ]
-        )
-        let session = GameSession.fresh(game)
-        session.attach(engine: engine, library: nil)
-        session.jump(toPly: 6)
-        session.armScanner()
-        session.scan(at: try #require(Square("d4")))
-        session.tryOut(try #require(session.scan?.arrivals.first?.move))
-        session.askEngine()
-        await hop()
-
-        let rendered = await ScreenImage.write("deck-07-scanner") {
-            screen(session, engine: engine, opening: .scanner)
-        }
-        #expect(rendered.says("问一格"))
-        #expect(rendered.says("d4"))
-    }
-
-    // ------------------------------------------------------------------ 8 · 复盘
-
-    @Test("8 · 复盘 — the pass, the move the eye is on, and the three worst")
-    func review() async throws {
-        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
-        let session = GameSession.fresh(game)
-        session.applyReview(
-            [
-                .centipawns(30), .centipawns(25), .centipawns(35), .centipawns(30),
-                .centipawns(40), .centipawns(35), .centipawns(-420), .centipawns(-410),
-            ],
-            startEvaluation: .centipawns(20),
-            depth: 18
-        )
-        session.jump(toPly: 7)
-        session.setPractising(false)
-
-        let rendered = await ScreenImage.write("deck-08-review") {
-            screen(
-                session, engine: ScriptedEngine(Self.searching, isEndless: true), opening: .review
-            )
-        }
-        #expect(rendered.says("复盘"))
-        #expect(rendered.says("这局最贵的三步"))
-    }
-
-    // ------------------------------------------------------------------ 9 · 旁注
-
-    @Test("9 · 旁注 — the runners-up the engine is weighing behind the move it offers")
-    func reading() async throws {
-        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
-        let session = GameSession.fresh(
-            game, controllers: [.white: .hand, .black: .engine]
-        )
-        session.setPractising(false)
-        let engine = ScriptedEngine(Self.searching, isEndless: true)
-
-        let rendered = await ScreenImage.write("deck-09-reading") {
-            screen(session, engine: engine, opening: .reading)
-        }
-        #expect(rendered.says("旁注"))
-        #expect(rendered.says("其它选择"))
-    }
-
-    // ------------------------------------------------------------------ 10 · 这儿还问不了的
-
-    @Test("10 · 这儿还问不了的 — what this position cannot answer, and what would buy it")
-    func missing() async throws {
-        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
-        let session = GameSession.fresh(game, controllers: [.white: .hand, .black: .engine])
-        let engine = ScriptedEngine(Self.searching, isEndless: true)
-        session.attach(engine: engine, library: nil)
-
-        let rendered = await ScreenImage.write("deck-10-missing") {
-            screen(session, engine: engine, opening: .missing)
-        }
-        #expect(rendered.says("这儿还问不了的"))
-        #expect(rendered.says("复盘 · 最贵三步"))
     }
 }

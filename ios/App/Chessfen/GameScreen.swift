@@ -56,7 +56,7 @@ struct GameScreen: View {
     ///
     /// A kind rather than an index (see `Card`): the deck is dealt from the position, so an index
     /// would point at a different card every time the position changed shape.
-    @State private var card: Card = .scanner
+    @State private var card: Card = .key
     /// Whether the mate line is drawn on the board. Set by arriving at the news, because a mate
     /// drawn is the whole of what the news is for, and cleared by leaving it.
     @State private var showsMateLine = false
@@ -86,11 +86,8 @@ struct GameScreen: View {
         // coloured dot among five is not a prompt (docs/adr/0023). Only ever the latest position —
         // a past Ply is a Drill and is handed no mate at all.
         if session.mateNews != nil { return .mate }
-        if isPast {
-            if session.isStudying || session.guess != nil { return .drill }
-            return .key
-        }
-        return .scanner
+        if isPast, session.isStudying || session.guess != nil { return .drill }
+        return .key
     }
 
     /// Deals the deck, once, and does whatever arriving at that card does — an opening card whose
@@ -846,21 +843,26 @@ struct GameScreen: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.top, 10)
-        } else {
-            // A Drill is a reading of two things a person already said — the switch, and where
-            // they are looking (docs/adr/0015) — so when it is not one, the card says which of the
-            // two is in the way rather than going blank.
-            Text(
-                isPast
-                    ? "引擎意见开着，这一步的分已经在上面了。关掉那只眼睛，这一步才能当题做。"
-                    : "考一遍是拿走过的一步当题。用上面的记录条退回一步，这张卡就出题。"
-            )
-            .font(.caption)
-            .foregroundStyle(Palette.inkSoft)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
+        } else if isPast {
+            Text("引擎意见开着，这一步的分已经在上面了。关掉那只眼睛，这一步才能当题做。")
+                .font(.caption)
+                .foregroundStyle(Palette.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+        }
+    }
+
+    /// 练习 — you play, then this card says what the move bought, what it cost, and what the
+    /// engine would have done. A past Ply is a Drill; pointing at a square is how you think
+    /// before you commit.
+    @ViewBuilder private var drillBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            study
+            if session.guess == nil, session.reveal == nil, !session.isRevealing {
+                scannerBody
+            }
         }
     }
 
@@ -1927,21 +1929,15 @@ struct GameScreen: View {
     /// can do nothing here is not a page to swipe past. An index would land on a different card
     /// every time that changed.
     enum Card: Hashable {
-        case mate, tactics, scanner, drill, key, walk, plan, review, reading, missing
+        case key, mate, tactics, walk, drill
     }
 
-    /// Every card, in one order, whatever the position: news, the shot, the question, the squares,
-    /// the line, the plan, the one square you can always ask about, the whole game, the reading,
-    /// and what is missing.
+    /// Every card, in one order, whatever the position.
     ///
-    /// **The deck does not change shape.** It used to be dealt from the position — cards appearing
-    /// and disappearing as the eye moved between the latest Ply and a past one — and a deck whose
-    /// pages come and go is a deck nobody can learn: the fourth dot is a different card every time
-    /// you look. Ten dots that never move can be learnt in an afternoon. A card that cannot answer
-    /// here says so on its own face, which is a thing a person can read; a card that is not there
-    /// says nothing at all.
+    /// **The deck does not change shape.** Five cards that never move can be learnt; a card that
+    /// cannot answer here says so on its own face.
     private var cards: [Card] {
-        [.mate, .tactics, .drill, .key, .walk, .plan, .scanner, .review, .reading, .missing]
+        [.key, .mate, .tactics, .walk, .drill]
     }
 
     /// The deck, and the row of dots that says how many cards there are.
@@ -2013,16 +2009,11 @@ struct GameScreen: View {
 
     @ViewBuilder private func body(of kind: Card) -> some View {
         switch kind {
+        case .key: cardFrame(kind) { keyBody }
         case .mate: cardFrame(kind) { mateBody }
         case .tactics: cardFrame(kind) { tacticsBody }
-        case .scanner: cardFrame(kind) { scannerBody }
-        case .drill: cardFrame(kind) { study }
-        case .key: cardFrame(kind) { keyBody }
         case .walk: cardFrame(kind) { walkBody }
-        case .plan: cardFrame(kind) { planBody }
-        case .review: cardFrame(kind) { reviewBody }
-        case .reading: cardFrame(kind) { readingBody }
-        case .missing: cardFrame(kind) { missingBody }
+        case .drill: cardFrame(kind) { drillBody }
         }
     }
 
@@ -2091,52 +2082,40 @@ struct GameScreen: View {
 
     private func leave(_ was: Card, for now: Card) {
         switch was {
-        case .scanner: session.endScan()
+        case .drill: session.endScan()
         case .walk:
             session.endWalk()
             session.setShowsControlChange(false)
         case .key: session.setShowsControlChange(false)
-        case .plan: session.abandonPlan()
         case .mate:
             showsMateLine = false
             if !wantsFinder(now) { closeFinder() }
         case .tactics: if !wantsFinder(now) { closeFinder() }
-        default: break
         }
     }
 
     private func arrive(at now: Card) {
         switch now {
-        case .scanner: if session.scan == nil { session.armScanner() }
+        case .drill:
+            if session.scan == nil, session.guess == nil { session.armScanner() }
         case .walk:
-            // 走马灯 is the walk *and* the layer following it, step by step (docs/adr/0020), so
-            // both come on together and both go off together.
             session.setShowsControlChange(true)
             if session.walk == nil { session.startWalk() }
-        // Arriving *is* the tap: the arrows are what the news is for, and a person who swiped to
-        // 「对方 2 步杀」 has already asked the question a button would have asked (docs/adr/0023).
         case .mate:
             showsMateLine = true
             openFinder()
         case .tactics: openFinder()
-        // Unless there is a verdict on the last one to read: a commit is the end of a plan, and
-        // arriving back on the card to read how it was judged must not throw that away and start
-        // another (docs/adr/0021).
-        case .plan:
-            if session.planDraft == nil, session.planCheck == nil { session.startPlan() }
-        default: break
+        case .key: break
         }
         if wantsAdvice(now) { session.adviseForCard() }
     }
 
-    /// Cards that read a Line or an Analysis spend a Stint on arrival, even during Practice.
-    /// The swipe is the asking; the board stays silent. Scanner, 考一遍 and 复盘 keep their own
-    /// bargains — the engine comes last, the player answers first, a pass is a press. 五步计划
-    /// already owns the engine for its look-ahead.
+    /// Cards that read a Line spend a Stint on arrival, even during Practice. 练习 keeps its
+    /// own bargain: the player answers first, the engine last.
     private func wantsAdvice(_ kind: Card) -> Bool {
         switch kind {
-        case .mate, .tactics, .key, .walk, .reading: true
-        case .scanner, .drill, .plan, .review, .missing: false
+        case .mate, .tactics, .key, .walk: true
+        case .drill: false
         }
     }
 
@@ -2144,17 +2123,14 @@ struct GameScreen: View {
     /// depth. Neighbouring pages stay alive in a paged TabView; only the card in front speaks.
     private func isCardSearching(_ kind: Card) -> Bool {
         switch kind {
-        case .plan: session.isPlanning
-        case .scanner: session.isAsking
-        case .drill: session.isRevealing
-        case .review: false
+        case .drill: session.isAsking || session.isRevealing
         default: wantsAdvice(kind) && session.isSearching && !session.isAdviceSpent
         }
     }
 
     private func searchPhrase(_ kind: Card) -> String {
         switch kind {
-        case .plan: "正在算后面五步"
+        case .walk: "正在算后面五步"
         default: "正在算"
         }
     }
@@ -2418,7 +2394,7 @@ struct GameScreen: View {
             // Whichever card is in front of you, and only that one: five arrows left over from a
             // plan you swiped away from are five arrows about a position nobody is looking at
             // (docs/adr/0023).
-            plan: card == .plan ? session.planArrows : mateArrows,
+            plan: mateArrows,
             // Tappable while a verb is waiting for its target, too: the board is the only place a
             // claim's target can be said, which is the whole reason a verb has one.
             // Not while a line is being walked: the pieces on screen are five moves from where the
@@ -2656,46 +2632,30 @@ struct MoveCard: Identifiable, Hashable {
 extension GameScreen.Card {
     var title: String {
         switch self {
-        case .mate: "杀"
+        case .key: "要害"
+        case .mate: "杀招"
         case .tactics: "战术"
-        case .scanner: "问一格"
-        case .drill: "考一遍"
-        case .key: "这步的要害"
-        case .walk: "走马灯"
-        case .plan: "五步计划"
-        case .review: "复盘"
-        case .reading: "旁注"
-        case .missing: "这儿还问不了的"
+        case .walk: "五步"
+        case .drill: "练习"
         }
     }
 
     /// One line saying what the card answers, in the words of somebody who does not yet know the
-    /// name above it. Four of these names are ideas of this app's own — 要害, 走马灯, 复盘,
-    /// 最贵三步 — and the owner of the app could not say what two of them did, which is the whole
-    /// argument for this line existing (docs/adr/0023).
+    /// name above it.
     var subtitle: String {
         switch self {
+        case .key: "刚走的这一步做了什么，为了什么"
         case .mate: "几步之内有人要被将死了"
         case .tactics: "这一步有没有一记赢子的"
-        case .scanner: "我哪些子能走到这一格，走过去值不值"
-        case .drill: "把这一步当题做：先自己走，走完才给结果"
-        case .key: "这一步是为了进攻，还是为了防御"
         case .walk: "引擎说的后面几步，在棋盘上走一遍"
-        case .plan: "自己走五步，说一个理由，让它判对错"
-        case .review: "统一深度重算全局，让每一步的分能互相比"
-        case .reading: "这局在哪个集子里，退回去的线，认错的棋子"
-        case .missing: "这儿缺什么，以及怎么补"
+        case .drill: "你走一步，再看这一步的得失和引擎怎么走"
         }
     }
 
-    /// Which of the four things a card is *about*, which is what the rail's gaps say and what
-    /// makes ten of them findable without learning ten names (docs/adr/0023).
     var group: DeckGroup {
         switch self {
-        case .mate, .tactics: .now
-        case .drill, .key, .walk, .plan: .thisMove
-        case .scanner: .anySquare
-        case .review, .reading, .missing: .thisGame
+        case .key, .mate, .tactics: .now
+        case .walk, .drill: .thisMove
         }
     }
 }
