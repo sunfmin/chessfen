@@ -638,25 +638,35 @@ struct GameScreen: View {
     /// no chart — and the correspondence is only as exact as the cards are even, which is why this
     /// is a ground and the numbers are said in words underneath.
     private var record: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 6) {
-                arrow("chevron.left", label: "上一步", enabled: session.cursor > 0) { walk(-1) }
-                moveStrip
-                arrow("chevron.right", label: "下一步", enabled: !session.isAtLatest) { walk(1) }
-                // The way back to the present, beside the arrows that walked away from it. It used to
-                // be a sentence above the board — "在看第 7/8 步 · 回到最新" — which spent a row saying
-                // where the eye was, and where the eye is is what this whole strip is drawing.
-                if !session.isAtLatest {
-                    arrow("forward.end.fill", label: "回到最新", enabled: true) {
-                        selected = nil
-                        session.jumpToLatest()
-                    }
+        HStack(spacing: 6) {
+            arrow("chevron.left", label: "上一步", enabled: session.cursor > 0) { walk(-1) }
+            moveStrip
+            arrow("chevron.right", label: "下一步", enabled: !session.isAtLatest) { walk(1) }
+            // The way back to the present, beside the arrows that walked away from it. It used to
+            // be a sentence above the board — "在看第 7/8 步 · 回到最新" — which spent a row saying
+            // where the eye was, and where the eye is is what this whole strip is drawing.
+            if !session.isAtLatest {
+                arrow("forward.end.fill", label: "回到最新", enabled: true) {
+                    selected = nil
+                    session.jumpToLatest()
                 }
             }
-            .frame(height: 42)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
-            variationChips
+        }
+        .frame(height: 42)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
+        .simultaneousGesture(forkSwipe)
+        .accessibilityHint(session.forkPly == nil ? "" : "上下滑动切换分支")
+    }
+
+    /// Vertical swipe on the one row walks the tree: up is the next sibling, down the previous.
+    private var forkSwipe: some Gesture {
+        DragGesture(minimumDistance: 24).onEnded { value in
+            let dy = value.translation.height
+            let dx = value.translation.width
+            guard abs(dy) > abs(dx) * 1.2, abs(dy) > 28 else { return }
+            selected = nil
+            session.cycleFork(by: dy < 0 ? 1 : -1)
         }
     }
 
@@ -731,37 +741,29 @@ struct GameScreen: View {
     }
 
     private func half(_ cell: PlyCell) -> some View {
-        Button { walk(to: cell.cursor) } label: {
-            HStack(spacing: 1) {
+        let on = cell.cursor == session.cursor
+        let mark = cell.isTrunk ? Palette.ink : Palette.mine
+        let fill = on ? (cell.isTrunk ? Palette.analysis : Palette.mine) : Color.clear
+        return Button { walk(to: cell.cursor) } label: {
+            HStack(spacing: 2) {
                 Text(cell.san)
-                    .font(cell.cursor == session.cursor ? .notation.weight(.bold) : .notation)
-                if cell.variations > 0 {
-                    Image(systemName: "arrow.triangle.branch")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(
-                            cell.cursor == session.cursor ? Palette.parchment : Palette.analysis
-                        )
-                        .accessibilityLabel("\(cell.variations) 个变着")
+                    .font(on ? .notation.weight(.bold) : .notation)
+                if let number = cell.branchNumber, cell.siblingCount > 1 {
+                    Text("\(number)")
+                        .font(.caption2.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(on ? Palette.parchment : mark)
                 }
             }
-            .foregroundStyle(cell.cursor == session.cursor ? Palette.parchment : Palette.ink)
+            .foregroundStyle(on ? Palette.parchment : mark)
             .padding(.horizontal, 5)
             .padding(.vertical, 2)
-            .background(
-                cell.cursor == session.cursor
-                    ? AnyShapeStyle(Palette.analysis) : AnyShapeStyle(.clear),
-                in: RoundedRectangle(cornerRadius: 5)
-            )
+            .background(fill, in: RoundedRectangle(cornerRadius: 5))
         }
         .buttonStyle(.plain)
         .id(cell.cursor)
         // Said the way somebody reading a game aloud says it. A bare "Nf6" out of VoiceOver is a
         // move with no place in the game, and place is the whole of what this strip is for.
-        .accessibilityLabel(
-            cell.variations > 0
-                ? "第 \(cell.cursor) 步 \(cell.san)，\(cell.variations) 个变着"
-                : "第 \(cell.cursor) 步 \(cell.san)"
-        )
+        .accessibilityLabel(cell.spoken)
         .accessibilityHint("回到这一步")
     }
 
@@ -1865,71 +1867,11 @@ struct GameScreen: View {
         }
     }
 
-    /// A line that was played from this Ply and then left behind, named for the record to offer.
-    private struct Fork: Identifiable {
-        let ply: Int
-        let index: Int
-        let line: [Game.Ply]
-        var id: String { "\(ply)-\(index)" }
-        var label: String { line.prefix(6).map(\.san).joined(separator: " ") }
-    }
-
-    /// Variations hanging off the move just played, and off the move that would follow from here.
-    /// Standing on either side of a fork has to see it: the mark in the strip is on the new move,
-    /// and the position it was played from is where the other line still makes sense.
-    private var forks: [Fork] {
-        var found: [Fork] = []
-        let cursor = session.cursor
-        if cursor < session.game.plies.count {
-            for (index, line) in session.game.variations(atPly: cursor).enumerated() {
-                found.append(Fork(ply: cursor, index: index, line: line))
-            }
-        }
-        if cursor > 0 {
-            let behind = cursor - 1
-            for (index, line) in session.game.variations(atPly: behind).enumerated() {
-                found.append(Fork(ply: behind, index: index, line: line))
-            }
-        }
-        return found
-    }
-
-    /// The lines that were played from here instead of the move that follows. With the record,
-    /// because that is what they are: a piece of it that was left to one side.
-    @ViewBuilder private var variationChips: some View {
-        if !forks.isEmpty {
-            ScrollView(.horizontal) {
-                HStack(spacing: 6) {
-                    ForEach(forks) { fork in
-                        Button {
-                            selected = nil
-                            session.enterVariation(fork.index, atPly: fork.ply)
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "arrow.triangle.branch").font(.caption2)
-                                Text(fork.label).font(.notation).lineLimit(1)
-                            }
-                            .foregroundStyle(Palette.analysis)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 5)
-                            .background(
-                                Palette.analysis.opacity(0.12), in: Capsule()
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("变着 \(fork.label)")
-                    }
-                }
-            }
-            .scrollIndicators(.hidden)
-            .padding(.horizontal, 12)
-            .padding(.bottom, 6)
-        }
-    }
-
-    /// Kept for the reading that used to live on 这一局; the chips now sit on the record itself.
+    /// The lines that were played from here instead of the move that follows. The record is now
+    /// one row that swipes between them, so this is empty — kept so the old reading card still
+    /// compiles if it is wired back in.
     @ViewBuilder private var variations: some View {
-        variationChips
+        EmptyView()
     }
 
     /// The few things the screen has to say in words rather than show — all of them about what
@@ -2650,8 +2592,14 @@ struct GameScreen: View {
         var side = session.game.startingSideToMove
 
         for (index, ply) in session.game.plies.enumerated() {
+            let siblings = session.game.siblings(atPly: index)
+            let here = siblings.first { $0.variationIndex == nil }
             let cell = PlyCell(
-                cursor: index + 1, san: ply.san, variations: ply.variations.count
+                cursor: index + 1,
+                san: ply.san,
+                isTrunk: ply.isTrunk,
+                branchNumber: here?.number,
+                siblingCount: siblings.count
             )
             if side == .white {
                 cards.append(MoveCard(number: number, white: cell, black: nil))
@@ -2669,11 +2617,20 @@ struct GameScreen: View {
 }
 
 /// One ply as the record draws it: the cursor that puts it on the board, what it is called, and
-/// how many lines were left behind at it.
+/// where it sits in the tree — trunk or a numbered branch.
 struct PlyCell: Hashable {
     let cursor: Int
     let san: String
-    let variations: Int
+    let isTrunk: Bool
+    let branchNumber: Int?
+    let siblingCount: Int
+
+    var spoken: String {
+        let step = "第 \(cursor) 步 \(san)"
+        guard siblingCount > 1, let branchNumber else { return step }
+        let kind = isTrunk ? "树干" : "树枝"
+        return "\(step)，\(kind) \(branchNumber)/\(siblingCount)"
+    }
 }
 
 /// One move number and its two halves — the way a scoresheet is ruled, and the unit the record

@@ -136,8 +136,9 @@ actually played
 A line that was played from some Ply and then left behind, kept hanging off that Ply
 rather than discarded. Playing a different move from a rewound Game makes one; stepping
 back into it makes the line it replaces a Variation in its turn. This is exactly what
-PGN's brackets hold, which is why nothing is lost by taking a move back. The record names
-the fork on the move it hangs off, and offers the other line there.
+PGN's brackets hold, which is why nothing is lost by taking a move back. The record is
+one row — the line you are on — and a vertical swipe at a fork walks the tree. The trunk
+(the Game as it was played) and the branches are numbered and coloured apart.
 _Avoid_: branch, alternative, undo history, side line
 
 **Best Move**:

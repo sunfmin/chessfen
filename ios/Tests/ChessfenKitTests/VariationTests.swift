@@ -49,6 +49,37 @@ func twoBranchesFromOnePly() throws {
     #expect(lines.contains(["Bc4"]))
 }
 
+@Test("a new line from an earlier ply is a branch; the abandoned line stays the trunk")
+func branchingMarksTheNewLineAsABranch() throws {
+    var played = try game(["e2e4", "e7e5", "g1f3", "b8c6"])
+    let bishop = try #require(played.rewound(to: 2)?.state.move(matching: "f1c4"))
+    let branched = played.play(bishop, atPly: 2)
+    #expect(branched)
+    #expect(played.plies[2].isTrunk == false)
+    #expect(played.variations(atPly: 2).first?.first?.isTrunk == true)
+
+    let siblings = played.siblings(atPly: 2)
+    #expect(siblings.map(\.number) == [1, 2])
+    #expect(siblings[0].isTrunk && siblings[0].san == "Nf3")
+    #expect(!siblings[1].isTrunk && siblings[1].san == "Bc4")
+    #expect(siblings[1].variationIndex == nil, "Bc4 is the line on the board")
+}
+
+@Test("cycling the fork walks every sibling and comes back")
+@MainActor
+func cyclingTheForkWalksEverySibling() throws {
+    let start = try game(["e2e4", "e7e5", "g1f3", "b8c6"])
+    let session = GameSession.fresh(start)
+    session.jump(toPly: 2)
+    session.play(try #require(session.viewed.state.move(matching: "f1c4")))
+    #expect(session.game.plies.map(\.san) == ["e4", "e5", "Bc4"])
+
+    session.cycleFork(by: 1)
+    #expect(session.game.plies.map(\.san) == ["e4", "e5", "Nf3", "Nc6"])
+    session.cycleFork(by: 1)
+    #expect(session.game.plies.map(\.san) == ["e4", "e5", "Bc4"])
+}
+
 @Test("a variation can be taken as the line to carry on with")
 func promotingAVariationSwapsTheLines() throws {
     var played = try game(["e2e4", "e7e5", "g1f3", "b8c6"])

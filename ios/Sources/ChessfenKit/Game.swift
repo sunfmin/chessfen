@@ -54,6 +54,10 @@ public struct Game: Hashable, Sendable {
         /// move would be reading a sentence nobody said (docs/adr/0017, 0020). Capped at
         /// `planLimit`, because a claim about a longer line cannot be told false.
         public var intentSpan: Int?
+        /// Whether this ply belongs to the Game's trunk — the line that was played, not a line
+        /// that was tried from an earlier Ply and left hanging. The record colours the two
+        /// differently, so a branch cannot be mistaken for the game.
+        public var isTrunk: Bool
 
         public init(
             uci: String,
@@ -63,7 +67,8 @@ public struct Game: Hashable, Sendable {
             line: [String] = [],
             variations: [[Ply]] = [],
             intent: Intent? = nil,
-            intentSpan: Int? = nil
+            intentSpan: Int? = nil,
+            isTrunk: Bool = true
         ) {
             self.uci = uci
             self.san = san
@@ -73,6 +78,7 @@ public struct Game: Hashable, Sendable {
             self.variations = variations
             self.intent = intent
             self.intentSpan = intentSpan
+            self.isTrunk = isTrunk
         }
 
         /// The longest line one Intent is allowed to be a claim about.
@@ -102,6 +108,7 @@ public struct Game: Hashable, Sendable {
             line = other.line
             variations = other.variations
             intent = other.intent
+            isTrunk = other.isTrunk
         }
     }
 
@@ -177,7 +184,7 @@ public struct Game: Hashable, Sendable {
         let san = SAN.text(for: move, in: state)
         guard let next = Rules.probe(startFEN: startFEN, moves: uciMoves + [move.uci])
         else { return false }
-        plies.append(Ply(uci: move.uci, san: san))
+        plies.append(Ply(uci: move.uci, san: san, isTrunk: plies.last?.isTrunk ?? true))
         state = next
         return true
     }
@@ -213,6 +220,7 @@ public struct Game: Hashable, Sendable {
         // alternative to the move now standing in its place.
         let abandoned = Array(plies[ply...])
         var replacement = branch.plies[ply]
+        replacement.isTrunk = false
         replacement.variations = [abandoned]
         // Alternatives already recorded at this point are alternatives to the same position,
         // so they belong to the new move too rather than to the line that just left.
@@ -227,7 +235,11 @@ public struct Game: Hashable, Sendable {
     /// the brackets arrive after the move they belong to.
     public mutating func addVariation(_ variation: [Ply], atPly ply: Int) {
         guard plies.indices.contains(ply), !variation.isEmpty else { return }
-        plies[ply].variations.append(variation)
+        plies[ply].variations.append(variation.map { ply in
+            var copy = ply
+            copy.isTrunk = false
+            return copy
+        })
     }
 
     /// Records a Guess, and what the player said it was for, as an alternative to the move at
@@ -249,13 +261,47 @@ public struct Game: Hashable, Sendable {
             plies[ply].variations[existing][0].intent = intent
             return true
         }
-        plies[ply].variations.append([Ply(uci: uci, san: san, intent: intent)])
+        plies[ply].variations.append([Ply(uci: uci, san: san, intent: intent, isTrunk: false)])
         return true
     }
 
     /// The lines that were played from the same position as the move at `ply`.
     public func variations(atPly ply: Int) -> [[Ply]] {
         plies.indices.contains(ply) ? plies[ply].variations : []
+    }
+
+    /// One of the moves that can be played from the position at `ply`, including the one
+    /// currently standing there. The trunk is numbered first, then the branches, so a swipe
+    /// that cycles them does not renumber the tree.
+    public struct Sibling: Hashable, Sendable {
+        /// 1-based, trunk first.
+        public let number: Int
+        /// Nil when this sibling is the ply currently in the Game's line.
+        public let variationIndex: Int?
+        public let san: String
+        public let isTrunk: Bool
+    }
+
+    public func siblings(atPly ply: Int) -> [Sibling] {
+        guard plies.indices.contains(ply) else { return [] }
+        var items: [(variationIndex: Int?, head: Ply)] = [(nil, plies[ply])]
+        for (index, line) in plies[ply].variations.enumerated() {
+            guard let head = line.first else { continue }
+            items.append((index, head))
+        }
+        items.sort { a, b in
+            if a.head.isTrunk != b.head.isTrunk { return a.head.isTrunk && !b.head.isTrunk }
+            if a.head.san != b.head.san { return a.head.san < b.head.san }
+            return (a.variationIndex ?? -1) < (b.variationIndex ?? -1)
+        }
+        return items.enumerated().map { offset, item in
+            Sibling(
+                number: offset + 1,
+                variationIndex: item.variationIndex,
+                san: item.head.san,
+                isTrunk: item.head.isTrunk
+            )
+        }
     }
 
     /// Takes a Variation as the line to carry on with, and puts the line it replaces where it
@@ -458,7 +504,7 @@ public struct Game: Hashable, Sendable {
     ) -> Bool {
         guard plies.indices.contains(ply), !line.isEmpty, line.count <= Ply.planLimit
         else { return false }
-        var written = line.map { Ply(uci: $0.uci, san: $0.san) }
+        var written = line.map { Ply(uci: $0.uci, san: $0.san, isTrunk: false) }
         written[0].intent = intent
         written[0].intentSpan = line.count
         // The same rule `recordGuess` follows: answering the same question twice with the same

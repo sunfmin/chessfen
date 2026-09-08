@@ -809,6 +809,31 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         retune()
     }
 
+    /// The Ply whose siblings the record can cycle, if the eye is on a fork.
+    public var forkPly: Int? {
+        if cursor > 0, game.siblings(atPly: cursor - 1).count > 1 { return cursor - 1 }
+        if cursor < game.plies.count, game.siblings(atPly: cursor).count > 1 { return cursor }
+        return nil
+    }
+
+    /// Swipes the record onto the next (or previous) sibling at the fork the eye is on.
+    /// The strip stays one line; the tree is what the swipe walks.
+    public func cycleFork(by delta: Int) {
+        guard delta != 0, let ply = forkPly else { return }
+        let siblings = game.siblings(atPly: ply)
+        guard siblings.count > 1 else { return }
+        let current = siblings.firstIndex { $0.variationIndex == nil } ?? 0
+        let count = siblings.count
+        let next = siblings[((current + delta) % count + count) % count]
+        guard let index = next.variationIndex else { return }
+        let standing = cursor
+        guard game.promoteVariation(index, atPly: ply) else { return }
+        cursor = standing <= ply ? ply : ply + 1
+        adoptViewedAnalysis()
+        save()
+        retune()
+    }
+
     // ------------------------------------------------------------------ moves
 
     public var isEngineTurn: Bool {

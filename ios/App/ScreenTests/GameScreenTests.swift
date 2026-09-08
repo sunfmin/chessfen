@@ -356,8 +356,8 @@ struct GameScreenScreenshots {
         #expect(session.variationsHere.count == 1, "the abandoned line is kept, not dropped")
         #expect(rendered.says("回到最新"), "and the way back to the present, beside the arrows")
         #expect(rendered.says("第 7 步 d3"), "with the move that replaced it in the record")
-        #expect(rendered.says("1 个变着"), "named on that move in the strip")
-        #expect(rendered.says("变着 c3 Nf6"), "and offered where the fork is, to step back into")
+        #expect(rendered.says("树枝 2/2"), "numbered on the one row, not listed underneath")
+        #expect(!rendered.says("变着 c3 Nf6"), "the other line is reached by swiping, not a second row")
     }
 
     /// A finished game. The engine has nothing to search and so says nothing, and the screen has to
