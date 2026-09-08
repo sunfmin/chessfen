@@ -33,30 +33,35 @@ struct DeckSurface<Head: View, Content: View>: View {
     /// How tall it is allowed to go, which is as far as the board's own top edge and no further:
     /// covering the position you are being told about would be a card talking to itself.
     let raised: CGFloat
-    /// The handle and the rail. Draggable; the body below is not, or a horizontal page turn and a
-    /// vertical pull would be the same gesture.
+    /// The handle and the rail. Always draggable. The body below is too, except a mostly-horizontal
+    /// swipe still turns the page.
     @ViewBuilder var head: () -> Head
     @ViewBuilder var content: () -> Content
 
-    /// Live drag, in points above the settled lift. Kept while the finger is down so the card
-    /// follows it, and folded into `lift` when it lifts — no snap, no animation to a detent.
-    @State private var pull: CGFloat = 0
+    /// Live drag, in points above the settled lift. A GestureState so it tracks the finger without
+    /// going through an animated @State write every pixel — that was the hitch.
+    @GestureState private var pull: CGFloat = 0
 
     private var maxLift: CGFloat { max(raised - peek, 0) }
     private var height: CGFloat {
         let value = peek + DeckLift.settled(lift: lift, drag: pull, maxLift: maxLift)
         return value.isFinite ? max(value, 0) : 0
     }
+    /// The size the body is laid out at. Changing the *visible* height must not relayout the
+    /// TabView every pixel of a drag, or the pull stutters. Layout once at the raised size, clip
+    /// to what the finger has revealed.
+    private var layoutHeight: CGFloat { max(raised, height, peek) }
 
     var body: some View {
         VStack(spacing: 0) {
             head()
                 .contentShape(Rectangle())
-                .gesture(pullGesture)
             content()
         }
+        .frame(maxWidth: .infinity, alignment: .top)
+        .frame(height: layoutHeight, alignment: .top)
         .frame(height: height, alignment: .top)
-        .frame(maxWidth: .infinity)
+        .clipped()
         .background {
             UnevenRoundedRectangle(
                 topLeadingRadius: 18, bottomLeadingRadius: 0, bottomTrailingRadius: 0,
@@ -72,17 +77,61 @@ struct DeckSurface<Head: View, Content: View>: View {
             }
             .shadow(color: Palette.lift, radius: 9, x: 0, y: -3)
         }
+        .simultaneousGesture(pullGesture)
+        .animation(nil, value: height)
     }
 
     private var pullGesture: some Gesture {
-        DragGesture(minimumDistance: 3)
-            .onChanged { pull = -$0.translation.height }
-            .onEnded { value in
-                lift = DeckLift.settled(
-                    lift: lift, drag: -value.translation.height, maxLift: maxLift
-                )
-                pull = 0
+        DragGesture(minimumDistance: 8)
+            .updating($pull) { value, state, transaction in
+                transaction.animation = nil
+                guard abs(value.translation.height) >= abs(value.translation.width) else { return }
+                state = -value.translation.height
             }
+            .onEnded { value in
+                guard abs(value.translation.height) >= abs(value.translation.width) else { return }
+                var transaction = Transaction()
+                transaction.animation = nil
+                withTransaction(transaction) {
+                    lift = DeckLift.settled(
+                        lift: lift, drag: -value.translation.height, maxLift: maxLift
+                    )
+                }
+            }
+    }
+}
+
+/// While a card's search is in flight: the word, and how deep it has got. A number that
+/// quietly stops moving is indistinguishable from an engine that died (docs/adr/0019).
+struct CardSearching: View {
+    let progress: GameSession.SearchProgress?
+    var phrase: String = "正在算"
+
+    var body: some View {
+        HStack(spacing: 7) {
+            ProgressView().controlSize(.mini)
+            Text(label)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(Palette.inkSoft)
+                .animation(.none, value: progress?.depth)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .accessibilityLabel(phrase)
+        .accessibilityValue(depthValue)
+    }
+
+    private var label: String {
+        if let depth = progress?.depth, depth > 0 {
+            return "\(phrase) · 深 \(depth)"
+        }
+        return "\(phrase)…"
+    }
+
+    private var depthValue: String {
+        if let depth = progress?.depth, depth > 0 { return "深 \(depth)" }
+        return "开始"
     }
 }
 

@@ -974,6 +974,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
             for await snapshot in engine.analyse(position, budget: .depth(depth), lines: 1) {
                 if Task.isCancelled { return }
                 best = snapshot.best ?? best
+                self?.noteProgress(snapshot)
             }
             guard let self, !Task.isCancelled else { return }
             isAsking = false
@@ -1116,6 +1117,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
             for await snapshot in engine.analyse(position, budget: .depth(depth), lines: 1) {
                 if Task.isCancelled { return }
                 best = snapshot.best ?? best
+                self?.noteProgress(snapshot)
             }
             guard let self, !Task.isCancelled else { return }
             isPlanning = false
@@ -1350,6 +1352,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
             for await snapshot in engine.analyse(before, budget: .depth(depth), lines: 1) {
                 if Task.isCancelled { return }
                 best = snapshot.best ?? best
+                self?.noteProgress(snapshot)
             }
             // Analysed rather than merely evaluated: `evaluate` throws the Line away, and the
             // Line after the Guess is what the board reads to say which squares mattered. Same
@@ -1358,6 +1361,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
             for await snapshot in engine.analyse(guessed, budget: .depth(depth), lines: 1) {
                 if Task.isCancelled { return }
                 afterGuess = snapshot.best ?? afterGuess
+                self?.noteProgress(snapshot)
             }
             let guessScore = afterGuess?.score
             // The move that was played needs no search when it *is* the guess, and none when the
@@ -1882,12 +1886,16 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         isRevealing = false
     }
 
-    private func record(_ snapshot: Analysis) {
+    private func noteProgress(_ snapshot: Analysis) {
         searchProgress = SearchProgress(
             depth: snapshot.depth,
             selectiveDepth: snapshot.selectiveDepth,
             milliseconds: snapshot.timeMilliseconds
         )
+    }
+
+    private func record(_ snapshot: Analysis) {
+        noteProgress(snapshot)
         // A move being walked is not advice, and during Practice that search's opinion is dropped
         // rather than merely hidden — the game's plies stay unmarked and the Review has nothing
         // to disagree with. A card's Stint is the other case: the swipe asked, so the Line is

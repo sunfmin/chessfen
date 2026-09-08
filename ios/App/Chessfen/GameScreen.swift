@@ -1243,10 +1243,7 @@ struct GameScreen: View {
             }
 
             if session.isPlanning {
-                HStack(spacing: 7) {
-                    ProgressView().controlSize(.mini)
-                    Text("引擎在算后面五步…").font(.caption).foregroundStyle(Palette.inkSoft)
-                }
+                EmptyView()
             } else if session.planNotes.isEmpty {
                 // Not an error and not a dead end: the board is still a board.
                 Text("引擎没给出线路。自己在棋盘上走也行。")
@@ -1423,7 +1420,7 @@ struct GameScreen: View {
                     Spacer(minLength: 0)
                 }
                 if session.isAsking {
-                    Text("引擎在算…").font(.caption).foregroundStyle(Palette.inkSoft)
+                    EmptyView()
                 }
                 if let answer = session.scanAnswer { engineAnswer(answer) }
             } else {
@@ -1579,9 +1576,11 @@ struct GameScreen: View {
             if let walk = session.walk {
                 transport(walk)
             } else if session.viewedContinuation.isEmpty {
-                Text(session.isSearching ? "引擎在算这一步…" : "这一步还没有引擎的线可走。")
-                    .font(.caption)
-                    .foregroundStyle(Palette.inkSoft)
+                if !session.isSearching {
+                    Text("这一步还没有引擎的线可走。")
+                        .font(.caption)
+                        .foregroundStyle(Palette.inkSoft)
+                }
             } else {
                 CardButton(label: "从这儿走一遍") { session.startWalk() }
             }
@@ -1663,16 +1662,17 @@ struct GameScreen: View {
                 .foregroundStyle(Palette.inkSoft)
                 .fixedSize(horizontal: false, vertical: true)
         } else if session.viewedContinuation.isEmpty {
-            Text(
-                session.guess != nil
-                    ? "先交卷。交卷之前引擎不开口，这里也就还没有话说。"
-                    : session.isSearching
-                        ? "引擎在算这一步…"
-                        : "滑到这张卡会算 10 秒。算完这里就有话说了。"
-            )
-                .font(.caption)
-                .foregroundStyle(Palette.inkSoft)
-                .fixedSize(horizontal: false, vertical: true)
+            if session.guess != nil {
+                Text("先交卷。交卷之前引擎不开口，这里也就还没有话说。")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if !session.isSearching {
+                Text("滑到这张卡会算 10 秒。算完这里就有话说了。")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         } else if controlChange?.isEmpty == true {
             Text("这步没改变任何格子的归属。")
                 .font(.caption)
@@ -2102,6 +2102,9 @@ struct GameScreen: View {
                     .fill(Palette.hairline)
                     .frame(height: 0.5)
                     .padding(.top, 8)
+                if kind == card, isCardSearching(kind) {
+                    CardSearching(progress: session.searchProgress, phrase: searchPhrase(kind))
+                }
                 body()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2109,6 +2112,9 @@ struct GameScreen: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollIndicators(.hidden)
+        // Until the card is pulled up, a vertical drag resizes it rather than scrolling inside it.
+        // Scrolling a clipped peek is what made the pull hitch.
+        .scrollDisabled(lift < max(raised - peek, 0) - 1)
         // A card with more on it than fits fades out at the bottom instead of being chopped: a
         // cut sentence looks like a bug, a fading one looks like something to pull up.
         .overlay(alignment: .bottom) {
@@ -2192,6 +2198,25 @@ struct GameScreen: View {
         }
     }
 
+    /// Whether this card currently has a search in flight, so the frame can say 正在算 and the
+    /// depth. Neighbouring pages stay alive in a paged TabView; only the card in front speaks.
+    private func isCardSearching(_ kind: Card) -> Bool {
+        switch kind {
+        case .plan: session.isPlanning
+        case .scanner: session.isAsking
+        case .drill: session.isRevealing
+        case .review: false
+        default: wantsAdvice(kind) && session.isSearching && !session.isAdviceSpent
+        }
+    }
+
+    private func searchPhrase(_ kind: Card) -> String {
+        switch kind {
+        case .plan: "正在算后面五步"
+        default: "正在算"
+        }
+    }
+
     /// The two cards the finder answers for: the shot, and the mate that falls out of the same
     /// probe. Swiping between them does not stop and restart it.
     private func wantsFinder(_ kind: Card) -> Bool { kind == .mate || kind == .tactics }
@@ -2260,7 +2285,7 @@ struct GameScreen: View {
                 if viewed.isOver {
                     Text("这局已经走完了，没有下一步可算。")
                 } else if session.isProbingTactics || session.isSearching {
-                    Text("在看有没有杀…")
+                    EmptyView()
                 } else if session.isFindingTactics || session.analysis != nil {
                     Text("这个局面几步之内没有杀 —— 双方都还没有强制的将死。")
                 } else {

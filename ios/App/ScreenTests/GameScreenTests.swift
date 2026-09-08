@@ -444,6 +444,30 @@ struct GameScreenScreenshots {
         #expect(session.analysis == nil)
     }
 
+    /// A card spending a Stint has to say so, and how deep it has got. A number that quietly
+    /// stops moving is indistinguishable from an engine that died (docs/adr/0019) — and that is
+    /// as true on the card as it is on the strip.
+    @Test("a card that is spending a Stint says so, and how deep it has got")
+    func aSearchingCardNamesItsDepth() async throws {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
+        let engine = ScriptedEngine(Self.searching, isEndless: true)
+        let session = GameSession.fresh(game)
+        session.attach(engine: engine, library: nil)
+        session.jump(toPly: 6)
+        session.adviseForCard()
+        await hop()
+
+        let rendered = await ScreenImage.write("game-card-searching") {
+            screen(session, engine: engine, opening: .key)
+        }
+
+        #expect(session.isPractising)
+        #expect(session.isSearching)
+        #expect(rendered.says("正在算"))
+        #expect(rendered.says("深 26"))
+        #expect(!rendered.says("+0.38"), "practice still keeps the Score off the board")
+    }
+
     /// Practice still on, the finder on: one shot named, no Score. This is the combination
     /// docs/adr/0022 exists for.
     @Test("the tactics finder names a shot while practice stays on")
