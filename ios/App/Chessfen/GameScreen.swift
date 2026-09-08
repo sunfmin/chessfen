@@ -2374,7 +2374,7 @@ struct GameScreen: View {
             // Whichever card is in front of you, and only that one: five arrows left over from a
             // plan you swiped away from are five arrows about a position nobody is looking at
             // (docs/adr/0023).
-            plan: mateArrows,
+            plan: card == .walk ? session.walkArrows : mateArrows,
             // Tappable while a verb is waiting for its target, too: the board is the only place a
             // claim's target can be said, which is the whole reason a verb has one.
             // Not while a line is being walked: the pieces on screen are five moves from where the

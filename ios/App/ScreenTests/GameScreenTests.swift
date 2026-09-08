@@ -668,6 +668,7 @@ struct GameScreenScreenshots {
         // asked of the layer itself, because the squares it names are on the 要害 card and this
         // screenshot is of the carousel's (docs/adr/0023).
         #expect(session.boardContinuation == ["d4", "Bd6"])
+        #expect(session.walkArrows.map(\.step) == [3, 4], "the arrows still ahead, numbered as the chips")
         #expect(
             session.board.keySquares(continuation: session.boardContinuation)
                 .contains { $0.square == Square("f7") },

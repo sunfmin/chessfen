@@ -1155,6 +1155,34 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         planNotes = board.readPlan(of: draft.aheadSans, as: viewed.state.sideToMove) ?? []
     }
 
+    /// The rest of a walked Line, as numbered arrows on the board now showing.
+    ///
+    /// Numbered to match the chips on 五步. What you already walked is not drawn: those moves
+    /// happened, and the tint under the last one is how the board says so. At most five, because
+    /// that is the card, and past that a board is a scribble.
+    public var walkArrows: [PlanArrow] {
+        guard let walk else { return [] }
+        let remaining = Array(walk.remaining.prefix(5))
+        guard !remaining.isEmpty else { return [] }
+        let yoursToMove = board.state.sideToMove == viewed.state.sideToMove
+        var position = board
+        var arrows: [PlanArrow] = []
+        for (offset, san) in remaining.enumerated() {
+            guard position.apply(san: san), let played = position.plies.last,
+                let move = MoveSquares(uci: played.uci)
+            else { break }
+            arrows.append(
+                PlanArrow(
+                    step: walk.step + offset + 1,
+                    move: move,
+                    isYours: offset.isMultiple(of: 2) == yoursToMove,
+                    isPlayed: false
+                )
+            )
+        }
+        return arrows
+    }
+
     /// The five the engine is showing, as the board draws them: one numbered arrow each.
     ///
     /// The sides alternate, so whose move a step is follows from its number — a legal line has no

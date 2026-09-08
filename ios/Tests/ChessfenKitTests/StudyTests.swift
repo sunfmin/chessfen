@@ -490,6 +490,9 @@ import Testing
         #expect(walk.isAtStart)
         #expect(session.board.state.fen == session.viewed.state.fen, "step 0 is where it started")
         #expect(session.showsControlChange, "and the layer comes on with it")
+        #expect(session.walkArrows.map(\.step) == [1, 2, 3], "the arrows are the line, numbered")
+        #expect(session.walkArrows.map(\.isYours) == [true, false, true])
+        #expect(session.walkArrows.first?.move.to == (try #require(Square("f3"))))
 
         session.stepWalk(by: 1)
         #expect(session.board.plies.map(\.san) == ["e4", "e5", "Nf3"])
