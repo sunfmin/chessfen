@@ -78,6 +78,18 @@ public enum Intent: Hashable, Sendable {
         }
     }
 
+    /// The coarse reason a move is played, for 这步的要害: 进攻 or 防御, and 交换 / 占位 when
+    /// neither fits. The seven verbs stay the checkable claim; this is how they are said as a goal.
+    public var goal: String {
+        switch self {
+        case .claim(.take, _), .claim(.attack, _): "进攻"
+        case .claim(.defend, _), .claim(.flee, _), .claim(.block, _): "防御"
+        case .claim(.trade, _): "交换"
+        case .claim(.hold, _): "占位"
+        case .unclear: Self.unclearLabel
+        }
+    }
+
     // ------------------------------------------------------------------ the wire
 
     /// What goes inside `{[%int …]}`: `def f7`, or `?` for 说不清.

@@ -1090,7 +1090,7 @@ struct GameScreenScreenshots {
         let purpose = try #require(session.viewed.purpose(continuation: session.viewedContinuation))
         #expect(purpose.opening.san == "Qg5")
         #expect(rendered.says("Qg5"))
-        #expect(rendered.says("是为了"))
+        #expect(rendered.says("是为了\(purpose.opening.intent.goal)"))
         #expect(rendered.says(purpose.opening.intent.label))
     }
 
@@ -1125,7 +1125,7 @@ struct GameScreenScreenshots {
         let purpose = try #require(session.viewed.purpose(continuation: session.viewedContinuation))
         #expect(purpose.opening.san == "Nc3")
         #expect(rendered.says("Nc3"))
-        #expect(rendered.says("是为了"))
+        #expect(rendered.says("是为了\(purpose.opening.intent.goal)"))
         #expect(rendered.says(purpose.opening.intent.label))
     }
 
@@ -1161,7 +1161,7 @@ struct GameScreenScreenshots {
         let purpose = try #require(session.viewed.purpose(continuation: session.viewedContinuation))
         #expect(purpose.opening.san == "Ra5")
         #expect(rendered.says("Ra5"))
-        #expect(rendered.says("是为了"))
+        #expect(rendered.says("是为了\(purpose.opening.intent.goal)"))
         #expect(rendered.says(purpose.opening.intent.label))
     }
 

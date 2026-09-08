@@ -271,12 +271,12 @@ position, and always about that position's last Ply, which is the Guess when the
 _Avoid_: influence, coverage, heat map, territory, diff
 
 **要害格**:
-What this move is for: the main goal, in the seven Intent verbs, and why it was played. The
-card 这步的要害. Available at any Ply the eye is on, the latest included — the last move of
-the position on screen, or the engine's next move when nothing has been played yet. Swiping
-onto the card is the asking. Distinct from a Control Change, which is every square that
-changed hands and makes no claim about any of them, and from the squares 走马灯 still
-follows along a Line.
+What this move is for, said first as a goal — 进攻, 防御, 交换 or 占位 — and then as the
+seven-verb claim that can be told false (攻 e5, 护 f2). The card 这步的要害. Available at
+any Ply the eye is on, the latest included — the last move of the position on screen, or
+the engine's next move when nothing has been played yet. Swiping onto the card is the
+asking. Distinct from a Control Change, which is every square that changed hands and makes
+no claim about any of them, and from the squares 走马灯 still follows along a Line.
 _Avoid_: key square, weak square, hotspot, important square, highlight
 
 **走马灯**:

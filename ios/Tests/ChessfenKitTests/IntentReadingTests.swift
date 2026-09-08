@@ -22,13 +22,16 @@ func aWinningCaptureReadsAsTake() throws {
     let read = Intent.read(try move("e4d5", in: game), in: game)
     #expect(read == .claim(.take, try square("d5")))
     #expect(read.label == "吃 d5")
+    #expect(read.goal == "进攻")
 }
 
 @Test("a trade that does not lose reads as 换, not as 吃")
 func anEvenTradeReadsAsTrade() throws {
     // Same capture, but the pawn on d5 is defended by one on c6: level, not winning.
     let game = try position("4k3/8/2p5/3p4/4P3/8/8/4K3 w - - 0 1")
-    #expect(Intent.read(try move("e4d5", in: game), in: game) == .claim(.trade, try square("d5")))
+    let read = Intent.read(try move("e4d5", in: game), in: game)
+    #expect(read == .claim(.trade, try square("d5")))
+    #expect(read.goal == "交换")
 }
 
 @Test("a move that newly threatens a piece it outnumbers reads as 攻")
@@ -37,6 +40,7 @@ func aNewThreatReadsAsAttack() throws {
     let game = try position("4k3/8/8/3n4/8/8/8/R3K3 w - - 0 1")
     let read = Intent.read(try move("a1a5", in: game), in: game)
     #expect(read == .claim(.attack, try square("d5")))
+    #expect(read.goal == "进攻")
 }
 
 @Test("the most valuable piece newly threatened is the one named")
@@ -55,6 +59,7 @@ func runningAwayReadsAsFlee() throws {
     let game = try position("4k3/8/8/8/8/8/1b6/R3K3 w - - 0 1")
     let read = Intent.read(try move("a1a4", in: game), in: game)
     #expect(read == .claim(.flee, try square("b2")))
+    #expect(read.goal == "防御")
 }
 
 @Test("a move that guards a hanging piece of your own reads as 护")
@@ -64,6 +69,7 @@ func guardingAHangingPieceReadsAsDefend() throws {
     let game = try position("7k/4r3/8/8/4N3/8/8/R6K w - - 0 1")
     let read = Intent.read(try move("a1e1", in: game), in: game)
     #expect(read == .claim(.defend, try square("e4")))
+    #expect(read.goal == "防御")
 }
 
 @Test("a move that steps into a line reads as 挡")
@@ -73,6 +79,7 @@ func interposingReadsAsBlock() throws {
     let game = try position("3kr3/8/8/8/R7/8/8/4K3 w - - 0 1")
     let read = Intent.read(try move("a4e4", in: game), in: game)
     #expect(read == .claim(.block, try square("e4")))
+    #expect(read.goal == "防御")
 }
 
 /// 占 in this app means *control*, not occupation (docs/adr/0018): the rook that takes the fifth
@@ -84,6 +91,7 @@ func takingASquareFromADistanceReadsAsHold() throws {
     let game = try position("4k3/8/8/8/8/8/8/R3K3 w - - 0 1")
     let read = Intent.read(try move("a1a5", in: game), in: game)
     #expect(read == .claim(.hold, try square("d5")))
+    #expect(read.goal == "占位")
 }
 
 @Test("walking onto a square is not 占 of that square")
@@ -104,7 +112,9 @@ func anUnreadableMoveIsSaidToBeUnreadable() throws {
     // A king shuffling on an empty board: nothing taken, nothing threatened, nothing rescued, and
     // the square it steps onto was already its own.
     let game = try position("4k3/8/8/8/8/8/8/4K3 w - - 0 1")
-    #expect(Intent.read(try move("e1d1", in: game), in: game) == .unclear)
+    let read = Intent.read(try move("e1d1", in: game), in: game)
+    #expect(read == .unclear)
+    #expect(read.goal == "说不清")
 }
 
 /// Every verb this prints is one the app would agree with if somebody declared it. That is the
@@ -199,6 +209,7 @@ func purposeReadsTheLastPlyEvenAtTheLatest() throws {
     let purpose = try #require(after.purpose(continuation: []))
     #expect(purpose.opening.san == "exd5")
     #expect(purpose.opening.intent == .claim(.take, try square("d5")))
+    #expect(purpose.opening.intent.goal == "进攻")
     #expect(purpose.later == nil, "no engine Line yet, so nothing to add")
 }
 
@@ -217,7 +228,9 @@ func purposeAddsALaterOwnMoveFromTheContinuation() throws {
     #expect(after.apply(try move("c3d5", in: before)))
     let purpose = try #require(after.purpose(continuation: ["Kd8", "Nxf6"]))
     #expect(purpose.opening.intent == .claim(.attack, try square("f6")))
+    #expect(purpose.opening.intent.goal == "进攻")
     let later = try #require(purpose.later)
     #expect(later.san == "Nxf6")
     #expect(later.intent == .claim(.take, try square("f6")))
+    #expect(later.intent.goal == "进攻")
 }

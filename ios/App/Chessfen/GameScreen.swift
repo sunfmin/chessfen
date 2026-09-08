@@ -1540,9 +1540,16 @@ struct GameScreen: View {
                 if purpose.opening.intent == .unclear {
                     CardLede("\(purpose.opening.san) 为什么下，这里说不清。")
                 } else {
-                    CardLede("\(purpose.opening.san) 是为了 \(purpose.opening.intent.label)")
+                    CardLede("\(purpose.opening.san) 是为了\(purpose.opening.intent.goal)")
+                    CardNote(purpose.opening.intent.label)
                     if let later = purpose.later {
-                        CardNote("第 \(later.step) 步再 \(later.label)")
+                        if later.intent.goal == purpose.opening.intent.goal {
+                            CardNote("第 \(later.step) 步再 \(later.label)")
+                        } else {
+                            CardNote(
+                                "第 \(later.step) 步再\(later.intent.goal)：\(later.label)"
+                            )
+                        }
                     }
                 }
             } else if !session.isSearching {
@@ -2672,7 +2679,7 @@ extension GameScreen.Card {
         case .tactics: "这一步有没有一记赢子的"
         case .scanner: "我哪些子能走到这一格，走过去值不值"
         case .drill: "把这一步当题做：先自己走，走完才给结果"
-        case .key: "这一步主要是为了什么，为什么要下"
+        case .key: "这一步是为了进攻，还是为了防御"
         case .walk: "引擎说的后面几步，在棋盘上走一遍"
         case .plan: "自己走五步，说一个理由，让它判对错"
         case .review: "统一深度重算全局，让每一步的分能互相比"
