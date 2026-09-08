@@ -254,4 +254,29 @@ extension Game {
         let mine = pieces.filter { $0.value.colour == colour }
         return control.loosePieces(among: mine)
     }
+
+    /// Whether taking on `square` would win material for the side to move.
+    public func winningCapture(on square: Square) -> Bool {
+        state.legalMoves.contains { move in
+            guard move.isCapture, move.to == square else { return false }
+            return Rules.exchangeValue(
+                startFEN: startFEN, moves: uciMoves, uci: move.uci
+            ) == .winning
+        }
+    }
+
+    /// Whether the piece on `square` cannot hold against `colour` on this map.
+    ///
+    /// Either it is outnumbered, or taking it would still win material. The second half is
+    /// why a pawn looking at a queen is 攻: one attacker, one defender, and a queen for a pawn.
+    /// The count is a fact about the map; the exchange is a fact about the position, so the
+    /// taker has to be on the clock — `passed()` when it is not yet their turn.
+    public func cannotHold(
+        _ square: Square, against colour: PieceColour, control: SquareControl
+    ) -> Bool {
+        let now = control.attackers(of: square, by: colour)
+        if now > control.attackers(of: square, by: colour.opposite) { return true }
+        let taking = state.sideToMove == colour ? self : passed()
+        return taking?.winningCapture(on: square) == true
+    }
 }

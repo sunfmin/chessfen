@@ -105,13 +105,13 @@ extension Intent {
 
         var candidates: [(Verb, Square)] = [(.take, captured), (.trade, captured)]
 
-        // 攻 — an enemy piece this move newly threatens and outnumbers.
+        // 攻 — an enemy piece this move newly threatens and that cannot hold: outnumbered,
+        // or taking it would win material (a pawn looking at a queen).
         let threatened = afterPieces.compactMap { square, piece -> Square? in
             guard piece.colour == opponent,
                 afterControl.attackers(of: square, by: mover)
                     > beforeControl.attackers(of: square, by: mover),
-                afterControl.attackers(of: square, by: mover)
-                    > afterControl.attackers(of: square, by: opponent)
+                after.cannotHold(square, against: mover, control: afterControl)
             else { return nil }
             return square
         }

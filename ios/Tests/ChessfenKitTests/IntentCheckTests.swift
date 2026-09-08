@@ -78,6 +78,18 @@ import Testing
         #expect(defended.note?.contains("守得住") == true)
     }
 
+    @Test("攻 holds when taking the piece would win material, even if the count is level")
+    func attackingADearerDefendedPiece() throws {
+        // A pawn steps to f4 and looks at the queen on e3. The queen is guarded by the pawn
+        // on f2: one attacker, one defender, so a count of hanging would miss it. Taking the
+        // queen with the pawn still wins a queen for a pawn, so the queen cannot hold.
+        let check = try check(
+            "6k1/8/8/5p2/8/4Q3/5P1P/6K1 b - - 0 1", "f5f4", .claim(.attack, try square("e3"))
+        )
+        #expect(check.verdict == .held)
+        #expect(check.note?.contains("守不住") == true)
+    }
+
     @Test("攻 fails when there is nothing of the opponent's on the square")
     func attackingAnEmptySquare() throws {
         let empty = try check(

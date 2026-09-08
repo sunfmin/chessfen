@@ -27,7 +27,8 @@ public enum Intent: Hashable, Sendable {
         case take
         /// 换 — this is a trade that does not lose.
         case trade
-        /// 攻 — I now threaten that piece and it cannot hold.
+        /// 攻 — I now threaten that piece and it cannot hold: outnumbered, or taking it
+        /// would win material — a pawn looking at a queen.
         case attack
         /// 护 — that piece or square now has one more defender.
         case defend = "def"

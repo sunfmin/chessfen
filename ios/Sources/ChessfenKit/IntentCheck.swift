@@ -75,7 +75,8 @@ extension Intent {
                 : held("\(target) 上换得起")
 
         // 攻 — "I now threaten that piece, and it cannot hold". Two halves, both falsifiable:
-        // the threat has to be new, and it has to outnumber the defence.
+        // the threat has to be new, and the piece cannot hold — outnumbered, or taking it
+        // would win material. A pawn looking at a queen is one of each and still a threat.
         case .attack:
             guard let piece = afterPieces[target], piece.colour == opponent else {
                 return failed("\(target) 上没有对方的子")
@@ -85,7 +86,7 @@ extension Intent {
             guard now > was else {
                 return failed("\(target) 上的子并没有因为这一步多受一次攻击")
             }
-            guard now > afterControl.attackers(of: target, by: opponent) else {
+            guard after.cannotHold(target, against: mover, control: afterControl) else {
                 return failed("\(target) 对方守得住：\(now) 攻 \(afterControl.attackers(of: target, by: opponent)) 守")
             }
             return held("\(target) 上的子挨打了，而且守不住")

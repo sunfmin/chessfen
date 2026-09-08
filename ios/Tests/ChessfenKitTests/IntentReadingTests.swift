@@ -43,6 +43,28 @@ func aNewThreatReadsAsAttack() throws {
     #expect(read.goal == "进攻")
 }
 
+@Test("a pawn looking at a queen reads as 攻, even when the queen is guarded")
+func aPawnThreatToAQueenReadsAsAttack() throws {
+    // Same position the checker uses: f4 looks at e3, f2 recaptures, and a queen for a pawn
+    // is still a threat. h2 covers g3 so 占 cannot steal the reading.
+    let game = try position("6k1/8/8/5p2/8/4Q3/5P1P/6K1 b - - 0 1")
+    let read = Intent.read(try move("f5f4", in: game), in: game)
+    #expect(read == .claim(.attack, try square("e3")))
+    #expect(read.goal == "进攻")
+}
+
+@Test("f4 against a queen on e3 is 攻 e3, not 说不清")
+func pawnPushAttackingTheQueenIsAttack() throws {
+    // The position on the 要害 card: Black's f-pawn steps to f4 and looks at White's queen.
+    // The queen is guarded by f2, so a count of hanging calls it 说不清; the exchange is a
+    // queen for a pawn.
+    let game = try position(
+        "r4rk1/1pp3pp/3p1q2/p1n2p2/2PRp3/1PN1Q3/P1P2PPP/3R2K1 b - - 0 16"
+    )
+    let read = Intent.read(try move("f5f4", in: game), in: game)
+    #expect(read == .claim(.attack, try square("e3")))
+}
+
 @Test("the most valuable piece newly threatened is the one named")
 func theDearestThreatWins() throws {
     // A knight fork: Ne6 looks at the queen on d8 and the rook on g7, and neither is defended.
@@ -131,6 +153,8 @@ func theReadingAndTheCheckerAgree() throws {
         ("4k3/8/8/8/8/2N5/8/4K3 w - - 0 1", "c3d5"),
         ("7k/4r3/8/8/4N3/8/8/R6K w - - 0 1", "a1e1"),
         ("3kr3/8/8/8/R7/8/8/4K3 w - - 0 1", "a4e4"),
+        ("6k1/8/8/5p2/8/4Q3/5P1P/6K1 b - - 0 1", "f5f4"),
+        ("r4rk1/1pp3pp/3p1q2/p1n2p2/2PRp3/1PN1Q3/P1P2PPP/3R2K1 b - - 0 16", "f5f4"),
     ]
     for (fen, uci) in positions {
         let game = try position(fen)
