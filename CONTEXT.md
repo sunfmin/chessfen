@@ -136,7 +136,8 @@ actually played
 A line that was played from some Ply and then left behind, kept hanging off that Ply
 rather than discarded. Playing a different move from a rewound Game makes one; stepping
 back into it makes the line it replaces a Variation in its turn. This is exactly what
-PGN's brackets hold, which is why nothing is lost by taking a move back.
+PGN's brackets hold, which is why nothing is lost by taking a move back. The record names
+the fork on the move it hangs off, and offers the other line there.
 _Avoid_: branch, alternative, undo history, side line
 
 **Best Move**:
@@ -232,7 +233,8 @@ same Ply does not wind the clock again. While it is climbing, and still after it
 stopped, the card names the Depth as 层级 — a spinner with no figure is the engine
 looking dead (docs/adr/0019). 练习 does not — the player moves first,
 then the card says what the move bought, what it cost, and what the engine would have done
-(a past Ply is a Drill; pointing at a square is how you think before you commit). 复盘 is
+(练习 on a past Ply is a Drill; on any other card a move from there is a Variation, named
+on the record). 复盘 is
 no longer a card: a uniform-depth pass is a press in the ⋯ menu. The five names sit in a
 centered capsule at the bottom of the screen, in the home-indicator band; tapping one or
 swiping the page are the same turn.
@@ -244,9 +246,10 @@ _Avoid_: carousel, sections, panels, accordion
 One question made out of a Game the app already holds: the position comes back with the
 engine silent, and a move — with an Intent, when one is asked for — has to be committed
 before anything is revealed. The player's examination, as against a Review, which is the
-engine's report. Neither a screen of its own nor a mode: it is what the one board is when
-the engine's opinion is off and the Ply being looked at is a past one (docs/adr/0015).
-练习 on screen.
+engine's report. Neither a screen of its own nor a mode: it is what the 练习 card is when
+the engine's opinion is off and the Ply being looked at is a past one (docs/adr/0015,
+amended by 0023: the card in front is the one that acts). A past Ply on any other card is
+still the Game — a move played there is a Variation, named on the record.
 _Avoid_: puzzle, quiz, test, exercise, training — and not Review
 
 **Guess**:

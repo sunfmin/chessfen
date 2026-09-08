@@ -252,7 +252,7 @@ struct GameScreen: View {
         ) {
             ForEach(promotion?.moves ?? [], id: \.uci) { move in
                 Button(move.promotion?.name ?? move.uci) {
-                    if session.isStudying {
+                    if isDrilling {
                         session.offer(move)
                     } else {
                         session.play(move)
@@ -638,23 +638,26 @@ struct GameScreen: View {
     /// no chart — and the correspondence is only as exact as the cards are even, which is why this
     /// is a ground and the numbers are said in words underneath.
     private var record: some View {
-        HStack(spacing: 6) {
-            arrow("chevron.left", label: "上一步", enabled: session.cursor > 0) { walk(-1) }
-            moveStrip
-            arrow("chevron.right", label: "下一步", enabled: !session.isAtLatest) { walk(1) }
-            // The way back to the present, beside the arrows that walked away from it. It used to
-            // be a sentence above the board — "在看第 7/8 步 · 回到最新" — which spent a row saying
-            // where the eye was, and where the eye is is what this whole strip is drawing.
-            if !session.isAtLatest {
-                arrow("forward.end.fill", label: "回到最新", enabled: true) {
-                    selected = nil
-                    session.jumpToLatest()
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                arrow("chevron.left", label: "上一步", enabled: session.cursor > 0) { walk(-1) }
+                moveStrip
+                arrow("chevron.right", label: "下一步", enabled: !session.isAtLatest) { walk(1) }
+                // The way back to the present, beside the arrows that walked away from it. It used to
+                // be a sentence above the board — "在看第 7/8 步 · 回到最新" — which spent a row saying
+                // where the eye was, and where the eye is is what this whole strip is drawing.
+                if !session.isAtLatest {
+                    arrow("forward.end.fill", label: "回到最新", enabled: true) {
+                        selected = nil
+                        session.jumpToLatest()
+                    }
                 }
             }
+            .frame(height: 42)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            variationChips
         }
-        .frame(height: 42)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 5)
     }
 
     /// Whether there is a curve to draw at all: one is made of Scores, and Scores are the engine's
@@ -733,7 +736,12 @@ struct GameScreen: View {
                 Text(cell.san)
                     .font(cell.cursor == session.cursor ? .notation.weight(.bold) : .notation)
                 if cell.variations > 0 {
-                    Text("⁽\(cell.variations)⁾").font(.caption2)
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(
+                            cell.cursor == session.cursor ? Palette.parchment : Palette.analysis
+                        )
+                        .accessibilityLabel("\(cell.variations) 个变着")
                 }
             }
             .foregroundStyle(cell.cursor == session.cursor ? Palette.parchment : Palette.ink)
@@ -749,7 +757,11 @@ struct GameScreen: View {
         .id(cell.cursor)
         // Said the way somebody reading a game aloud says it. A bare "Nf6" out of VoiceOver is a
         // move with no place in the game, and place is the whole of what this strip is for.
-        .accessibilityLabel("第 \(cell.cursor) 步 \(cell.san)")
+        .accessibilityLabel(
+            cell.variations > 0
+                ? "第 \(cell.cursor) 步 \(cell.san)，\(cell.variations) 个变着"
+                : "第 \(cell.cursor) 步 \(cell.san)"
+        )
         .accessibilityHint("回到这一步")
     }
 
@@ -1853,36 +1865,71 @@ struct GameScreen: View {
         }
     }
 
+    /// A line that was played from this Ply and then left behind, named for the record to offer.
+    private struct Fork: Identifiable {
+        let ply: Int
+        let index: Int
+        let line: [Game.Ply]
+        var id: String { "\(ply)-\(index)" }
+        var label: String { line.prefix(6).map(\.san).joined(separator: " ") }
+    }
+
+    /// Variations hanging off the move just played, and off the move that would follow from here.
+    /// Standing on either side of a fork has to see it: the mark in the strip is on the new move,
+    /// and the position it was played from is where the other line still makes sense.
+    private var forks: [Fork] {
+        var found: [Fork] = []
+        let cursor = session.cursor
+        if cursor < session.game.plies.count {
+            for (index, line) in session.game.variations(atPly: cursor).enumerated() {
+                found.append(Fork(ply: cursor, index: index, line: line))
+            }
+        }
+        if cursor > 0 {
+            let behind = cursor - 1
+            for (index, line) in session.game.variations(atPly: behind).enumerated() {
+                found.append(Fork(ply: behind, index: index, line: line))
+            }
+        }
+        return found
+    }
+
     /// The lines that were played from here instead of the move that follows. With the record,
     /// because that is what they are: a piece of it that was left to one side.
-    @ViewBuilder private var variations: some View {
-        if !session.variationsHere.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(Array(session.variationsHere.enumerated()), id: \.offset) { index, line in
-                    Button {
-                        selected = nil
-                        session.enterVariation(index)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.triangle.branch").font(.caption2)
-                            Text(line.prefix(6).map(\.san).joined(separator: " "))
-                                .font(.notation)
-                                .lineLimit(1)
-                            Spacer(minLength: 0)
+    @ViewBuilder private var variationChips: some View {
+        if !forks.isEmpty {
+            ScrollView(.horizontal) {
+                HStack(spacing: 6) {
+                    ForEach(forks) { fork in
+                        Button {
+                            selected = nil
+                            session.enterVariation(fork.index, atPly: fork.ply)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.triangle.branch").font(.caption2)
+                                Text(fork.label).font(.notation).lineLimit(1)
+                            }
+                            .foregroundStyle(Palette.analysis)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .background(
+                                Palette.analysis.opacity(0.12), in: Capsule()
+                            )
                         }
-                        .foregroundStyle(Palette.analysis)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(
-                            Palette.analysis.opacity(0.10), in: RoundedRectangle(cornerRadius: 8)
-                        )
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("变着 \(fork.label)")
                     }
-                    .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
+            .scrollIndicators(.hidden)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 6)
         }
+    }
+
+    /// Kept for the reading that used to live on 这一局; the chips now sit on the record itself.
+    @ViewBuilder private var variations: some View {
+        variationChips
     }
 
     /// The few things the screen has to say in words rather than show — all of them about what
@@ -2430,12 +2477,16 @@ struct GameScreen: View {
             selected = nil
             return
         }
-        // Armed, so the board is a place to ask about rather than a place to move on. Every tap is
-        // a new question, including a tap while an answer is already up.
+        // Armed, so a tap that is not a move is a question about the square. An own-piece tap,
+        // or a destination after one, is still a move — 练习 asks you to play, and pointing at
+        // a square is how you think before you commit, not instead of committing.
         if session.isScannerArmed {
-            selected = nil
-            session.scan(at: square)
-            return
+            let own = boardPieces[square]?.colour == tapPosition.state.sideToMove
+            if !(session.isHandTurn && (selected != nil || own)) {
+                selected = nil
+                session.scan(at: square)
+                return
+            }
         }
         guard session.isHandTurn else { return }
 
@@ -2455,10 +2506,10 @@ struct GameScreen: View {
                     self.selected = nil
                     return
                 }
-                // The one difference a Drill makes to the board: while a past Ply is being
-                // studied a move is *offered* — visible, uncommitted, and yours to take back —
-                // rather than played into the game (docs/adr/0015).
-                if session.isStudying {
+                // 练习 is the Drill: a move is *offered* — visible, uncommitted, and yours to
+                // take back. Any other card, a past Ply included, plays it: the line it replaces
+                // is kept as a Variation (docs/adr/0015, 0023).
+                if isDrilling {
                     session.offer(move)
                 } else {
                     session.play(move)
@@ -2534,6 +2585,9 @@ struct GameScreen: View {
     /// would be the blunder-check performed on the player's behalf, which is precisely the habit
     /// they exist to build.
     private var isPast: Bool { !session.isAtLatest }
+
+    /// 练习 is in front and this Ply is a question. Other cards play from here instead.
+    private var isDrilling: Bool { card == .drill && session.isStudying }
 
     /// The player's own move, drawn in their own colour beside the engine's.
     private var myArrow: MoveSquares? {

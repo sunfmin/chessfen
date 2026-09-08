@@ -800,10 +800,11 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     }
 
     /// Carries on down one of the lines that was left behind here.
-    public func enterVariation(_ index: Int) {
-        guard game.promoteVariation(index, atPly: cursor) else { return }
-        cursor += 1
-        analysis = nil
+    public func enterVariation(_ index: Int, atPly ply: Int? = nil) {
+        let at = ply ?? cursor
+        guard game.promoteVariation(index, atPly: at) else { return }
+        cursor = at + 1
+        adoptViewedAnalysis()
         save()
         retune()
     }
