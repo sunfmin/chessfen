@@ -476,8 +476,8 @@ struct GameScreenScreenshots {
         #expect(rendered.says("战术"))
         #expect(rendered.says("有战术"))
         #expect(rendered.says("没人守的车"))
-        #expect(!rendered.says("+5.00"), "no Score while practising")
-        #expect(session.analysis == nil)
+        #expect(!rendered.says("+5.00"), "no Score while practising — a card's Stint is for the card")
+        #expect(!rendered.says("建议"))
     }
 
     // ------------------------------------------------------------------- the news
@@ -525,11 +525,9 @@ struct GameScreenScreenshots {
         #expect(rendered.says("把箭头收起"), "arriving drew them, and one press takes them off")
         #expect(rendered.says("这几步没有走进棋谱"))
         #expect(session.mateNews?.arrows.count == 3)
-        // Practice is untouched: the mate is a fact, and a Score would be an opinion.
+        // Practice is untouched on the board: the mate is a fact, and a Score would be an opinion.
         #expect(session.isPractising)
-        #expect(session.analysis == nil)
         #expect(!rendered.says("建议"), "no recommendation, because that is an opinion")
-        #expect(!rendered.says("深 "), "and no depth, because no search of ours was running")
         // The deck is not on the card it usually opens: the dots name every card, so what says
         // which one is showing is the card's own subtitle.
         #expect(rendered.says("几步之内有人要被将死了"))
@@ -744,8 +742,8 @@ struct GameScreenScreenshots {
         let session = GameSession.fresh(game)
         let engine = ScriptedEngine(Self.searching, isEndless: true)
         session.attach(engine: engine, library: nil)
-        // The Line the Review stored on ply 6 — the only place a carousel gets one from, because no
-        // search is started to play one (docs/adr/0019).
+        // The Line the Review stored on ply 6. Arriving at the card also spends a Stint, but the
+        // walk reads the Review's line first — the one written down.
         session.applyReview(
             game.plies.indices.map { ply in
                 ReviewedPly(
@@ -778,10 +776,10 @@ struct GameScreenScreenshots {
         // And where the whole line arrives, in one sentence over facts anybody can count.
         #expect(rendered.says("4 步之后，你吃了对方 1 个兵，自己丢了 1 个马"))
         #expect(rendered.says("这几步没有走进棋谱"))
-        // Nothing was written and nothing was searched for.
+        // The walk itself writes nothing. Arriving at the card spends a Stint so the card has a
+        // live line even without a Review; the Review's line is still what is being walked.
         #expect(session.game.plies.map(\.san) == ["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5", "c3", "Nf6"])
         #expect(session.game.variations(atPly: 6).isEmpty)
-        #expect(engine.searchCount == 0)
 
         // And leaving puts the board back exactly where it was.
         session.endWalk()

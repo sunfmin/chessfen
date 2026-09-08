@@ -92,17 +92,21 @@ invented their own type hierarchy — chips here, bullets there, numbered circle
 It did not read as a card and it did not read as swipeable. Photographed one at a time, the ten
 shots are the argument (`ios/App/out/deck-01…10.png`).
 
-**The deck is a pull-up card, not a window.** It has two detents: a peek, which is whatever the
-board leaves over, and raised, which is up to the board's top edge. Rounded top corners, a
+**The deck is a pull-up card, not a window.** It rests in the room under the record, and a finger
+pulling up stretches it over the board as far as the board's own top edge. Rounded top corners, a
 hairline, a lift shadow, a grabber — it is an object with an edge, which is what makes pulling it
-occur to anybody. A body longer than the peek fades out at the cut rather than stopping dead, so
-a cut line reads as 「拉我」.
+occur to anybody. There are no detents: the card stays at the height the finger left it, and a
+finger pulling down shortens it back. A body longer than the window fades out at the cut rather
+than stopping dead, so a cut line reads as 「拉我」.
 
-**The card says how much room it needs.** Two of them answer with a list — the three moves of a
-Reveal, the five rows of a plan — and a list read four lines at a time is a list nobody reads, so
-arriving at one of those raises the deck, and leaving puts the board back. A tap inside a raised
-card that *plays* on the board lowers it again: what the tap does happens where you cannot see it
-otherwise.
+**A card never raises itself.** A list of five rows arrives at the peek, and a tap on a numbered
+row plays that step on the board without changing the card's height. The grabber is not a
+button. The only way the card grows is a finger pulling it up.
+
+**Arriving at a card that reads a Line spends a Stint**, even during Practice: the swipe is the
+asking, the board stays silent, and 走马灯 / 要害格 / 杀 / 战术 walk what those ten seconds found
+instead of waiting for a Review. 复盘 still keeps a press of its own — a pass re-scores a whole
+game. A Guess still being held is the player answering, and no card speaks over that.
 
 **Ten dots became a grouped rail.** The ten tabs sit in four clusters with a gap between them —
 现在 / 这一步 / 任何一格 / 这一局 — and the group you are in is named at the right end of the rail.
@@ -123,8 +127,9 @@ is now 旁注: where this game sits, the lines that were left behind, the piece 
 ## Consequences
 
 - The six chips that used to sit under the board are gone; the cards are the affordance.
-- A swipe can now cost a `depth 10` search, so paging back and forth across 杀 / 战术 probes each
-  position it lands on. That is the price of 「滑到就自动打开」 and it is bounded by design.
+- A swipe can now cost a Stint, so paging across 杀 / 战术 / 要害 / 走马灯 spends ten seconds of
+  engine time on each card it lands on, even during Practice. That is the price of 「滑到就自动打开」
+  and it is bounded by design. The board stays silent; the card is what the ten seconds are for.
 - Two of docs/adr/0015's silences are narrower: the finder answers wherever the eye is, and a
   Drill's position can be asked about by leaving the question and swiping two cards along.
 - A screenshot test has to name the card it photographs. A paged deck also keeps a neighbouring

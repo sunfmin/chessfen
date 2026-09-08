@@ -43,11 +43,11 @@ struct GameScreen: View {
     /// Whether it was arriving at 杀 or 战术 that turned the finder on, rather than a person
     /// pressing its switch. Only what a swipe turned on does a swipe turn off again.
     @State private var finderIsOurs = false
-    /// How far the deck is pulled up, and the two heights it is pulled between. Both are measured
-    /// from the layout, so peek is to the pixel the room the deck has always had and raised stops
-    /// exactly at the board's top edge.
-    @State private var detent = DeckDetent.peek
+    /// How far the deck is pulled up over the board, in points above the peek. Follows a finger
+    /// and stays where it stopped — a card never raises itself, and a tap never changes this.
+    @State private var lift: CGFloat = 0
     @State private var peek: CGFloat = 0
+    @State private var raised: CGFloat = 0
     @State private var topBar: CGFloat = 0
     /// Whether a thumb is on 让引擎走 right now. The engine is thinking for exactly as long as it is —
     /// which is why this is read off the session rather than kept here as well. A screen holding
@@ -109,6 +109,7 @@ struct GameScreen: View {
     var body: some View {
         GeometryReader { proxy in
             let side = Self.boardSide(in: proxy.size)
+            let raisedHeight = max(peek, proxy.size.height - topBar)
             VStack(spacing: 0) {
                 playerBar(topColour)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { topBar = $0 }
@@ -130,18 +131,14 @@ struct GameScreen: View {
             // of them about something this position could not do anything with.
             .overlay(alignment: .bottom) {
                 DeckSurface(
-                    detent: $detent,
+                    lift: $lift,
                     peek: peek,
                     // As far as the board's own top edge and no further: a card that covered the
                     // position it is talking about would be talking to itself.
-                    raised: max(peek, proxy.size.height - topBar)
+                    raised: raisedHeight
                 ) {
                     VStack(spacing: 0) {
-                        DeckHandle(detent: detent) {
-                            withAnimation(.snappy(duration: 0.28)) {
-                                detent = detent == .peek ? .raised : .peek
-                            }
-                        }
+                        DeckHandle()
                         rail
                     }
                 } content: {
@@ -149,6 +146,7 @@ struct GameScreen: View {
                 }
                 .opacity(peek == 0 ? 0 : 1)
             }
+            .onChange(of: raisedHeight) { _, now in raised = now }
         }
         .background(Palette.parchment)
         // No title, and now nothing in its place either. The screen is a board; a word saying
@@ -1304,9 +1302,6 @@ struct GameScreen: View {
     @ViewBuilder private func step(_ note: PlanNote) -> some View {
         Button {
             session.followPlan(through: note.step)
-            // A raised card covers the board, and what this tap does happens *on* the board, so
-            // it puts the board back first (docs/adr/0023).
-            withAnimation(.snappy(duration: 0.28)) { detent = .peek }
         } label: {
             // The same row every numbered thing on this screen uses: the figure that is also on
             // the board, the move, what it is for, and what it gives away.
@@ -1584,7 +1579,7 @@ struct GameScreen: View {
             if let walk = session.walk {
                 transport(walk)
             } else if session.viewedContinuation.isEmpty {
-                Text("这一步还没有引擎的线可走。")
+                Text(session.isSearching ? "引擎在算这一步…" : "这一步还没有引擎的线可走。")
                     .font(.caption)
                     .foregroundStyle(Palette.inkSoft)
             } else {
@@ -1668,11 +1663,13 @@ struct GameScreen: View {
                 .foregroundStyle(Palette.inkSoft)
                 .fixedSize(horizontal: false, vertical: true)
         } else if session.viewedContinuation.isEmpty {
-            // Not "nothing happened": nobody has paid for a line over this position yet, and the
-            // way to buy one is a Review or a committed Guess (docs/adr/0019, 0020).
-            Text(session.guess == nil
-                ? "引擎还没算过这一步。打开上面的「引擎意见」让它把全局重算一遍，这里就有话说了。"
-                : "先交卷。交卷之前引擎不开口，这里也就还没有话说。")
+            Text(
+                session.guess != nil
+                    ? "先交卷。交卷之前引擎不开口，这里也就还没有话说。"
+                    : session.isSearching
+                        ? "引擎在算这一步…"
+                        : "滑到这张卡会算 10 秒。算完这里就有话说了。"
+            )
                 .font(.caption)
                 .foregroundStyle(Palette.inkSoft)
                 .fixedSize(horizontal: false, vertical: true)
@@ -2013,12 +2010,10 @@ struct GameScreen: View {
         .onChange(of: session.guess?.san) { _, now in
             if now != nil { card = .drill }
         }
-        // And the answer to it needs more room than the question did.
-        .onChange(of: session.reveal == nil) { _, _ in
-            withAnimation(.snappy(duration: 0.28)) { detent = needsRoom(card) ? .raised : .peek }
-        }
-        .onChange(of: session.planNotes.count) { _, _ in
-            withAnimation(.snappy(duration: 0.28)) { detent = needsRoom(card) ? .raised : .peek }
+        // Arriving starts the walk when a line is already in hand; a Stint that lands later
+        // has to start it then, or 走马灯 sits empty over a line that has just arrived.
+        .onChange(of: session.viewedContinuation.isEmpty) { _, empty in
+            if !empty, card == .walk, session.walk == nil { session.startWalk() }
         }
         // And a mate that turns up mid-game takes the eye, which is the whole of 「直接给予提示」
         // on a deck (docs/adr/0023). On the way in only: a 2 步杀 becoming a 1 步杀 is the same
@@ -2117,7 +2112,7 @@ struct GameScreen: View {
         // A card with more on it than fits fades out at the bottom instead of being chopped: a
         // cut sentence looks like a bug, a fading one looks like something to pull up.
         .overlay(alignment: .bottom) {
-            if detent == .peek { CardFade() }
+            if lift < max(raised - peek, 0) - 1 { CardFade() }
         }
     }
 
@@ -2133,11 +2128,10 @@ struct GameScreen: View {
     /// so the board is only ever drawing the one card in front of you and never the leftovers of
     /// three you swiped past (docs/adr/0023).
     ///
-    /// A swipe therefore spends a search where the card is *about* one: the finder's probe is one
-    /// bounded search at `depth 10`, and 「滑到那张卡片就自动打开」 is the whole of how it is asked
-    /// for now. The one thing still behind a deliberate press is 复盘, which re-scores an entire
-    /// game and writes what it finds (docs/adr/0016) — a swipe is not an instruction to spend
-    /// minutes.
+    /// A swipe therefore spends a Stint where the card reads a Line — 杀, 战术, 要害, 走马灯 —
+    /// even during Practice: the swipe is the asking and the board stays silent. The one thing
+    /// still behind a deliberate press is 复盘, which re-scores an entire game and writes what
+    /// it finds (docs/adr/0016) — a swipe is not an instruction to spend minutes.
     private func turn(to now: Card, from was: Card) {
         selected = nil
         leave(was, for: now)
@@ -2161,11 +2155,8 @@ struct GameScreen: View {
     }
 
     private func arrive(at now: Card) {
-        // The card says how much room it needs. Two of them answer with a list — the three moves
-        // of a Reveal, the five rows of a plan — and a list read four lines at a time is a list
-        // nobody reads, so arriving at one of those raises the deck and leaving it puts the board
-        // back (docs/adr/0023). Everything else rests at the height the deck has always had.
-        detent = needsRoom(now) ? .raised : .peek
+        // A card never raises itself. A long list sits at the peek; a finger pulling up is how
+        // more of it comes into view, and a tap on a row plays that step without changing height.
         switch now {
         case .scanner: if session.scan == nil { session.armScanner() }
         case .walk:
@@ -2187,15 +2178,17 @@ struct GameScreen: View {
             if session.planDraft == nil, session.planCheck == nil { session.startPlan() }
         default: break
         }
+        if wantsAdvice(now) { session.adviseForCard() }
     }
 
-    /// Whether this card is one of the two that answer with a list, and so wants the board's room
-    /// rather than the four lines under the record.
-    private func needsRoom(_ kind: Card) -> Bool {
+    /// Cards that read a Line or an Analysis spend a Stint on arrival, even during Practice.
+    /// The swipe is the asking; the board stays silent. Scanner, 考一遍 and 复盘 keep their own
+    /// bargains — the engine comes last, the player answers first, a pass is a press. 五步计划
+    /// already owns the engine for its look-ahead.
+    private func wantsAdvice(_ kind: Card) -> Bool {
         switch kind {
-        case .drill: session.reveal != nil || session.isRevealing
-        case .plan: !session.planNotes.isEmpty || session.planCheck != nil
-        default: false
+        case .mate, .tactics, .key, .walk, .reading: true
+        case .scanner, .drill, .plan, .review, .missing: false
         }
     }
 
@@ -2266,12 +2259,12 @@ struct GameScreen: View {
             VStack(alignment: .leading, spacing: 6) {
                 if viewed.isOver {
                     Text("这局已经走完了，没有下一步可算。")
-                } else if session.isProbingTactics {
+                } else if session.isProbingTactics || session.isSearching {
                     Text("在看有没有杀…")
                 } else if session.isFindingTactics || session.analysis != nil {
                     Text("这个局面几步之内没有杀 —— 双方都还没有强制的将死。")
                 } else {
-                    Text("引擎还没算过这个局面。往左滑到「战术」按一下，有没有杀也就一起看出来了。")
+                    Text("滑到这张卡会算 10 秒。有杀的话算完就会说。")
                 }
             }
             .font(.caption)
@@ -2383,7 +2376,7 @@ struct GameScreen: View {
                 (
                     "这步的要害 · 走马灯",
                     session.guess == nil
-                        ? "它们要一条已经算过的线：复盘一遍，或者在这一步交一次卷"
+                        ? "滑到那张卡会算 10 秒；有线了它们就有话说"
                         : "先交卷 —— 交卷之前引擎不开口"
                 )
             )
@@ -2392,7 +2385,7 @@ struct GameScreen: View {
             rows.append(("复盘 · 最贵三步", "统一深度重算全局要按一下「打分」；三步是那一遍重算的产物"))
         }
         if !session.isFindingTactics, session.analysis == nil {
-            rows.append(("杀 · 战术", "滑到那两张卡它们自己就开 —— 一次短搜索，不用你按开关"))
+            rows.append(("杀 · 战术", "滑到那两张卡会算 10 秒 —— 有杀、有战术就算完会说"))
         }
         return rows
     }
@@ -2577,10 +2570,12 @@ struct GameScreen: View {
     private var recommendation: MoveSquares? {
         // The shot is 战术's own drawing and is drawn while that card is up. The engine's
         // recommendation underneath it is the strip's — 引擎意见 is a switch on the board, not a
-        // card — so it is not gated by the deck.
+        // card — so it is not gated by the deck. Practice still hides it: a card's Stint may
+        // have left an Analysis in hand, and that is for the card, not for the board.
         if card == .tactics, session.isFindingTactics, let tactic = session.tactic {
             return MoveSquares(from: tactic.move.from, to: tactic.move.to)
         }
+        guard !session.isPractising else { return nil }
         return session.analysis?.bestMove.flatMap { MoveSquares(uci: $0) }
     }
 

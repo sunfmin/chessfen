@@ -256,4 +256,92 @@ struct EngineClock {
 
         #expect(session.game.plies.count == 9, "the press still ends in the move it asked for")
     }
+
+    // ---------------------------------------------------------- a card's Stint
+
+    /// Arriving at a card is the asking, even during Practice: the board stays silent, and the
+    /// card is what the ten seconds are for. Without this, 走马灯 and 要害格 wait for a Review
+    /// that Practice will not start.
+    @Test("a card arriving during practice spends a Stint, and the walk can read that line")
+    func aCardSpendsAStintDuringPractice() async throws {
+        let engine = ScriptedEngine(Self.searching, isEndless: true)
+        let session = try session(
+            engine, controllers: [.white: .hand, .black: .hand],
+            stint: .milliseconds(40)
+        )
+        await hop()
+        #expect(session.isPractising)
+        #expect(session.analysis == nil, "practice still starts no search of its own")
+        #expect(session.viewedContinuation.isEmpty, "and there is no Review to read a line from")
+
+        session.adviseForCard()
+        await hop()
+
+        #expect(engine.budgets.last == .untilStopped)
+        #expect(engine.lines.last == 3)
+        #expect(session.analysis?.bestMove == "d2d4")
+        #expect(
+            session.viewedContinuation == ["d4", "exd4"],
+            "the card can walk what the Stint found"
+        )
+        #expect(session.isAdviceSpent)
+    }
+
+    /// The same Stint while the engine is already talking: arriving is a new ten seconds, not
+    /// the standing search reused, so each card gets the clock the person just asked for.
+    @Test("a card arriving while the engine is talking also spends a Stint")
+    func aCardSpendsAStintWhileTalking() async throws {
+        let engine = ScriptedEngine(Self.searching, isEndless: true)
+        let session = try session(
+            engine, controllers: [.white: .hand, .black: .hand], opinion: true,
+            stint: .milliseconds(40)
+        )
+        await hop()
+        let before = engine.searchCount
+        #expect(session.analysis != nil)
+
+        session.adviseForCard()
+        await hop()
+
+        #expect(engine.searchCount == before + 1, "arriving is a new Stint, not the standing one reused")
+        #expect(engine.budgets.last == .untilStopped)
+        #expect(session.analysis?.bestMove == "d2d4")
+    }
+
+    /// A move the engine is walking is not advice, and a swipe must not take it off the clock.
+    @Test("a card does not take the engine off a move it is walking")
+    func aCardDoesNotInterruptTheEnginesMove() async throws {
+        let engine = ScriptedEngine(Self.searching, isEndless: true)
+        let session = try session(engine, controllers: [.white: .engine, .black: .hand])
+        await hop()
+        #expect(session.thinking == .own)
+        let before = engine.searchCount
+
+        session.adviseForCard()
+        await hop()
+
+        #expect(engine.searchCount == before, "the move is still the one being thought about")
+        #expect(session.thinking == .own)
+    }
+
+    /// A Guess still being held is the player answering. The engine does not speak first, even
+    /// if the card they are on is one that would otherwise spend a Stint.
+    @Test("a card does not speak while a Guess is still being held")
+    func aCardDoesNotSpeakOverAGuess() async throws {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
+        let engine = ScriptedEngine(Self.searching, isEndless: true)
+        let session = GameSession.fresh(game)
+        session.adviceStint = .milliseconds(40)
+        session.attach(engine: engine, library: nil)
+        session.jump(toPly: 6)
+        session.offer(try #require(session.viewed.state.move(matching: "d2d4")))
+        #expect(session.guess != nil)
+        let before = engine.searchCount
+
+        session.adviseForCard()
+        await hop()
+
+        #expect(engine.searchCount == before)
+        #expect(session.analysis == nil)
+    }
 }

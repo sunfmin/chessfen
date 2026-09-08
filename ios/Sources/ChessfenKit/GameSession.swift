@@ -216,6 +216,10 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// *thinks*, has no reason to hide them. It is what a thumb held on 让引擎走 is told.
     public private(set) var searchProgress: SearchProgress?
 
+    /// A search is in flight — a Stint, a probe, a move being walked. The cards read this to
+    /// say 在算 rather than 「引擎还没算过」 while one of those is running.
+    public var isSearching: Bool { searchTask != nil }
+
     public struct SearchProgress: Hashable, Sendable {
         public var depth: Int
         public var selectiveDepth: Int
@@ -649,16 +653,19 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
 
     /// What the engine expects to happen from the position on screen, in SAN.
     ///
-    /// Three cases and one rule — the app never starts a search to answer this, so the answer is
-    /// whichever line somebody already paid for (docs/adr/0019, 0020):
+    /// Four cases, in this order:
     ///
     /// - a Guess that has been committed: the line the Reveal's own search produced;
     /// - a Guess still being held: nothing, because the engine has not been let speak yet
     ///   (docs/adr/0015), and the layer says so rather than guessing;
-    /// - anything else: the Review's line for this position, empty until there has been a Review.
+    /// - a Review's line for this position, when one has been written into the file;
+    /// - otherwise the Line the standing Analysis has reached — including a Stint a card spent
+    ///   during Practice, so 走马灯 and 要害格 can talk without waiting for a Review.
     public var viewedContinuation: [String] {
         if guess != nil { return reveal?.guessLine ?? [] }
-        return game.reviewLine(atPly: cursor)
+        let reviewed = game.reviewLine(atPly: cursor)
+        if !reviewed.isEmpty { return reviewed }
+        return analysis?.best?.san ?? []
     }
 
     /// The position the board should draw — the trial's, when one is being tried out.
@@ -1820,6 +1827,20 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         advise(on: position, using: engine)
     }
 
+    /// A Stint spent because a card arrived. Runs during Practice too: the swipe is the asking,
+    /// and the board stays silent. A move the engine is walking, a plan's own look-ahead, and a
+    /// Review in flight keep the engine — those are not advice, and a swipe must not take them
+    /// off the clock.
+    public func adviseForCard() {
+        guard let engine, !viewed.isOver, !engine.isPaused else { return }
+        guard thinking == nil, planDraft == nil, reviewPass?.isRunning != true else { return }
+        // A Guess still being held is the player answering; the engine does not speak first
+        // (docs/adr/0015).
+        guard guess == nil else { return }
+        stopSearching()
+        advise(on: viewed, using: engine)
+    }
+
     /// Cuts the engine's thinking short and takes whatever it likes best right now.
     ///
     /// What the engine likes best is the newest snapshot it has reported, and that is already
@@ -1867,12 +1888,16 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
             selectiveDepth: snapshot.selectiveDepth,
             milliseconds: snapshot.timeMilliseconds
         )
-        // While practising, the only search still running is the engine thinking about its own
-        // move — and what that search thinks of the position is advice, whichever question it was
-        // asked. It is dropped rather than merely hidden, so the game's plies stay unmarked and
-        // the Review has nothing to disagree with.
-        guard !isPractising else { return }
+        // A move being walked is not advice, and during Practice that search's opinion is dropped
+        // rather than merely hidden — the game's plies stay unmarked and the Review has nothing
+        // to disagree with. A card's Stint is the other case: the swipe asked, so the Line is
+        // kept for the card even while the board stays silent.
+        if isPractising, thinking != nil { return }
         analysis = snapshot
+        if isFindingTactics {
+            tactic = Tactic.confirmed(in: viewed, analysis: snapshot)
+            probedAnalysis = snapshot
+        }
         // The Score stays here, on a snapshot belonging to a screen, and is not written into
         // the Game. It used to be — "provisional, a Review will overwrite it" — but a Game is
         // a file, and a file that mixes one search's incidental Depth with a Review's uniform

@@ -110,9 +110,11 @@ _Avoid_: evaluation (ambiguous with the engine's static eval), hint, suggestion
 Ten seconds of advice, after which the engine stops and the strip under the board offers
 another. The unit an Analysis is bought in — a clock the session keeps rather than a
 budget handed to the engine, so a search that belongs to a screen is still refused while
-the app is away (docs/adr/0019). What ends one is the clock; what ends the *silence* after
-it is a person pressing 再算 10 秒. Says nothing about the engine's own move, which is
-bounded by Thinking Time, or about a Review, which is bounded by Depth.
+the app is away (docs/adr/0019). Arriving at a card that reads a Line spends one, even
+during Practice: the swipe is the asking and the board stays silent. What ends one is the
+clock; what ends the *silence* after it is a person pressing 再算 10 秒. Says nothing about
+the engine's own move, which is bounded by Thinking Time, or about a Review, which is
+bounded by Depth.
 _Avoid_: timeout, budget, session, throttle, interval
 
 **Review**:
@@ -225,12 +227,15 @@ face (docs/adr/0023). Each carries a one-line subtitle under its name, because f
 named after ideas somebody has to have been told about once. **The card you are on is the card
 that acts**: arriving turns its layer on — the scan, the walk, the squares, the mate's arrows,
 the finder — and leaving turns it off, so the board draws the one card in front of you and never
-the leftovers of three you swiped past. A swipe therefore spends a bounded search where the card
-is about one; the single exception is 复盘, which re-scores a whole game and writes what it
-finds, and keeps a press of its own. Shaped like a pull-up card with two detents — a peek, and
-raised up to the board's top edge — so a long card (a Reveal's three moves, a plan's five rows)
-arrives raised and puts the board back on the way out; a body longer than the peek fades at the
-cut instead of stopping dead. The dots are a **grouped rail**: four clusters named 现在 / 这一步 /
+the leftovers of three you swiped past. A swipe onto a card that reads a Line spends a Stint,
+even during Practice: the swipe is the asking, the board stays silent, and 走马灯 / 要害格 walk
+what that Stint found instead of waiting for a Review. The single exception is 复盘, which
+re-scores a whole game and writes what it finds, and keeps a press of its own. Shaped like a
+pull-up card: it rests in the room under the record, a finger pulling up stretches it over the
+board as far as the board's own top edge, and it stays at the height the finger left it.
+Pulling down shortens it back. A card never raises itself, and a tap on a row plays that step
+without changing the height; a body longer than the window fades at the cut instead of stopping
+dead. The dots are a **grouped rail**: four clusters named 现在 / 这一步 /
 任何一格 / 这一局, so ten cards are findable without learning ten names, and the current tab wears
 its card's tint. Every body is built from the same six primitives — lede, move chips, numbered
 row, figures, note, actions — and the numbered badges are the numbers on the board's arrows.

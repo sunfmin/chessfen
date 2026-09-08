@@ -3,17 +3,18 @@ import SwiftUI
 
 // ===================================================================== the card
 
-/// How far the deck is pulled up over the board.
+/// How far a pull left the card, in points above the peek.
 ///
 /// The board does not move — that is the one promise this screen makes, and there is a test that
 /// reads pixels to hold it to it. So a card that needs more than the room under the board takes it
-/// by sliding **over** the board and giving it back on the way down. Two positions and no more: a
-/// sheet with four detents is a sheet nobody can put back where they found it.
-enum DeckDetent: Hashable {
-    /// The room that is left under the record — exactly what the deck has always had.
-    case peek
-    /// Up over the board, for a card with five numbered rows on it.
-    case raised
+/// by sliding **over** the board, and gives it back when a finger pulls down. There are no
+/// detents: the card stays at the height the finger left it, clamped between the peek and the
+/// board's own top edge. A tap never changes that height.
+enum DeckLift {
+    /// Where the card sits after a drag. `drag` is points up (SwiftUI's translation flipped).
+    static func settled(lift: CGFloat, drag: CGFloat, maxLift: CGFloat) -> CGFloat {
+        min(max(lift + drag, 0), max(maxLift, 0))
+    }
 }
 
 /// The surface the cards are dealt onto: a raised card with a rounded top, a hairline edge, a
@@ -24,11 +25,12 @@ enum DeckDetent: Hashable {
 /// it says «grab me» in the one place both gestures live — up for more room, sideways for the next
 /// card (docs/adr/0023).
 struct DeckSurface<Head: View, Content: View>: View {
-    @Binding var detent: DeckDetent
+    /// Extra height above the peek, in points. Follows the finger and stays where it stopped.
+    @Binding var lift: CGFloat
     /// The height the deck has when it is left alone. Measured from the layout rather than guessed,
     /// so peek is to the pixel what the deck occupied before it could be pulled at all.
     let peek: CGFloat
-    /// How tall it goes when raised, which is as far as the board's own top edge and no further:
+    /// How tall it is allowed to go, which is as far as the board's own top edge and no further:
     /// covering the position you are being told about would be a card talking to itself.
     let raised: CGFloat
     /// The handle and the rail. Draggable; the body below is not, or a horizontal page turn and a
@@ -36,13 +38,14 @@ struct DeckSurface<Head: View, Content: View>: View {
     @ViewBuilder var head: () -> Head
     @ViewBuilder var content: () -> Content
 
-    /// Live drag, in points above the resting height. Kept while the finger is down so the card
-    /// follows it, and folded back into the detent when it lifts.
+    /// Live drag, in points above the settled lift. Kept while the finger is down so the card
+    /// follows it, and folded into `lift` when it lifts — no snap, no animation to a detent.
     @State private var pull: CGFloat = 0
 
-    private var resting: CGFloat { detent == .peek ? peek : raised }
+    private var maxLift: CGFloat { max(raised - peek, 0) }
     private var height: CGFloat {
-        min(max(resting + pull, peek), raised)
+        let value = peek + DeckLift.settled(lift: lift, drag: pull, maxLift: maxLift)
+        return value.isFinite ? max(value, 0) : 0
     }
 
     var body: some View {
@@ -75,33 +78,26 @@ struct DeckSurface<Head: View, Content: View>: View {
         DragGesture(minimumDistance: 3)
             .onChanged { pull = -$0.translation.height }
             .onEnded { value in
-                // Where the finger was going, not only where it stopped: a flick should finish
-                // what it started rather than snapping back because it ended early.
-                let ending = resting - value.predictedEndTranslation.height
-                withAnimation(.snappy(duration: 0.28)) {
-                    detent = ending > (peek + raised) / 2 ? .raised : .peek
-                    pull = 0
-                }
+                lift = DeckLift.settled(
+                    lift: lift, drag: -value.translation.height, maxLift: maxLift
+                )
+                pull = 0
             }
     }
 }
 
-/// The handle, and the one thing it has to say: this can be pulled.
+/// The handle, and the one thing it has to say: this can be pulled. A grabber, not a button —
+/// tapping it does nothing; only a drag changes the height.
 struct DeckHandle: View {
-    let detent: DeckDetent
-    let toggle: () -> Void
-
     var body: some View {
-        Button(action: toggle) {
-            Capsule()
-                .fill(Palette.inkSoft.opacity(0.45))
-                .frame(width: 34, height: 4)
-                .frame(height: 13)
-                .frame(maxWidth: .infinity)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(detent == .peek ? "把卡片拉起来" : "把卡片放回去")
+        Capsule()
+            .fill(Palette.inkSoft.opacity(0.45))
+            .frame(width: 34, height: 4)
+            .frame(height: 13)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .accessibilityLabel("拉卡片")
+            .accessibilityHint("向上滑看更多，向下滑放回去")
     }
 }
 
