@@ -15,8 +15,8 @@ struct DeckSurface<Head: View, Content: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            head()
             content()
+            head()
         }
         .frame(maxWidth: .infinity, alignment: .top)
         .frame(height: max(peek, 0), alignment: .top)
@@ -93,14 +93,17 @@ struct DeckRail<Card: Hashable>: View {
     let go: (Card) -> Void
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(cards, id: \.self) { card in segment(card) }
+        HStack {
+            Spacer(minLength: 0)
+            HStack(spacing: 2) {
+                ForEach(cards, id: \.self) { card in segment(card) }
+            }
+            .padding(3)
+            .background(Palette.chipRest, in: Capsule())
+            Spacer(minLength: 0)
         }
-        .padding(3)
-        .background(Palette.chipRest, in: Capsule())
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 2)
+        .padding(.top, 6)
+        .padding(.bottom, 10)
     }
 
     private func segment(_ card: Card) -> some View {
@@ -112,8 +115,7 @@ struct DeckRail<Card: Hashable>: View {
                 .font(.footnote.weight(isOn ? .semibold : .medium))
                 .foregroundStyle(isOn ? Palette.parchment : tint(card))
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 11)
                 .padding(.vertical, 7)
                 .background(isOn ? tint(card) : Color.clear, in: Capsule())
                 .contentShape(Rectangle())

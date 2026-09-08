@@ -230,7 +230,8 @@ the swipe is the asking and the board stays silent. 练习 does not — the play
 then the card says what the move bought, what it cost, and what the engine would have done
 (a past Ply is a Drill; pointing at a square is how you think before you commit). 复盘 is
 no longer a card: a uniform-depth pass is a press in the ⋯ menu. The five names sit in a
-segmented row on the card's top edge; tapping one or swiping the page are the same turn.
+centered capsule at the bottom of the screen, in the home-indicator band; tapping one or
+swiping the page are the same turn.
 The card itself starts with the one-line subtitle, not with its name again. It occupies
 the room under the record; a body longer than that scrolls inside the card.
 _Avoid_: carousel, sections, panels, accordion

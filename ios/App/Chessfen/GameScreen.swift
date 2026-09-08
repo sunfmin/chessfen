@@ -120,7 +120,7 @@ struct GameScreen: View {
             // of them about something this position could not do anything with.
             .overlay(alignment: .bottom) {
                 DeckSurface(peek: peek) {
-                    rail
+                    EmptyView()
                 } content: {
                     deckView
                 }
@@ -128,6 +128,13 @@ struct GameScreen: View {
             }
         }
         .background(Palette.parchment)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            rail
+                .frame(maxWidth: .infinity)
+                .background {
+                    Palette.raised.ignoresSafeArea(edges: .bottom)
+                }
+        }
         // No title, and now nothing in its place either. The screen is a board; a word saying
         // "game" over the top of one is a row of a phone spent on something nobody was in any
         // doubt about. The engine's switch stood here for a while, which was better than the strip
