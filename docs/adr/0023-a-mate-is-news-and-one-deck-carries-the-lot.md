@@ -92,16 +92,9 @@ invented their own type hierarchy — chips here, bullets there, numbered circle
 It did not read as a card and it did not read as swipeable. Photographed one at a time, the ten
 shots are the argument (`ios/App/out/deck-01…10.png`).
 
-**The deck is a pull-up card, not a window.** It rests in the room under the record, and a finger
-pulling up stretches it over the board as far as the board's own top edge. Rounded top corners, a
-hairline, a lift shadow, a grabber — it is an object with an edge, which is what makes pulling it
-occur to anybody. There are no detents: the card stays at the height the finger left it, and a
-finger pulling down shortens it back. A body longer than the window fades out at the cut rather
-than stopping dead, so a cut line reads as 「拉我」.
-
-**A card never raises itself.** A list of five rows arrives at the peek, and a tap on a numbered
-row plays that step on the board without changing the card's height. The grabber is not a
-button. The only way the card grows is a finger pulling it up.
+**The deck occupies the room under the record and no more.** Rounded top corners, a hairline, a
+lift shadow — it is still a card, not the bottom of a scroll. A body longer than the window
+scrolls inside it. It does not pull up over the board.
 
 **Arriving at a card that reads a Line spends a Stint**, even during Practice: the swipe is the
 asking, the board stays silent, and 走马灯 / 要害格 / 杀 / 战术 walk what those ten seconds found

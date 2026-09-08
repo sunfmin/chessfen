@@ -43,12 +43,8 @@ struct GameScreen: View {
     /// Whether it was arriving at 杀 or 战术 that turned the finder on, rather than a person
     /// pressing its switch. Only what a swipe turned on does a swipe turn off again.
     @State private var finderIsOurs = false
-    /// How far the deck is pulled up over the board, in points above the peek. Follows a finger
-    /// and stays where it stopped — a card never raises itself, and a tap never changes this.
-    @State private var lift: CGFloat = 0
+    /// The room the deck occupies under the record, measured from the layout.
     @State private var peek: CGFloat = 0
-    @State private var raised: CGFloat = 0
-    @State private var topBar: CGFloat = 0
     /// Whether a thumb is on 让引擎走 right now. The engine is thinking for exactly as long as it is —
     /// which is why this is read off the session rather than kept here as well. A screen holding
     /// its own copy of "a finger is down" is a screen that can be left holding it: a press that
@@ -109,18 +105,14 @@ struct GameScreen: View {
     var body: some View {
         GeometryReader { proxy in
             let side = Self.boardSide(in: proxy.size)
-            let raisedHeight = max(peek, proxy.size.height - topBar)
             VStack(spacing: 0) {
                 playerBar(topColour)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { topBar = $0 }
                 board.frame(width: side, height: side)
                 standing.frame(width: side).padding(.vertical, 6)
                 playerBar(bottomColour)
                 record
-                // The room the deck rests in, measured rather than guessed. The deck itself is
-                // laid over the top of this (below), so that pulling a card up can cover the
-                // board without ever *moving* it — the one promise this screen makes, and there
-                // is a test that reads pixels to hold it to it.
+                // The room the deck rests in, measured rather than guessed. The deck is laid over
+                // the top of this so the board never moves when the cards change.
                 Color.clear
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { peek = $0 }
             }
@@ -130,23 +122,13 @@ struct GameScreen: View {
             // rather than the order the position asks for — six switches and ten paragraphs, most
             // of them about something this position could not do anything with.
             .overlay(alignment: .bottom) {
-                DeckSurface(
-                    lift: $lift,
-                    peek: peek,
-                    // As far as the board's own top edge and no further: a card that covered the
-                    // position it is talking about would be talking to itself.
-                    raised: raisedHeight
-                ) {
-                    VStack(spacing: 0) {
-                        DeckHandle()
-                        rail
-                    }
+                DeckSurface(peek: peek) {
+                    rail
                 } content: {
                     deckView
                 }
                 .opacity(peek == 0 ? 0 : 1)
             }
-            .onChange(of: raisedHeight) { _, now in raised = now }
         }
         .background(Palette.parchment)
         // No title, and now nothing in its place either. The screen is a board; a word saying
@@ -1542,28 +1524,48 @@ struct GameScreen: View {
         }
     }
 
-    /// 这步的要害 — the squares this move is actually about (docs/adr/0020).
+    /// 这步的要害 — what this move is for, and why it was played.
     ///
-    /// **It names squares now instead of counting them.** It used to paint every square the move
-    /// changed hands over — nine or ten of them, two colours, a legend with the totals in it. That
-    /// is a diff, and the question it left was 「我管住了这些格，然后呢？」 So the rules propose and
-    /// the engine's own line disposes, and what reaches the board is one square, sometimes two,
-    /// never more than three, each with a sentence saying what it costs or buys (docs/adr/0020).
-    ///
-    /// The chip is gone the same way 问一格's did: the layer comes on with the card and goes off
-    /// with it, because drawing on a board is free and reversible (docs/adr/0023).
+    /// The last Ply of the position on screen, including the latest: there is no rewind to wait
+    /// for. An empty Game still answers, from the engine's next move. A Guess still being held
+    /// is the player answering, and this card does not speak over that.
     @ViewBuilder private var keyBody: some View {
         VStack(alignment: .leading, spacing: 6) {
+            if session.guess != nil, session.reveal == nil {
+                Text("先交卷。交卷之前引擎不开口，这里也就还没有话说。")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let purpose = movePurpose {
+                if purpose.opening.intent == .unclear {
+                    CardLede("\(purpose.opening.san) 为什么下，这里说不清。")
+                } else {
+                    CardLede("\(purpose.opening.san) 是为了 \(purpose.opening.intent.label)")
+                    if let later = purpose.later {
+                        CardNote("第 \(later.step) 步再 \(later.label)")
+                    }
+                }
+            } else if !session.isSearching {
+                Text("滑到这张卡会算 10 秒。算完就说这一步是为了什么。")
+                    .font(.caption)
+                    .foregroundStyle(Palette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if !looseSquares.isEmpty, session.walk == nil {
                 Text("红圈：被吃的子比守的多")
                     .font(.caption)
                     .foregroundStyle(Palette.inkSoft)
             }
-            controlLegend
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
         .padding(.top, 10)
+    }
+
+    /// What the move on screen is for. The last Ply if there is one, otherwise the engine's next.
+    private var movePurpose: LineReading? {
+        if session.guess != nil, session.reveal == nil { return nil }
+        return viewed.purpose(continuation: session.viewedContinuation)
     }
 
     /// 走马灯 — the stored Line played out on the board, a Ply at a time.
@@ -1626,64 +1628,7 @@ struct GameScreen: View {
         }
     }
 
-    /// One numbered sentence per square drawn, and the reason there is nothing when there is
-    /// nothing.
-    ///
-    /// The number is the join: the same figure is on the square. The colour is the join too — the
-    /// mover's own violet for a square taken, the alarm colour for one let go — so a swatch is not
-    /// needed beside every line, only the badge that is already there.
-    ///
-    /// Three ways for this to be empty, and they are different pieces of news, so they are three
-    /// different sentences. A player told "nothing here" who is actually being told "nobody has
-    /// asked the engine yet" learns the wrong thing.
-    @ViewBuilder private var controlLegend: some View {
-        let key = keySquares
-        if !key.isEmpty {
-            VStack(alignment: .leading, spacing: 5) {
-                ForEach(Array(key.enumerated()), id: \.element.square) { rank, square in
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("\(rank + 1)")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.white)
-                            .frame(width: 16, height: 16)
-                            .background(square.isGain ? Palette.mine : Palette.alarm, in: Circle())
-                        Text(square.note)
-                            .font(.caption)
-                            .foregroundStyle(Palette.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-        } else if !isPast {
-            // The commonest reason of the four, and it used to print one of the other three: on the
-            // latest position there is no 「刚走的那步」 to be about at all (docs/adr/0023).
-            Text("这是最新局面，还没有「刚走的那步」可说。用上面的记录条退回一步，这张卡就有话说了。")
-                .font(.caption)
-                .foregroundStyle(Palette.inkSoft)
-                .fixedSize(horizontal: false, vertical: true)
-        } else if session.viewedContinuation.isEmpty {
-            if session.guess != nil {
-                Text("先交卷。交卷之前引擎不开口，这里也就还没有话说。")
-                    .font(.caption)
-                    .foregroundStyle(Palette.inkSoft)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else if !session.isSearching {
-                Text("滑到这张卡会算 10 秒。算完这里就有话说了。")
-                    .font(.caption)
-                    .foregroundStyle(Palette.inkSoft)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        } else if controlChange?.isEmpty == true {
-            Text("这步没改变任何格子的归属。")
-                .font(.caption)
-                .foregroundStyle(Palette.inkSoft)
-        } else {
-            Text("这步换手的格子，引擎接下来几步一个也没用上——就这一步而言，它们都不是要害。")
-                .font(.caption)
-                .foregroundStyle(Palette.inkSoft)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
+
 
     // ------------------------------------------------------------------ the report
 
@@ -2112,14 +2057,7 @@ struct GameScreen: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollIndicators(.hidden)
-        // Until the card is pulled up, a vertical drag resizes it rather than scrolling inside it.
-        // Scrolling a clipped peek is what made the pull hitch.
-        .scrollDisabled(lift < max(raised - peek, 0) - 1)
-        // A card with more on it than fits fades out at the bottom instead of being chopped: a
-        // cut sentence looks like a bug, a fading one looks like something to pull up.
-        .overlay(alignment: .bottom) {
-            if lift < max(raised - peek, 0) - 1 { CardFade() }
-        }
+        .overlay(alignment: .bottom) { CardFade() }
     }
 
     private var mateInk: Color {
@@ -2161,8 +2099,6 @@ struct GameScreen: View {
     }
 
     private func arrive(at now: Card) {
-        // A card never raises itself. A long list sits at the peek; a finger pulling up is how
-        // more of it comes into view, and a tap on a row plays that step without changing height.
         switch now {
         case .scanner: if session.scan == nil { session.armScanner() }
         case .walk:
@@ -2170,7 +2106,6 @@ struct GameScreen: View {
             // both come on together and both go off together.
             session.setShowsControlChange(true)
             if session.walk == nil { session.startWalk() }
-        case .key: session.setShowsControlChange(true)
         // Arriving *is* the tap: the arrows are what the news is for, and a person who swiped to
         // 「对方 2 步杀」 has already asked the question a button would have asked (docs/adr/0023).
         case .mate:
@@ -2389,8 +2324,8 @@ struct GameScreen: View {
         if !isPast {
             rows.append(
                 (
-                    "考一遍 · 这步的要害 · 五步计划",
-                    "它们说的是「刚走的那步」 —— 用记录条退回走过的一步"
+                    "考一遍 · 五步计划",
+                    "它们说的是走过的一步 —— 用记录条退回走过的一步"
                 )
             )
         } else if !session.isPractising {
@@ -2399,9 +2334,9 @@ struct GameScreen: View {
         if session.viewedContinuation.isEmpty, isPast {
             rows.append(
                 (
-                    "这步的要害 · 走马灯",
+                    "走马灯",
                     session.guess == nil
-                        ? "滑到那张卡会算 10 秒；有线了它们就有话说"
+                        ? "滑到那张卡会算 10 秒；有线了它就有话说"
                         : "先交卷 —— 交卷之前引擎不开口"
                 )
             )
@@ -2468,7 +2403,8 @@ struct GameScreen: View {
             captures: Set(candidateMoves.filter(\.isCapture).map(\.to)),
             recommendation: recommendation,
             mine: myArrow,
-            aim: session.declaredIntent?.target,
+            aim: session.declaredIntent?.target
+                ?? (card == .key ? movePurpose?.opening.intent.target : nil),
             loose: looseSquares,
             ways: session.trial == nil ? (session.scan?.origins ?? []) : [],
             key: keySquares,
@@ -2625,27 +2561,18 @@ struct GameScreen: View {
     /// and on no other. A ring with no legend anywhere on screen is a mark somebody has to guess
     /// at (docs/adr/0023).
     private var looseSquares: Set<Square> {
-        guard card == .key, isPast else { return [] }
+        guard card == .key else { return [] }
         return session.board.loosePieces ?? []
     }
 
-    /// What the move on the board did to the control of the squares — the guess when there is one,
-    /// and otherwise the move that led here. One rule, both readings: it is always the last ply of
-    /// the position being looked at.
-    private var controlChange: ControlChange? {
-        guard isPast, session.showsControlChange else { return nil }
-        return viewed.lastMoveControlChange
-    }
-
-    /// The one to three squares this move is actually about (docs/adr/0020).
+    /// The one to three squares a walked Line is actually about (docs/adr/0020).
     ///
     /// The rules net is in the package; what the screen supplies is the engine's expected
     /// continuation, and it never starts a search to get one — it is whichever line a Review or a
     /// Reveal already produced. No line, no claim.
     private var keySquares: [KeySquare] {
-        guard isPast, session.showsControlChange else { return [] }
-        // Whatever the board is showing, read against whatever that position still expects — which
-        // is how the layer follows a walked line step by step (docs/adr/0020).
+        // 走马灯 still follows the squares; the 要害 card itself now names the move's purpose.
+        guard card == .walk, session.showsControlChange else { return [] }
         return session.board.keySquares(continuation: session.boardContinuation)
     }
 
@@ -2745,7 +2672,7 @@ extension GameScreen.Card {
         case .tactics: "这一步有没有一记赢子的"
         case .scanner: "我哪些子能走到这一格，走过去值不值"
         case .drill: "把这一步当题做：先自己走，走完才给结果"
-        case .key: "刚走的那步，把哪一格变成了要紧的地方"
+        case .key: "这一步主要是为了什么，为什么要下"
         case .walk: "引擎说的后面几步，在棋盘上走一遍"
         case .plan: "自己走五步，说一个理由，让它判对错"
         case .review: "统一深度重算全局，让每一步的分能互相比"

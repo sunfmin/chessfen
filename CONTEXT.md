@@ -230,12 +230,9 @@ the finder — and leaving turns it off, so the board draws the one card in fron
 the leftovers of three you swiped past. A swipe onto a card that reads a Line spends a Stint,
 even during Practice: the swipe is the asking, the board stays silent, and 走马灯 / 要害格 walk
 what that Stint found instead of waiting for a Review. The single exception is 复盘, which
-re-scores a whole game and writes what it finds, and keeps a press of its own. Shaped like a
-pull-up card: it rests in the room under the record, a finger pulling up stretches it over the
-board as far as the board's own top edge, and it stays at the height the finger left it.
-Pulling down shortens it back. A card never raises itself, and a tap on a row plays that step
-without changing the height; a body longer than the window fades at the cut instead of stopping
-dead. The dots are a **grouped rail**: four clusters named 现在 / 这一步 /
+re-scores a whole game and writes what it finds, and keeps a press of its own. It occupies
+the room under the record; a body longer than that scrolls inside the card. The dots are a
+**grouped rail**: four clusters named 现在 / 这一步 /
 任何一格 / 这一局, so ten cards are findable without learning ten names, and the current tab wears
 its card's tint. Every body is built from the same six primitives — lede, move chips, numbered
 row, figures, note, actions — and the numbered badges are the numbers on the board's arrows.
@@ -274,18 +271,12 @@ position, and always about that position's last Ply, which is the Guess when the
 _Avoid_: influence, coverage, heat map, territory, diff
 
 **要害格**:
-A square the board judged worth drawing: one a rules net proposed — beside the mover's own
-king, a hole no pawn of theirs can attack again, a square an enemy piece can reach and hold,
-a square one of their own pieces wants and cannot safely take — and the engine's Line then
-confirmed mattered. At most three per move and usually one, each with a sentence saying what
-it costs or buys. Every sentence is three clauses in one order — 这格现在归谁 / 谁能过来站上去，
-兵赶不赶得走 / 引擎凭什么这么说 — and the first clause always ends in what it lets somebody *do*,
-because 「d7 补上了」 is a fact about a map and a player handed a map asks 然后呢. Beside a king,
-「谁能过来」 is decided by whose king it is and never by which way the square went: the arrival
-worth naming by your own king is always theirs, and by theirs is always yours (docs/adr/0021).
-Ranked within the position, never against a threshold, for the same reason Criticality is
-(docs/adr/0017). Distinct from a Control Change, which is every square that changed hands and
-makes no claim about any of them. 这步的要害 on screen.
+What this move is for: the main goal, in the seven Intent verbs, and why it was played. The
+card 这步的要害. Available at any Ply the eye is on, the latest included — the last move of
+the position on screen, or the engine's next move when nothing has been played yet. Swiping
+onto the card is the asking. Distinct from a Control Change, which is every square that
+changed hands and makes no claim about any of them, and from the squares 走马灯 still
+follows along a Line.
 _Avoid_: key square, weak square, hotspot, important square, highlight
 
 **走马灯**:

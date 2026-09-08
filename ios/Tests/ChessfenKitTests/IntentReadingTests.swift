@@ -188,3 +188,36 @@ func anUnreadableLineIsRefused() throws {
     #expect(unreadable.opening.intent == .unclear)
     #expect(unreadable.sentence == Intent.unclearLabel)
 }
+
+// ------------------------------------------------------------------ 这步的要害
+
+@Test("the last ply is what this position's move is for, including at the latest")
+func purposeReadsTheLastPlyEvenAtTheLatest() throws {
+    let before = try position("4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1")
+    var after = before
+    #expect(after.apply(try move("e4d5", in: before)))
+    let purpose = try #require(after.purpose(continuation: []))
+    #expect(purpose.opening.san == "exd5")
+    #expect(purpose.opening.intent == .claim(.take, try square("d5")))
+    #expect(purpose.later == nil, "no engine Line yet, so nothing to add")
+}
+
+@Test("with no ply yet, the purpose is the engine's next move")
+func purposeAtTheStartIsTheEnginesMove() throws {
+    let game = try position("4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1")
+    let purpose = try #require(game.purpose(continuation: ["exd5"]))
+    #expect(purpose.opening.san == "exd5")
+    #expect(purpose.opening.intent == .claim(.take, try square("d5")))
+}
+
+@Test("the engine's later move of the same player can add a second verb")
+func purposeAddsALaterOwnMoveFromTheContinuation() throws {
+    let before = try position("4k3/8/5r2/8/8/2N5/8/4K3 w - - 0 1")
+    var after = before
+    #expect(after.apply(try move("c3d5", in: before)))
+    let purpose = try #require(after.purpose(continuation: ["Kd8", "Nxf6"]))
+    #expect(purpose.opening.intent == .claim(.attack, try square("f6")))
+    let later = try #require(purpose.later)
+    #expect(later.san == "Nxf6")
+    #expect(later.intent == .claim(.take, try square("f6")))
+}

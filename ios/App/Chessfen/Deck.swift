@@ -3,64 +3,23 @@ import SwiftUI
 
 // ===================================================================== the card
 
-/// How far a pull left the card, in points above the peek.
-///
-/// The board does not move — that is the one promise this screen makes, and there is a test that
-/// reads pixels to hold it to it. So a card that needs more than the room under the board takes it
-/// by sliding **over** the board, and gives it back when a finger pulls down. There are no
-/// detents: the card stays at the height the finger left it, clamped between the peek and the
-/// board's own top edge. A tap never changes that height.
-enum DeckLift {
-    /// Where the card sits after a drag. `drag` is points up (SwiftUI's translation flipped).
-    static func settled(lift: CGFloat, drag: CGFloat, maxLift: CGFloat) -> CGFloat {
-        min(max(lift + drag, 0), max(maxLift, 0))
-    }
-}
-
-/// The surface the cards are dealt onto: a raised card with a rounded top, a hairline edge, a
-/// shadow that lifts it off the page, and a handle you can pull.
-///
-/// It is a *card* now rather than the bottom of a scroll, because a person has to be able to see
-/// that there is a stack of them and that this one can be moved. The handle is the whole of that:
-/// it says «grab me» in the one place both gestures live — up for more room, sideways for the next
-/// card (docs/adr/0023).
+/// The surface the cards are dealt onto: a raised card with a rounded top, a hairline edge, and
+/// a shadow that lifts it off the page. It occupies the room under the record and no more —
+/// a body longer than that scrolls inside it.
 struct DeckSurface<Head: View, Content: View>: View {
-    /// Extra height above the peek, in points. Follows the finger and stays where it stopped.
-    @Binding var lift: CGFloat
-    /// The height the deck has when it is left alone. Measured from the layout rather than guessed,
-    /// so peek is to the pixel what the deck occupied before it could be pulled at all.
+    /// The height the deck has. Measured from the layout rather than guessed, so it is to the
+    /// pixel the room under the record.
     let peek: CGFloat
-    /// How tall it is allowed to go, which is as far as the board's own top edge and no further:
-    /// covering the position you are being told about would be a card talking to itself.
-    let raised: CGFloat
-    /// The handle and the rail. Always draggable. The body below is too, except a mostly-horizontal
-    /// swipe still turns the page.
     @ViewBuilder var head: () -> Head
     @ViewBuilder var content: () -> Content
-
-    /// Live drag, in points above the settled lift. A GestureState so it tracks the finger without
-    /// going through an animated @State write every pixel — that was the hitch.
-    @GestureState private var pull: CGFloat = 0
-
-    private var maxLift: CGFloat { max(raised - peek, 0) }
-    private var height: CGFloat {
-        let value = peek + DeckLift.settled(lift: lift, drag: pull, maxLift: maxLift)
-        return value.isFinite ? max(value, 0) : 0
-    }
-    /// The size the body is laid out at. Changing the *visible* height must not relayout the
-    /// TabView every pixel of a drag, or the pull stutters. Layout once at the raised size, clip
-    /// to what the finger has revealed.
-    private var layoutHeight: CGFloat { max(raised, height, peek) }
 
     var body: some View {
         VStack(spacing: 0) {
             head()
-                .contentShape(Rectangle())
             content()
         }
         .frame(maxWidth: .infinity, alignment: .top)
-        .frame(height: layoutHeight, alignment: .top)
-        .frame(height: height, alignment: .top)
+        .frame(height: max(peek, 0), alignment: .top)
         .clipped()
         .background {
             UnevenRoundedRectangle(
@@ -77,27 +36,6 @@ struct DeckSurface<Head: View, Content: View>: View {
             }
             .shadow(color: Palette.lift, radius: 9, x: 0, y: -3)
         }
-        .simultaneousGesture(pullGesture)
-        .animation(nil, value: height)
-    }
-
-    private var pullGesture: some Gesture {
-        DragGesture(minimumDistance: 8)
-            .updating($pull) { value, state, transaction in
-                transaction.animation = nil
-                guard abs(value.translation.height) >= abs(value.translation.width) else { return }
-                state = -value.translation.height
-            }
-            .onEnded { value in
-                guard abs(value.translation.height) >= abs(value.translation.width) else { return }
-                var transaction = Transaction()
-                transaction.animation = nil
-                withTransaction(transaction) {
-                    lift = DeckLift.settled(
-                        lift: lift, drag: -value.translation.height, maxLift: maxLift
-                    )
-                }
-            }
     }
 }
 
@@ -137,18 +75,7 @@ struct CardSearching: View {
 
 /// The handle, and the one thing it has to say: this can be pulled. A grabber, not a button —
 /// tapping it does nothing; only a drag changes the height.
-struct DeckHandle: View {
-    var body: some View {
-        Capsule()
-            .fill(Palette.inkSoft.opacity(0.45))
-            .frame(width: 34, height: 4)
-            .frame(height: 13)
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
-            .accessibilityLabel("拉卡片")
-            .accessibilityHint("向上滑看更多，向下滑放回去")
-    }
-}
+
 
 // ====================================================================== the rail
 

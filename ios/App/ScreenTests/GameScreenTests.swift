@@ -1086,18 +1086,12 @@ struct GameScreenScreenshots {
             screen(session, engine: engine, opening: .key)
         }
 
-        // Turned on by the commit and by nothing else: nobody pressed the button here.
-        #expect(session.showsControlChange, "the one moment the layer may appear by itself")
         #expect(!session.viewedContinuation.isEmpty, "the reveal kept the line its search produced")
-
-        let key = session.viewed.keySquares(continuation: session.viewedContinuation)
-        #expect(key.count == 1, "one square, out of everything Qg5 changed hands over")
-        let only = try #require(key.first)
-        #expect(only.square == Square("e8"))
-        #expect(only.kind == .ownKing)
-        #expect(!only.isGain, "she walked away from the square her own king stands on")
-        #expect(rendered.says(only.note))
-        #expect(rendered.says("自己的王就站在 e8 上"))
+        let purpose = try #require(session.viewed.purpose(continuation: session.viewedContinuation))
+        #expect(purpose.opening.san == "Qg5")
+        #expect(rendered.says("Qg5"))
+        #expect(rendered.says("是为了"))
+        #expect(rendered.says(purpose.opening.intent.label))
     }
 
     /// An outpost, cashed in: the square, the piece that comes to it, and the walk between them.
@@ -1128,17 +1122,11 @@ struct GameScreenScreenshots {
             screen(session, engine: engine, opening: .key)
         }
 
-        let key = session.viewed.keySquares(continuation: session.viewedContinuation)
-        #expect(key.count == 1, "one square out of everything Nc3 changed hands over")
-        let d5 = try #require(key.first)
-        #expect(d5.square == Square("d5"))
-        #expect(d5.kind == .outpost)
-        let arrival = try #require(d5.occupation, "and the board has a route to draw")
-        #expect(arrival.piece.kind == .knight)
-        #expect(arrival.moves == 1)
-        #expect(!arrival.canBeDislodged)
-        #expect(rendered.says("永久据点"))
-        #expect(rendered.says("自己的马从 c3 走 1 步就到"), "who comes, and how far away they are")
+        let purpose = try #require(session.viewed.purpose(continuation: session.viewedContinuation))
+        #expect(purpose.opening.san == "Nc3")
+        #expect(rendered.says("Nc3"))
+        #expect(rendered.says("是为了"))
+        #expect(rendered.says(purpose.opening.intent.label))
     }
 
     /// The one reading that is about your own pieces. The rook takes the fifth rank and d5 changes
@@ -1170,16 +1158,11 @@ struct GameScreenScreenshots {
             screen(session, engine: engine, opening: .key)
         }
 
-        let key = session.viewed.keySquares(continuation: session.viewedContinuation)
-        let d5 = try #require(key.first)
-        #expect(d5.square == Square("d5"))
-        #expect(d5.kind == .shutOut)
-        #expect(d5.isGain, "taken, and still not somewhere anything of White's may stand")
-        let stuck = try #require(d5.shutOut)
-        #expect(stuck.piece.kind == .knight)
-        #expect(stuck.defenders == 2)
-        #expect(rendered.says("站不上去"))
-        #expect(rendered.says("对方有 2 个子看着这格") || rendered.says("d5 管住了"))
+        let purpose = try #require(session.viewed.purpose(continuation: session.viewedContinuation))
+        #expect(purpose.opening.san == "Ra5")
+        #expect(rendered.says("Ra5"))
+        #expect(rendered.says("是为了"))
+        #expect(rendered.says(purpose.opening.intent.label))
     }
 
     @Test("the same two layers hold up in the dark")

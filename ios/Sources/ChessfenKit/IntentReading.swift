@@ -207,4 +207,43 @@ extension Game {
         }
         return LineReading(opening: opening, later: later)
     }
+
+    /// What this position's move is for: the last Ply if there is one, otherwise the engine's
+    /// next move from `continuation`.
+    ///
+    /// The latest position has a last Ply the same as any other — the move that just landed —
+    /// so 这步的要害 does not wait for a rewind. An empty Game still answers, from the Line:
+    /// that is 「为什么要下这一步」 when nothing has been played yet.
+    public func purpose(continuation: [String] = []) -> LineReading? {
+        if let last = plies.last, let before = rewound(to: plies.count - 1),
+            let move = before.state.move(matching: last.uci)
+        {
+            let opening = MoveReading(
+                step: 1, san: last.san, intent: Intent.read(move, in: before)
+            )
+            return LineReading(
+                opening: opening, later: laterOwnMove(in: continuation, after: opening.intent)
+            )
+        }
+        return reading(of: continuation)
+    }
+
+    /// The original mover's next move in the engine's Line that says something the opening did
+    /// not. Opponent replies are skipped: they are not why *this* move was played.
+    private func laterOwnMove(in continuation: [String], after opening: Intent) -> MoveReading? {
+        let mover = state.sideToMove.opposite
+        var walk = self
+        for (index, san) in continuation.enumerated() {
+            let position = walk
+            guard walk.apply(san: san), let played = walk.plies.last,
+                let move = position.state.move(matching: played.uci)
+            else { break }
+            guard position.state.sideToMove == mover else { continue }
+            let intent = Intent.read(move, in: position)
+            if intent != .unclear, intent.verb != opening.verb {
+                return MoveReading(step: index + 1, san: san, intent: intent)
+            }
+        }
+        return nil
+    }
 }

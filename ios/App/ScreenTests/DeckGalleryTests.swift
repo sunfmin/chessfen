@@ -189,7 +189,7 @@ struct DeckGallery {
 
     // ------------------------------------------------------------------ 4 · 这步的要害
 
-    @Test("4 · 这步的要害 — one square, ranked, with the sentence that says what it cost")
+    @Test("4 · 这步的要害 — what this move is for")
     func key() async throws {
         let (session, engine) = try await layered()
         session.commitGuess()
