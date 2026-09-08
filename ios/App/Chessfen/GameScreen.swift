@@ -134,6 +134,11 @@ struct GameScreen: View {
                 .background {
                     Palette.raised.ignoresSafeArea(edges: .bottom)
                 }
+                // Drop into the home-indicator band: the cream already lives there, the
+                // names should too. Negative padding gives the card back what the offset
+                // would have left as a gap.
+                .offset(y: 16)
+                .padding(.bottom, -16)
         }
         // No title, and now nothing in its place either. The screen is a board; a word saying
         // "game" over the top of one is a row of a phone spent on something nobody was in any
