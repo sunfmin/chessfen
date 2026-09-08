@@ -158,7 +158,7 @@ func theReadingIsDeterministic() throws {
 @Test("a line reads as the recommendation's own verb plus one later move of the mover's")
 func aLineReadsAsAPlan() throws {
     // White's knight goes to d5 where it looks at the undefended rook on f6, Black's king steps
-    // aside, and the knight takes it — 「攻 f6，第 3 步再 吃 f6」.
+    // aside, and the knight takes it — 「攻 f6，往后第 3 步 Nxf6 再 吃 f6」.
     let game = try position("4k3/8/5r2/8/8/2N5/8/4K3 w - - 0 1")
     let reading = try #require(game.reading(of: ["Nd5", "Kd8", "Nxf6"]))
     #expect(reading.opening.step == 1)
@@ -168,7 +168,8 @@ func aLineReadsAsAPlan() throws {
     #expect(later.step == 3)
     #expect(later.san == "Nxf6")
     #expect(later.intent == .claim(.take, try square("f6")))
-    #expect(reading.sentence == "攻 f6，第 3 步再 吃 f6")
+    #expect(reading.sentence == "攻 f6，往后第 3 步 Nxf6 再 吃 f6")
+    #expect(reading.laterLine == "往后第 3 步 Nxf6 再 吃 f6")
 }
 
 @Test("only the mover's own moves are what the recommendation is for")
@@ -231,6 +232,23 @@ func purposeAddsALaterOwnMoveFromTheContinuation() throws {
     #expect(purpose.opening.intent.goal == "进攻")
     let later = try #require(purpose.later)
     #expect(later.san == "Nxf6")
+    #expect(later.step == 2, "from *now*: Kd8 is 1, Nxf6 is 2 — the opening is already on the board")
     #expect(later.intent == .claim(.take, try square("f6")))
     #expect(later.intent.goal == "进攻")
+    #expect(purpose.laterLine == "往后第 2 步 Nxf6 再 吃 f6")
+}
+
+@Test("a later half with a different goal names the goal, and still looks ahead rather than listing")
+func aLaterHalfOfADifferentGoalSaysSo() throws {
+    // The number is a ply of the engine's Line. Bare 「第 4 步再防御：护 c7」 reads as if steps 1–3
+    // were missing from this card; the SAN and 往后 are what stop that.
+    let opening = MoveReading(
+        step: 1, san: "Nf3", intent: .claim(.attack, try square("e5"))
+    )
+    let later = MoveReading(
+        step: 4, san: "Re7", intent: .claim(.defend, try square("c7"))
+    )
+    let reading = LineReading(opening: opening, later: later)
+    #expect(reading.laterLine == "往后第 4 步 Re7 再防御：护 c7")
+    #expect(reading.sentence == "攻 e5，往后第 4 步 Re7 再 护 c7")
 }

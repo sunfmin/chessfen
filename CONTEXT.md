@@ -349,7 +349,7 @@ the moves rather than declared by anybody, because an engine gives a number and 
 moves and never a reason (docs/adr/0020). Every verb it prints is proposed by the reader and
 then confirmed by the same checker that tells a declared Intent false, so the two cannot
 drift and the app can be told wrong about its own reading. It names the recommendation and at
-most one later move of the mover's own — 「攻 e5」, 「护 f2，第 3 步再 挡 d4」 — and 说不清
+most one later move of the mover's own — 「攻 e5」, 「护 f2，往后第 3 步 d4 再 挡 d4」 — and 说不清
 when none of the seven can honestly carry it. Which way 占 points matters here: control, not
 occupation. A move whose whole point is to stand on a square is named by the 要害格 layer as a
 据点 and by no verb.

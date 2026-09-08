@@ -6,6 +6,12 @@ public struct MoveReading: Hashable, Sendable {
     public let intent: Intent
 
     public var label: String { "\(intent.label)" }
+
+    public init(step: Int, san: String, intent: Intent) {
+        self.step = step
+        self.san = san
+        self.intent = intent
+    }
 }
 
 /// What a Line is *for*, in the seven words a player uses for their own moves.
@@ -26,10 +32,36 @@ public struct LineReading: Hashable, Sendable {
     /// plan it does not get to describe.
     public let later: MoveReading?
 
-    /// 「占 d5，第 3 步再 攻 g7」 — or just 「占 d5」 when the rest of the line reads as nothing.
+    public init(opening: MoveReading, later: MoveReading?) {
+        self.opening = opening
+        self.later = later
+    }
+
+    /// 「占 d5，往后第 3 步 Ng5 再 攻 g7」 — or just 「占 d5」 when the rest of the line reads as nothing.
+    ///
+    /// `往后` is the whole of why this is not "第 3 步" on its own. The number is a ply of the
+    /// engine's Line, the same numbering 五步 walks; it is not item 3 of a list on this card, and
+    /// the opening is not 第 1 步 of one. The SAN names the move so the number has something to
+    /// point at.
     public var sentence: String {
         guard let later else { return opening.label }
-        return "\(opening.label)，第 \(later.step) 步再 \(later.label)"
+        return "\(opening.label)，\(Self.ahead(later)) 再 \(later.label)"
+    }
+
+    /// The later half as its own line, for 要害. Same facts as `sentence`; the goal is named again
+    /// only when it is a different one, because "第 4 步再防御" without a move reads as a missing
+    /// list.
+    public var laterLine: String? {
+        guard let later else { return nil }
+        let when = Self.ahead(later)
+        if later.intent.goal == opening.intent.goal {
+            return "\(when) 再 \(later.label)"
+        }
+        return "\(when) 再\(later.intent.goal)：\(later.label)"
+    }
+
+    private static func ahead(_ later: MoveReading) -> String {
+        "往后第 \(later.step) 步 \(later.san)"
     }
 }
 

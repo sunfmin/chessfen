@@ -1551,14 +1551,10 @@ struct GameScreen: View {
                 } else {
                     CardLede("\(purpose.opening.san) 是为了\(purpose.opening.intent.goal)")
                     CardNote(purpose.opening.intent.label)
-                    if let later = purpose.later {
-                        if later.intent.goal == purpose.opening.intent.goal {
-                            CardNote("第 \(later.step) 步再 \(later.label)")
-                        } else {
-                            CardNote(
-                                "第 \(later.step) 步再\(later.intent.goal)：\(later.label)"
-                            )
-                        }
+                    // Looking down the engine's Line, not item N of a list this card does not show.
+                    // The number matches 五步; the SAN is the move; 往后 is why there is no 第 1 步 here.
+                    if let laterLine = purpose.laterLine {
+                        CardNote(laterLine)
                     }
                 }
             } else if !session.isSearching {
