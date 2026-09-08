@@ -428,7 +428,7 @@ struct GameScreenScreenshots {
 
         #expect(session.isPractising)
         #expect(rendered.says("正在算"))
-        #expect(rendered.says("深 26"))
+        #expect(rendered.says("层级 26"), "the Depth is a figure of its own, not swallowed by 正在算")
         #expect(!rendered.says("+0.38"), "practice still keeps the Score off the board")
     }
 
@@ -823,10 +823,10 @@ struct GameScreenScreenshots {
         // And the engine's own reason, in the same seven verbs the player just declared in — read
         // off the Line the same search produced, so the two claims can be compared and not merely
         // translated (docs/adr/0020).
-        #expect(session.reveal?.bestReading?.sentence == "护 f2，往后第 3 步 d4 再 挡 d4")
+        #expect(session.reveal?.bestReading?.sentence == "护 f2，往后第 3 步 d4 再 攻 c5")
         #expect(rendered.says("引擎那步是为了"))
         #expect(rendered.says("护 f2"))
-        #expect(rendered.says("往后第 3 步 d4 再 挡 d4"))
+        #expect(rendered.says("往后第 3 步 d4 再 攻 c5"))
         // The guess is on the board and not in the game: the record still ends where it did.
         #expect(session.game.plies.map(\.san).last == "Nf6")
         #expect(rendered.says("第 8 步 Nf6"))

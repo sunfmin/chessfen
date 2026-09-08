@@ -225,8 +225,12 @@ What is under the board: one card at a time, paged sideways, five cards in one o
 every time somebody looks; a card that cannot answer here says so on its own face. Each
 carries a one-line subtitle under its name. **The card you are on is the card that acts**:
 arriving turns its layer on and leaving turns it off, so the board draws the one card in
-front of you. A swipe onto 要害 / 杀招 / 战术 / 五步 spends a Stint, even during Practice:
-the swipe is the asking and the board stays silent. 练习 does not — the player moves first,
+front of you. A swipe onto 要害 / 杀招 / 战术 / 五步 spends a Stint the first time this
+position is asked about, even during Practice: the swipe is the asking and the board stays
+silent. What that search found is kept for the position, so paging to another card of the
+same Ply does not wind the clock again. While it is climbing, and still after it has
+stopped, the card names the Depth as 层级 — a spinner with no figure is the engine
+looking dead (docs/adr/0019). 练习 does not — the player moves first,
 then the card says what the move bought, what it cost, and what the engine would have done
 (a past Ply is a Drill; pointing at a square is how you think before you commit). 复盘 is
 no longer a card: a uniform-depth pass is a press in the ⋯ menu. The five names sit in a

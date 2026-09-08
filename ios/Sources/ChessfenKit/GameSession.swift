@@ -226,6 +226,12 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         public var milliseconds: UInt64
 
         public var seconds: Double { Double(milliseconds) / 1000 }
+
+        public init(depth: Int, selectiveDepth: Int, milliseconds: UInt64) {
+            self.depth = depth
+            self.selectiveDepth = selectiveDepth
+            self.milliseconds = milliseconds
+        }
     }
     public private(set) var url: URL?
     public let origin: GameOrigin
@@ -272,6 +278,10 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// engine's opinion either, so it may be read out where a Score may not (docs/adr/0023). What
     /// is *not* kept is a Score, a Depth or a candidate list: nothing else in here reaches a screen.
     private var probedAnalysis: Analysis?
+    /// Analyses already paid for, keyed by the FEN they were found from. A swipe onto another
+    /// card of the same position is not a new question, and walking back to a Ply that has
+    /// already been asked about is not one either.
+    @ObservationIgnored private var analysisByFen: [String: Analysis] = [:]
 
     private var controllers: [PieceColour: Controller]
     /// The clock somebody has put the engine on, if anybody has. Nil means the game decides —
@@ -539,6 +549,22 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
             tactic = nil
             isProbingTactics = false
             probedAnalysis = nil
+            // An advice Stint already paid for this position must not be taken down just because
+            // the finder card was left. Retune only when there is nothing in hand to keep.
+            if searchTask != nil || analysis != nil { return }
+            retune()
+            return
+        }
+        if recallCachedAnalysis(), let found = analysis {
+            tactic = Tactic.confirmed(in: viewed, analysis: found)
+            probedAnalysis = found
+            return
+        }
+        if let found = analysis {
+            noteProgress(found)
+            tactic = Tactic.confirmed(in: viewed, analysis: found)
+            probedAnalysis = found
+            return
         }
         retune()
     }
@@ -737,7 +763,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         let wanted = min(max(0, cursor + delta), game.plies.count)
         guard wanted != cursor else { return }
         cursor = wanted
-        analysis = nil
+        adoptViewedAnalysis()
         Sounds.current.play(.move)
         retune()
     }
@@ -745,7 +771,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     public func jumpToLatest() {
         guard cursor != game.plies.count else { return }
         cursor = game.plies.count
-        analysis = nil
+        adoptViewedAnalysis()
         retune()
     }
 
@@ -757,7 +783,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     public func jumpToStart() {
         guard cursor != 0 else { return }
         cursor = 0
-        analysis = nil
+        adoptViewedAnalysis()
         Sounds.current.play(.move)
         retune()
     }
@@ -768,7 +794,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         let wanted = min(max(0, ply), game.plies.count)
         guard wanted != cursor else { return }
         cursor = wanted
-        analysis = nil
+        adoptViewedAnalysis()
         Sounds.current.play(.move)
         retune()
     }
@@ -1749,6 +1775,12 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// Before, not after: a prompt that lands once the opponent has already moved is a
     /// post-mortem (docs/adr/0022). The table is left warm on purpose.
     private func probeTactics(on position: Game, using engine: any Engine) {
+        if recallCachedAnalysis(), let found = analysis {
+            tactic = Tactic.confirmed(in: position, analysis: found)
+            probedAnalysis = found
+            isProbingTactics = false
+            return
+        }
         tactic = Tactic.proposed(in: position)
         isProbingTactics = true
         searchTask = Task { [weak self] in
@@ -1869,6 +1901,11 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         // A Guess still being held is the player answering; the engine does not speak first
         // (docs/adr/0015).
         guard guess == nil else { return }
+        if recallCachedAnalysis() {
+            if searchTask == nil { isAdviceSpent = true }
+            return
+        }
+        if searchTask != nil { return }
         stopSearching()
         advise(on: viewed, using: engine)
     }
@@ -1922,6 +1959,26 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         )
     }
 
+    /// Puts back what a previous search already found for the position on screen, including
+    /// how deep it got — a cache hit that dropped the Depth would look like the engine had
+    /// never run.
+    @discardableResult
+    private func recallCachedAnalysis() -> Bool {
+        guard let cached = analysisByFen[viewed.state.fen] else { return false }
+        analysis = cached
+        noteProgress(cached)
+        return true
+    }
+
+    /// Walking the record: restore this Ply's Analysis, or clear the last one so a new
+    /// position does not keep wearing the old Depth.
+    private func adoptViewedAnalysis() {
+        if !recallCachedAnalysis() {
+            analysis = nil
+            searchProgress = nil
+        }
+    }
+
     private func record(_ snapshot: Analysis) {
         noteProgress(snapshot)
         // A move being walked is not advice, and during Practice that search's opinion is dropped
@@ -1930,6 +1987,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         // kept for the card even while the board stays silent.
         if isPractising, thinking != nil { return }
         analysis = snapshot
+        analysisByFen[viewed.state.fen] = snapshot
         if isFindingTactics {
             tactic = Tactic.confirmed(in: viewed, analysis: snapshot)
             probedAnalysis = snapshot

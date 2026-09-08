@@ -2025,8 +2025,16 @@ struct GameScreen: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
                     .padding(.top, 6)
-                if kind == card, isCardSearching(kind) {
-                    CardSearching(progress: session.searchProgress, phrase: searchPhrase(kind))
+                if kind == card, wantsAdvice(kind) {
+                    if isCardSearching(kind) {
+                        CardSearching(
+                            progress: session.searchProgress, phrase: searchPhrase(kind)
+                        )
+                    } else if let progress = standingProgress {
+                        CardSearching(
+                            progress: progress, phrase: searchPhrase(kind), isRunning: false
+                        )
+                    }
                 }
                 body()
             }
@@ -2050,10 +2058,9 @@ struct GameScreen: View {
     /// so the board is only ever drawing the one card in front of you and never the leftovers of
     /// three you swiped past (docs/adr/0023).
     ///
-    /// A swipe therefore spends a Stint where the card reads a Line — 杀, 战术, 要害, 走马灯 —
-    /// even during Practice: the swipe is the asking and the board stays silent. The one thing
-    /// still behind a deliberate press is 复盘, which re-scores an entire game and writes what
-    /// it finds (docs/adr/0016) — a swipe is not an instruction to spend minutes.
+    /// A swipe therefore spends a Stint where the card reads a Line — 杀招, 战术, 要害, 五步 —
+    /// the first time this position is asked about, even during Practice. What that search found
+    /// is kept, so paging to another card of the same Ply does not wind the clock again.
     private func turn(to now: Card, from was: Card) {
         selected = nil
         leave(was, for: now)
@@ -2097,6 +2104,18 @@ struct GameScreen: View {
         case .mate, .tactics, .key, .walk: true
         case .drill: false
         }
+    }
+
+    /// Depth already paid for, once the Stint has stopped. The card still names it so a cache
+    /// hit does not look like the engine never ran.
+    private var standingProgress: GameSession.SearchProgress? {
+        if let progress = session.searchProgress, progress.depth > 0 { return progress }
+        guard let analysis = session.analysis, analysis.depth > 0 else { return nil }
+        return GameSession.SearchProgress(
+            depth: analysis.depth,
+            selectiveDepth: analysis.selectiveDepth,
+            milliseconds: analysis.timeMilliseconds
+        )
     }
 
     /// Whether this card currently has a search in flight, so the frame can say 正在算 and the

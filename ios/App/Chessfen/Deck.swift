@@ -39,37 +39,57 @@ struct DeckSurface<Head: View, Content: View>: View {
     }
 }
 
-/// While a card's search is in flight: the word, and how deep it has got. A number that
-/// quietly stops moving is indistinguishable from an engine that died (docs/adr/0019).
+/// How far the engine has got on this card: the word, and the Depth as a figure of its own.
+///
+/// A caption that swallowed the number ("正在算 · 深 26") read as a spinner with no account of
+/// itself. The Depth is the account (docs/adr/0019) — while it climbs, and still after it
+/// has stopped, so a cache hit does not look like the engine never ran.
 struct CardSearching: View {
     let progress: GameSession.SearchProgress?
     var phrase: String = "正在算"
+    var isRunning: Bool = true
 
     var body: some View {
-        HStack(spacing: 7) {
-            ProgressView().controlSize(.mini)
-            Text(label)
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(Palette.inkSoft)
-                .animation(.none, value: progress?.depth)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            if isRunning {
+                ProgressView().controlSize(.mini)
+                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] }
+                Text(phrase)
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(Palette.ink)
+            } else {
+                Text("算到")
+                    .font(.footnote)
+                    .foregroundStyle(Palette.inkSoft)
+            }
             Spacer(minLength: 0)
+            Text(depthLabel)
+                .font(.title3.monospacedDigit().weight(.semibold))
+                .foregroundStyle(depthTint)
+                .animation(.none, value: progress?.depth)
         }
         .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .accessibilityLabel(phrase)
+        .padding(.top, 10)
+        .padding(.bottom, 2)
+        .accessibilityLabel(isRunning ? phrase : "算到")
         .accessibilityValue(depthValue)
     }
 
-    private var label: String {
-        if let depth = progress?.depth, depth > 0 {
-            return "\(phrase) · 深 \(depth)"
-        }
-        return "\(phrase)…"
+    private var depthLabel: String {
+        if let depth = progress?.depth, depth > 0 { return "层级 \(depth)" }
+        return isRunning ? "层级" : ""
     }
 
     private var depthValue: String {
-        if let depth = progress?.depth, depth > 0 { return "深 \(depth)" }
-        return "开始"
+        if let depth = progress?.depth, depth > 0 { return "层级 \(depth)" }
+        return isRunning ? "开始" : ""
+    }
+
+    private var depthTint: Color {
+        if let depth = progress?.depth, depth > 0 {
+            return isRunning ? Palette.analysis : Palette.ink
+        }
+        return Palette.inkSoft
     }
 }
 

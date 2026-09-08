@@ -287,10 +287,10 @@ struct EngineClock {
         #expect(session.isAdviceSpent)
     }
 
-    /// The same Stint while the engine is already talking: arriving is a new ten seconds, not
-    /// the standing search reused, so each card gets the clock the person just asked for.
-    @Test("a card arriving while the engine is talking also spends a Stint")
-    func aCardSpendsAStintWhileTalking() async throws {
+    /// A swipe onto another card of the same position is not a new question. What the engine
+    /// already found stays, and the clock is not wound again.
+    @Test("a card arriving while the engine is talking reuses what it already found")
+    func aCardReusesAStintWhileTalking() async throws {
         let engine = ScriptedEngine(Self.searching, isEndless: true)
         let session = try session(
             engine, controllers: [.white: .hand, .black: .hand], opinion: true,
@@ -303,9 +303,31 @@ struct EngineClock {
         session.adviseForCard()
         await hop()
 
-        #expect(engine.searchCount == before + 1, "arriving is a new Stint, not the standing one reused")
-        #expect(engine.budgets.last == .untilStopped)
+        #expect(engine.searchCount == before, "the standing Analysis is this position's already")
         #expect(session.analysis?.bestMove == "d2d4")
+    }
+
+    /// Two cards, one position: the second swipe must not pay for the same search again.
+    @Test("a second card on the same position does not spend another Stint")
+    func aSecondCardReusesTheStint() async throws {
+        let engine = ScriptedEngine(Self.searching, isEndless: true)
+        let session = try session(
+            engine, controllers: [.white: .hand, .black: .hand],
+            stint: .milliseconds(40)
+        )
+        await hop()
+
+        session.adviseForCard()
+        await hop()
+        let once = engine.searchCount
+        #expect(once == 1)
+        #expect(session.analysis?.bestMove == "d2d4")
+
+        session.adviseForCard()
+        await hop()
+        #expect(engine.searchCount == once, "the same position, already paid for")
+        #expect(session.analysis?.bestMove == "d2d4")
+        #expect(session.searchProgress?.depth == 26, "the Depth the Stint reached stays with it")
     }
 
     /// A move the engine is walking is not advice, and a swipe must not take it off the clock.
