@@ -375,6 +375,19 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         return session
     }
 
+    /// A new game to be played: the side to move in hand, the other on the engine answering
+    /// a second at a time. From the opening that is White vs Black-engine; it is the same
+    /// seating as a reopened record.
+    public static func playing(
+        _ game: Game,
+        engine: (any Engine)? = nil,
+        library: GameLibrary? = nil
+    ) -> GameSession {
+        let session = fresh(game, engine: engine, library: library)
+        session.seatEngineOpponent()
+        return session
+    }
+
     /// A saved game, opened at the position it began in.
     ///
     /// The beginning rather than the end, because opening a game that is over is reading it: the
@@ -400,8 +413,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         guard !entry.isDownloading else { return nil }
         let session = GameSession(entry: entry, library: library)
         session.attach(engine: engine, library: library)
-        session.setController(.engine, for: session.game.startingSideToMove.opposite)
-        session.setThinkingTime(.openedRecord)
+        session.seatEngineOpponent()
         return session
     }
 
@@ -472,6 +484,12 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     public func attach(engine: (any Engine)?, library: GameLibrary?) {
         self.engine = engine
         self.library = library
+    }
+
+    /// The side about to move is the person's; the other side answers at one second a move.
+    private func seatEngineOpponent() {
+        setController(.engine, for: game.startingSideToMove.opposite)
+        setThinkingTime(.openedRecord)
     }
 
     public func controller(for colour: PieceColour) -> Controller {

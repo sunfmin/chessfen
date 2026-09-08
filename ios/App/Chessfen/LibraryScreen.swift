@@ -462,7 +462,7 @@ struct LibraryScreen: View {
 
     private func start(_ game: Game?) {
         guard let game else { return }
-        let session = GameSession.fresh(game, engine: engine.service, library: library)
+        let session = GameSession.playing(game, engine: engine.service, library: library)
         path.append(.game(session))
     }
 

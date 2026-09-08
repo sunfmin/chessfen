@@ -120,6 +120,16 @@ func recordOpensWithEngineOpponent() throws {
     #expect(beforeEngineArrives.isPractising)
 }
 
+@MainActor @Test("from the opening, Black is the engine, one second a move")
+func aFreshOpeningFacesAnEngineOpponent() throws {
+    let standard = try #require(Game(startFEN: PGN.standardStartFEN))
+    let session = GameSession.playing(standard, engine: SilentEngine())
+    #expect(session.controller(for: .white) == .hand)
+    #expect(session.controller(for: .black) == .engine)
+    #expect(session.thinkingTime == .fixed(seconds: 1))
+    #expect(session.isPractising)
+}
+
 // ------------------------------------------------------------------- the one switch
 
 /// Every door into a Game opens with the engine silent (docs/adr/0015). An answer on screen is an

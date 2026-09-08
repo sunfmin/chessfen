@@ -150,7 +150,8 @@ _Avoid_: suggestion, hint, recommendation
 Who moves for one colour — the player by hand, or the engine. Each colour has its own,
 either can be changed at any point in a Game, and all four combinations are meaningful:
 play a side, hand-move both to replay a book game, swap sides, or let the engine play
-itself.
+itself. A game started from the opening, or reopened from a file, seats the side to
+move in hand and the other on the engine at one second a move.
 _Avoid_: opponent, mode, player type, difficulty
 
 **Asked Move**:
