@@ -229,10 +229,11 @@ front of you. A swipe onto 要害 / 杀招 / 战术 / 五步 spends a Stint, eve
 the swipe is the asking and the board stays silent. 练习 does not — the player moves first,
 then the card says what the move bought, what it cost, and what the engine would have done
 (a past Ply is a Drill; pointing at a square is how you think before you commit). 复盘 is
-no longer a card: a uniform-depth pass is a press in the ⋯ menu. The dots are a grouped
-rail: 现在 (要害 / 杀招 / 战术) and 这一步 (五步 / 练习). It occupies the room under the
-record; a body longer than that scrolls inside the card.
-_Avoid_: tabs, carousel, sections, panels, accordion
+no longer a card: a uniform-depth pass is a press in the ⋯ menu. The five names sit in a
+segmented row on the card's top edge; tapping one or swiping the page are the same turn.
+The card itself starts with the one-line subtitle, not with its name again. It occupies
+the room under the record; a body longer than that scrolls inside the card.
+_Avoid_: carousel, sections, panels, accordion
 
 **Drill**:
 One question made out of a Game the app already holds: the position comes back with the

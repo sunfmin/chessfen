@@ -516,7 +516,7 @@ struct GameScreenScreenshots {
         // Practice is untouched on the board: the mate is a fact, and a Score would be an opinion.
         #expect(session.isPractising)
         #expect(!rendered.says("建议"), "no recommendation, because that is an opinion")
-        // The deck is not on the card it usually opens: the dots name every card, so what says
+        // The deck is not on the card it usually opens: the names are on the rail, so what says
         // which one is showing is the card's own subtitle.
         #expect(rendered.says("几步之内有人要被将死了"))
         #expect(!rendered.says("我哪些子能走到这一格"))

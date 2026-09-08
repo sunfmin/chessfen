@@ -1977,34 +1977,25 @@ struct GameScreen: View {
         }
     }
 
-    /// Ten tabs, grouped by what the card is about, with the group's name beside them
-    /// (docs/adr/0023). It was ten identical dots, which said how many there were and nothing
-    /// else — and «ten» is only a useful thing to know if you can tell them apart.
+    /// The five names, in a segmented row. The page still swipes; tapping a name is the other
+    /// way to the same card.
     private var rail: some View {
         DeckRail(
             cards: cards,
             current: card,
-            group: { $0.group },
-            tint: dotColour,
-            name: title(of:),
+            tint: tabColour,
+            name: { $0.title },
             go: { card = $0 }
         )
     }
 
-    /// A mate's dot wears whose it is, which is the whole of what 「直接给予提示」 amounts to in a
-    /// deck (docs/adr/0023) — and wears it only while there is a mate to be about. A dot that is
+    /// A mate's tab wears whose it is, and only while there is a mate to be about. A tab that is
     /// red all game is not a warning, it is a decoration.
-    private func dotColour(_ kind: Card) -> Color {
+    private func tabColour(_ kind: Card) -> Color {
         if kind == .mate, let news = session.mateNews {
             return news.isOurs ? Palette.mine : Palette.alarm
         }
-        if kind == card { return Palette.ink }
-        return Palette.inkSoft.opacity(0.35)
-    }
-
-    private func title(of kind: Card) -> String {
-        if kind == .mate, let news = session.mateNews { return news.head }
-        return kind.title
+        return Palette.ink
     }
 
     @ViewBuilder private func body(of kind: Card) -> some View {
@@ -2017,34 +2008,20 @@ struct GameScreen: View {
         }
     }
 
-    /// One card: what it is called, one line saying what it answers, and then the thing itself.
-    ///
-    /// The second line is not decoration. Four of these cards are named after ideas somebody has
-    /// to have been told about once — 要害, 走马灯, 复盘, 最贵三步 — and a deck of bare titles is a
-    /// deck you have to be taught before you can use.
+    /// One card: one line saying what it answers, and then the thing itself. The name is on the
+    /// rail above, so it is not said again here.
     private func cardFrame<Content: View>(
         _ kind: Card, @ViewBuilder body: () -> Content
     ) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title(of: kind))
-                        .font(.cardName)
-                        .foregroundStyle(kind == .mate ? mateInk : Palette.ink)
-                    Text(kind.subtitle)
-                        .font(.caption2)
-                        .foregroundStyle(Palette.inkSoft)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
-                .padding(.top, 2)
-                // A hairline under the name, so the answer below it reads as the card's content
-                // rather than as a third line of its heading.
-                Rectangle()
-                    .fill(Palette.hairline)
-                    .frame(height: 0.5)
-                    .padding(.top, 8)
+                Text(kind.subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(Palette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 6)
                 if kind == card, isCardSearching(kind) {
                     CardSearching(progress: session.searchProgress, phrase: searchPhrase(kind))
                 }
@@ -2165,6 +2142,9 @@ struct GameScreen: View {
     @ViewBuilder private var mateBody: some View {
         if let news = session.mateNews {
             VStack(alignment: .leading, spacing: 8) {
+                Text(news.head)
+                    .font(.cardName)
+                    .foregroundStyle(mateInk)
                 CardLede(news.sentence)
                 if !news.san.isEmpty {
                     // The numbers are the join: the figure on a chip is the figure on its arrow.
@@ -2649,13 +2629,6 @@ extension GameScreen.Card {
         case .tactics: "这一步有没有一记赢子的"
         case .walk: "引擎说的后面几步，在棋盘上走一遍"
         case .drill: "你走一步，再看这一步的得失和引擎怎么走"
-        }
-    }
-
-    var group: DeckGroup {
-        switch self {
-        case .key, .mate, .tactics: .now
-        case .walk, .drill: .thisMove
         }
     }
 }

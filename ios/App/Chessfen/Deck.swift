@@ -79,77 +79,43 @@ struct CardSearching: View {
 
 // ====================================================================== the rail
 
-/// What the ten cards are *about*, which is the one thing a row of ten identical dots could not
-/// say. Four groups, and the gaps between them on the rail are the grouping.
+/// The five names in a segmented row. Tapping one turns the card; swiping the page still does.
 ///
-/// This is not decoration: which group a card is in is the difference between a question about the
-/// board in front of you and a question about a game you finished. Somebody who knows that much
-/// can find a card without learning ten names.
-enum DeckGroup: Hashable, CaseIterable {
-    /// News about the position on the board right now.
-    case now
-    /// About the move you are standing on — the one the record's cursor is after.
-    case thisMove
-    /// The question that can be asked of any square at any time.
-    case anySquare
-    /// About the whole game, rather than about one position in it.
-    case thisGame
-
-    var name: String {
-        switch self {
-        case .now: "现在"
-        case .thisMove: "这一步"
-        case .anySquare: "任何一格"
-        case .thisGame: "这一局"
-        }
-    }
-}
-
-/// Ten tabs, grouped, with the one you are on grown into a tab and the group you are in named
-/// beside them.
-///
-/// A tab rather than a dot because these are cards: the mark on the edge of a card is what you
-/// riffle to. It is also readable without colour — the current tab is taller and wider, not merely
-/// darker — which matters for the one tab that wears a colour of its own.
+/// The names used to live inside each card, under a row of dots that did not say which card was
+/// which. Five two-character titles fit in one capsule, and then the card can start with its
+/// answer rather than with its own name again.
 struct DeckRail<Card: Hashable>: View {
     let cards: [Card]
     let current: Card
-    let group: (Card) -> DeckGroup
-    /// The colour of a tab. The screen decides: 杀 wears whose mate it is, everything else is ink.
+    /// The colour of the selected segment. The screen decides: 杀招 wears whose mate it is.
     let tint: (Card) -> Color
     let name: (Card) -> String
     let go: (Card) -> Void
 
     var body: some View {
-        HStack(spacing: 0) {
-            ForEach(Array(DeckGroup.allCases.enumerated()), id: \.element) { index, kind in
-                let members = cards.filter { group($0) == kind }
-                if !members.isEmpty {
-                    if index > 0 { Spacer().frame(width: 15) }
-                    HStack(spacing: 0) {
-                        ForEach(members, id: \.self) { card in tab(card) }
-                    }
-                }
-            }
-            Spacer(minLength: 8)
-            Text(group(current).name)
-                .font(.caption2.weight(.medium))
-                .tracking(1.5)
-                .foregroundStyle(Palette.inkSoft)
+        HStack(spacing: 2) {
+            ForEach(cards, id: \.self) { card in segment(card) }
         }
-        .frame(height: 20)
+        .padding(3)
+        .background(Palette.chipRest, in: Capsule())
         .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 2)
     }
 
-    private func tab(_ card: Card) -> some View {
+    private func segment(_ card: Card) -> some View {
         let isOn = card == current
         return Button {
             withAnimation(.snappy(duration: 0.22)) { go(card) }
         } label: {
-            Capsule()
-                .fill(isOn ? tint(card) : Palette.inkSoft.opacity(0.3))
-                .frame(width: isOn ? 4 : 3, height: isOn ? 14 : 9)
-                .frame(width: 13, height: 20)
+            Text(name(card))
+                .font(.footnote.weight(isOn ? .semibold : .medium))
+                .foregroundStyle(isOn ? Palette.parchment : tint(card))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 7)
+                .background(isOn ? tint(card) : Color.clear, in: Capsule())
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
