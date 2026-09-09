@@ -45,6 +45,9 @@ struct GameScreen: View {
     @State private var finderIsOurs = false
     /// The room the deck occupies under the record, measured from the layout.
     @State private var peek: CGFloat = 0
+    /// The five names under the card. Measured, so the card can take the rest without
+    /// a first-frame fight over a height of zero.
+    @State private var railHeight: CGFloat = 48
     /// Whether a thumb is on 让引擎走 right now. The engine is thinking for exactly as long as it is —
     /// which is why this is read off the session rather than kept here as well. A screen holding
     /// its own copy of "a finger is down" is a screen that can be left holding it: a press that
@@ -101,7 +104,14 @@ struct GameScreen: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let side = Self.boardSide(in: proxy.size)
+            // The reader goes to the glass so the card can. The board is still sized for the
+            // safe area — extra height at the bottom is the deck's, not a larger board.
+            let side = Self.boardSide(
+                in: CGSize(
+                    width: proxy.size.width,
+                    height: proxy.size.height - proxy.safeAreaInsets.bottom
+                )
+            )
             VStack(spacing: 0) {
                 playerBar(topColour)
                 board.frame(width: side, height: side)
@@ -119,22 +129,26 @@ struct GameScreen: View {
             // rather than the order the position asks for — six switches and ten paragraphs, most
             // of them about something this position could not do anything with.
             .overlay(alignment: .bottom) {
-                DeckSurface(peek: peek) {
-                    EmptyView()
-                } content: {
-                    deckView
+                VStack(spacing: 0) {
+                    DeckSurface {
+                        EmptyView()
+                    } content: {
+                        deckView
+                    }
+                    .frame(height: max(0, peek - railHeight))
+                    rail
+                        .frame(maxWidth: .infinity)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                            railHeight = $0
+                        }
                 }
                 .opacity(peek == 0 ? 0 : 1)
             }
         }
         .background(Palette.parchment)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            rail
-                .frame(maxWidth: .infinity)
-                .background {
-                    Palette.parchment.ignoresSafeArea(edges: .bottom)
-                }
-        }
+        // The card stands on the glass. The home indicator is a mark on top of it, not a
+        // margin that holds the deck off the bottom of the phone.
+        .ignoresSafeArea(edges: .bottom)
         // No title, and now nothing in its place either. The screen is a board; a word saying
         // "game" over the top of one is a row of a phone spent on something nobody was in any
         // doubt about. The engine's switch stood here for a while, which was better than the strip

@@ -4,13 +4,9 @@ import SwiftUI
 // ===================================================================== the card
 
 /// The surface the cards are dealt onto: a raised card with four rounded corners, a hairline
-/// edge, and a shadow that lifts it off the page. It occupies the room under the record and no
-/// more — a body longer than that scrolls inside it. The five names sit on the page under it,
-/// not on this surface.
+/// edge, and a shadow that lifts it off the page. It fills the room the parent gives it — the
+/// space under the record, down to the names. A body longer than that scrolls inside it.
 struct DeckSurface<Head: View, Content: View>: View {
-    /// The height the deck has. Measured from the layout rather than guessed, so it is to the
-    /// pixel the room under the record.
-    let peek: CGFloat
     @ViewBuilder var head: () -> Head
     @ViewBuilder var content: () -> Content
 
@@ -20,8 +16,7 @@ struct DeckSurface<Head: View, Content: View>: View {
             content()
             head()
         }
-        .frame(maxWidth: .infinity, alignment: .top)
-        .frame(height: max(peek, 0), alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .clipShape(shape)
         .background {
             shape
@@ -117,7 +112,7 @@ struct DeckRail<Card: Hashable>: View {
             Spacer(minLength: 0)
         }
         .padding(.top, 8)
-        .padding(.bottom, 6)
+        .padding(.bottom, 4)
     }
 
     private func segment(_ card: Card) -> some View {
