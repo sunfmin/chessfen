@@ -3,9 +3,10 @@ import SwiftUI
 
 // ===================================================================== the card
 
-/// The surface the cards are dealt onto: a raised card with a rounded top, a hairline edge, and
-/// a shadow that lifts it off the page. It occupies the room under the record and no more —
-/// a body longer than that scrolls inside it.
+/// The surface the cards are dealt onto: a raised card with four rounded corners, a hairline
+/// edge, and a shadow that lifts it off the page. It occupies the room under the record and no
+/// more — a body longer than that scrolls inside it. The five names sit on the page under it,
+/// not on this surface.
 struct DeckSurface<Head: View, Content: View>: View {
     /// The height the deck has. Measured from the layout rather than guessed, so it is to the
     /// pixel the room under the record.
@@ -14,27 +15,19 @@ struct DeckSurface<Head: View, Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
         VStack(spacing: 0) {
             content()
             head()
         }
         .frame(maxWidth: .infinity, alignment: .top)
         .frame(height: max(peek, 0), alignment: .top)
-        .clipped()
+        .clipShape(shape)
         .background {
-            UnevenRoundedRectangle(
-                topLeadingRadius: 18, bottomLeadingRadius: 0, bottomTrailingRadius: 0,
-                topTrailingRadius: 18
-            )
-            .fill(Palette.raised)
-            .overlay {
-                UnevenRoundedRectangle(
-                    topLeadingRadius: 18, bottomLeadingRadius: 0, bottomTrailingRadius: 0,
-                    topTrailingRadius: 18
-                )
-                .stroke(Palette.hairline, lineWidth: 0.5)
-            }
-            .shadow(color: Palette.lift, radius: 9, x: 0, y: -3)
+            shape
+                .fill(Palette.raised)
+                .overlay { shape.stroke(Palette.hairline, lineWidth: 0.5) }
+                .shadow(color: Palette.lift, radius: 9, x: 0, y: -3)
         }
     }
 }
@@ -99,7 +92,8 @@ struct CardSearching: View {
 
 // ====================================================================== the rail
 
-/// The five names in a segmented row. Tapping one turns the card; swiping the page still does.
+/// The five names in a segmented row, on the page, hugging the card's outside bottom.
+/// Tapping one turns the card; swiping the page still does.
 ///
 /// The names used to live inside each card, under a row of dots that did not say which card was
 /// which. Five two-character titles fit in one capsule, and then the card can start with its
@@ -122,7 +116,7 @@ struct DeckRail<Card: Hashable>: View {
             .background(Palette.chipRest, in: Capsule())
             Spacer(minLength: 0)
         }
-        .padding(.top, 0)
+        .padding(.top, 8)
         .padding(.bottom, 6)
     }
 

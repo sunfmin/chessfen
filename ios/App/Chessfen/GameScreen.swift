@@ -132,7 +132,7 @@ struct GameScreen: View {
             rail
                 .frame(maxWidth: .infinity)
                 .background {
-                    Palette.raised.ignoresSafeArea(edges: .bottom)
+                    Palette.parchment.ignoresSafeArea(edges: .bottom)
                 }
         }
         // No title, and now nothing in its place either. The screen is a board; a word saying
@@ -2024,7 +2024,7 @@ struct GameScreen: View {
     }
 
     /// One card: one line saying what it answers, and then the thing itself. The name is on the
-    /// rail above, so it is not said again here.
+    /// rail under the card, so it is not said again here.
     private func cardFrame<Content: View>(
         _ kind: Card, @ViewBuilder body: () -> Content
     ) -> some View {
