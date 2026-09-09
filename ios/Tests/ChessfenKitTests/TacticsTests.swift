@@ -206,4 +206,45 @@ import Testing
         // Nothing was played: the engine only moves from the latest position.
         #expect(session.game.plies.count == 4)
     }
+
+    /// Jumping the record and opening 杀招 is the asking. The probe is bounded; when it
+    /// ends, 正在算 must end with it. A leftover task would keep the card spinning, and a
+    /// later swipe onto 要害 would think the engine was still busy and never spend its Stint.
+    @Test("a finished probe at a past ply is not still searching")
+    func aFinishedProbeAtAPastPlyIsNotStillSearching() async throws {
+        let game = try opening()
+        let past = try #require(
+            Game(startFEN: PGN.standardStartFEN, uciMoves: ["e2e4", "e7e5"])
+        )
+        let engine = ScriptedEngine(
+            [],
+            byPosition: [
+                past.state.fen: Analysis(
+                    depth: 10,
+                    lines: [
+                        Line(score: .centipawns(28), uciMoves: ["g1f3"], san: ["Nf3"]),
+                        Line(score: .centipawns(20), uciMoves: ["f1c4"], san: ["Bc4"]),
+                    ]
+                )
+            ]
+        )
+        let session = GameSession.fresh(game)
+        session.attach(engine: engine, library: nil)
+        session.jump(toPly: 2)
+        // What the screen does on arriving at 杀招: the finder, then the card's own Stint.
+        session.setFindingTactics(true)
+        session.adviseForCard()
+        await hop()
+
+        #expect(session.isPractising)
+        #expect(!session.isSearching, "the probe has finished; 正在算 must not stay on")
+        #expect(!session.isProbingTactics)
+
+        session.adviseForCard()
+        await hop()
+        #expect(
+            engine.budgets.last == .untilStopped,
+            "要害 can still spend a Stint once the probe has put the engine down"
+        )
+    }
 }

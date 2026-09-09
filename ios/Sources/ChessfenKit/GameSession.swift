@@ -1858,6 +1858,9 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
                 probedAnalysis = last
             }
             isProbingTactics = false
+            // The stream has ended. Leave the handle down, or 正在算 stays on a probe that
+            // is already over, and the next card thinks the engine is still busy.
+            searchTask = nil
             continueAfterProbe()
         }
     }
