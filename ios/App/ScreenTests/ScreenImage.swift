@@ -35,13 +35,20 @@ enum ScreenImage {
         func count(of text: String) -> Int { words.count { $0.contains(text) } }
     }
 
+    /// - Parameters:
+    ///   - size: the screen to draw on, when it is not the phone the suite is running on. A window
+    ///     of a stated size has no scene and so no safe areas — which is exactly an iPhone with a
+    ///     Home button, and is how a screen gets photographed at a size this run does not have. A
+    ///     subject that wants a different text size or colour scheme says so itself, on its own view:
+    ///     wrapping it here would put an `AnyView` in the app's own render path.
     static func write(
         _ name: String,
         style: UIUserInterfaceStyle = .light,
+        size: CGSize? = nil,
         of subject: () -> some View
     ) async -> Rendered {
         _ = isListening
-        let window = newWindow(style: style)
+        let window = newWindow(style: style, size: size)
         let controller = UIHostingController(rootView: subject())
         controller.overrideUserInterfaceStyle = style
         // Clear rather than the hosting controller's default white, which would otherwise show
@@ -89,7 +96,12 @@ enum ScreenImage {
 
     /// A window the size of the device the test is running on, on the host app's own scene so
     /// that the safe areas are a real phone's rather than nothing at all.
-    private static func newWindow(style: UIUserInterfaceStyle) -> UIWindow {
+    private static func newWindow(style: UIUserInterfaceStyle, size: CGSize?) -> UIWindow {
+        if let size {
+            let window = UIWindow(frame: CGRect(origin: .zero, size: size))
+            window.overrideUserInterfaceStyle = style
+            return window
+        }
         let scene = UIApplication.shared.connectedScenes.lazy
             .compactMap { $0 as? UIWindowScene }
             .first

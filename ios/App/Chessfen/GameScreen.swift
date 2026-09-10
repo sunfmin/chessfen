@@ -26,6 +26,9 @@ struct GameScreen: View {
 
     @Environment(EngineHost.self) private var engine
     @Environment(GameLibrary.self) private var library
+    /// The reader's text size, read for one thing only: how much the rows around the board are
+    /// going to cost it (see `boardSide`).
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     @State private var selected: Square?
     @State private var promotion: PromotionRequest?
@@ -43,11 +46,6 @@ struct GameScreen: View {
     /// Whether it was arriving at 杀 or 战术 that turned the finder on, rather than a person
     /// pressing its switch. Only what a swipe turned on does a swipe turn off again.
     @State private var finderIsOurs = false
-    /// The room the deck occupies under the record, measured from the layout.
-    @State private var peek: CGFloat = 0
-    /// The five names under the card. Measured, so the card can take the rest without
-    /// a first-frame fight over a height of zero.
-    @State private var railHeight: CGFloat = 48
     /// Whether a thumb is on 让引擎走 right now. The engine is thinking for exactly as long as it is —
     /// which is why this is read off the session rather than kept here as well. A screen holding
     /// its own copy of "a finger is down" is a screen that can be left holding it: a press that
@@ -113,40 +111,18 @@ struct GameScreen: View {
                 in: CGSize(
                     width: proxy.size.width,
                     height: proxy.size.height - proxy.safeAreaInsets.bottom
-                )
+                ),
+                accessibilityText: typeSize.isAccessibilitySize
             )
             VStack(spacing: 0) {
-                playerBar(topColour)
+                playerBar(topColour).chromeType()
                 board.frame(width: side, height: side)
-                standing.frame(width: side).padding(.vertical, 6)
-                playerBar(bottomColour)
-                record
-                // The room the deck rests in, measured rather than guessed. The deck is laid over
-                // the top of this so the board never moves when the cards change.
-                Color.clear
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { peek = $0 }
+                standing.frame(width: side).padding(.vertical, 6).chromeType()
+                playerBar(bottomColour).chromeType()
+                record.chromeType()
+                deck
             }
             .frame(maxWidth: .infinity)
-            // One card at a time, the same five whatever the position (docs/adr/0023). This was a
-            // single scroll with eleven sections stacked in it, in the order they had been written
-            // rather than the order the position asks for — six switches and ten paragraphs, most
-            // of them about something this position could not do anything with.
-            .overlay(alignment: .bottom) {
-                VStack(spacing: 0) {
-                    DeckSurface {
-                        EmptyView()
-                    } content: {
-                        deckView
-                    }
-                    .frame(height: max(0, peek - railHeight))
-                    rail
-                        .frame(maxWidth: .infinity)
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
-                            railHeight = $0
-                        }
-                }
-                .opacity(peek == 0 ? 0 : 1)
-            }
         }
         .background(Palette.parchment)
         // The card stands on the glass. The home indicator is a mark on top of it, not a
@@ -357,17 +333,20 @@ struct GameScreen: View {
                 // The number people have been watching, resolved: a finished game has no Score to
                 // show, and what belongs in its place is the one it ended on.
                 Text(finish.scoreline)
-                    .font(.clock(22))
+                    .clockFont(22)
                     .foregroundStyle(Palette.ink)
             } else if !session.isPractising {
                 Text(session.analysis?.best?.score.displayText ?? "—")
-                    .font(.clock(22))
+                    .clockFont(22)
                     .foregroundStyle(session.analysis == nil ? Palette.inkSoft : Palette.analysis)
                     .contentTransition(.numericText())
                 effort
             }
         }
-        .frame(height: 26)
+        // A minimum rather than a height: the row used to be cut in half by its own frame the
+        // moment the reader's text was bigger than the default, and the strip is the one place the
+        // engine has to account for itself (docs/adr/0019).
+        .frame(minHeight: 26)
     }
 
     /// The switch that used to sit in the navigation bar, brought down beside the bar it governs.
@@ -509,7 +488,11 @@ struct GameScreen: View {
                 if live { action }
                 unfoldButton(colour)
             }
-            .frame(height: 30)
+            .frame(minHeight: 30)
+            // One row of facts, and it stays one row. At an accessibility size the labels gave way
+            // to each other by wrapping, so 「让引擎走」 stood in its capsule on two lines and the
+            // bar grew a row taller — which is a row taken off the board for a button's label.
+            .lineLimit(1)
 
             if unfolded == colour { chips(for: colour) }
         }
@@ -698,7 +681,7 @@ struct GameScreen: View {
                 }
             }
         }
-        .frame(height: 42)
+        .frame(minHeight: 42)
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
         .simultaneousGesture(forkSwipe)
@@ -1743,6 +1726,33 @@ struct GameScreen: View {
         )
     }
 
+    /// One card at a time, the same five whatever the position (docs/adr/0023).
+    ///
+    /// A real child of the column rather than a card laid over a spacer that was measured to find
+    /// out how much room there was. The board's frame is fixed and a scroll view accepts whatever it
+    /// is given, so the deck *is* the room that is left, and there is no state in which "the room
+    /// has not been measured yet" can draw it at nothing — which is what put the deck, names and
+    /// all, off the screen on any pass that settled in one go. The measurement existed for one
+    /// reason: so the cards could not push the board around. A child that takes the leftover does
+    /// not push anything, because the card's own length never reaches the layout above it
+    /// (docs/adr/0024).
+    private var deck: some View {
+        VStack(spacing: 0) {
+            DeckSurface {
+                EmptyView()
+            } content: {
+                deckView
+            }
+            rail
+                .frame(maxWidth: .infinity)
+        }
+        // Bottom-aligned so that a screen too short for the card still stands its names on the
+        // glass, and the card gives way upward over the record rather than the names going off the
+        // bottom. Nothing the app can be held at is that short — `DeckFloor` holds every screen to
+        // the room the board reserves — but the way it fails is the way it should fail.
+        .frame(maxHeight: .infinity, alignment: .bottom)
+    }
+
     /// A mate's tab wears whose it is, and only while there is a mate to be about. A tab that is
     /// red all game is not a warning, it is a decoration.
     private func tabColour(_ kind: Card) -> Color {
@@ -1767,7 +1777,7 @@ struct GameScreen: View {
     private func cardFrame<Content: View>(
         _ kind: Card, @ViewBuilder body: () -> Content
     ) -> some View {
-        ScrollView {
+        CardScroll {
             VStack(alignment: .leading, spacing: 0) {
                 Text(kind.subtitle)
                     .font(.caption2)
@@ -1790,11 +1800,40 @@ struct GameScreen: View {
                 body()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.bottom, 10)
         }
-        .scrollBounceBehavior(.basedOnSize)
-        .scrollIndicators(.hidden)
-        .overlay(alignment: .bottom) { CardFade() }
+    }
+
+    /// A card's body: a scrolling column that fades at the bottom exactly when there is more of it
+    /// than fits.
+    ///
+    /// The fade used to be unconditional and was painted on the scroll view rather than in it, so
+    /// it never moved: the last line of the tallest cards stayed washed out even scrolled all the
+    /// way down, and a card whose whole body fitted wore a fade promising a paragraph that was not
+    /// there. So the viewport is asked instead — content against offset — and the column ends with
+    /// the fade's own height of padding, so nothing anybody has to read is ever under it.
+    private struct CardScroll<Content: View>: View {
+        private let content: Content
+        @State private var hasMore = false
+
+        init(@ViewBuilder content: () -> Content) {
+            self.content = content()
+        }
+
+        var body: some View {
+            ScrollView {
+                content
+                    .padding(.bottom, CardFade.height)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .scrollIndicators(.hidden)
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentSize.height - geometry.contentOffset.y
+                    - geometry.containerSize.height > 1
+            } action: { _, more in
+                hasMore = more
+            }
+            .overlay(alignment: .bottom) { if hasMore { CardFade() } }
+        }
     }
 
     private var mateInk: Color {
@@ -2004,6 +2043,35 @@ struct GameScreen: View {
 
     // ------------------------------------------------------------------ the board
 
+    // The deck's room, as named numbers rather than one unexplained `388`.
+
+    /// The most a card is ever asked for: what `boardSide` holds back for the deck, so that the
+    /// card is this big before the board takes another eight points of width.
+    ///
+    /// Measured rather than chosen — 164pt is what a card on a 402×874 phone came out at when the
+    /// screen was laid out by hand, and `DeckFloorTests` reads the same figure back off the picture.
+    static let cardWanted: CGFloat = 162
+
+    /// The least a card may be and still be a card: the bound `DeckFloor` holds every screen the app
+    /// runs on to, and the reason the board reserves `cardWanted` rather than this.
+    ///
+    /// A bound rather than a clamp in the layout itself: the room the deck gets is whatever the
+    /// board leaves, and the board's own budget is what keeps that above this (docs/adr/0024). The
+    /// shortest screen the app runs on leaves 137pt, so this is a number nothing reaches — which is
+    /// the shape to keep it in. A floor that is doing work is a floor that has been hit.
+    static let cardFloor: CGFloat = 120
+
+    /// What the five names take. The rail measures itself and corrects this; it is here so the
+    /// board can be sized before anything has been laid out.
+    static let railReserve: CGFloat = 48
+
+    /// Everything above the deck: two player bars, the standing strip, the record row.
+    static let chrome: CGFloat = 178
+
+    /// Below this a board is not a board. It is the one thing that can still win an argument with
+    /// the deck, and it only wins one on a screen with no business running this app.
+    static let minBoard: CGFloat = 240
+
     /// How big the board is, and it depends on the screen and nothing else.
     ///
     /// It used to take whatever height was left over, which meant the board changed size when the
@@ -2016,10 +2084,43 @@ struct GameScreen: View {
     /// the board rather than off the reading: a board forty points wider is not worth a 改棋子 row
     /// cut in half by the footer on the one screen — a board straight off a photograph — where
     /// that row is the whole job.
-    static func boardSide(in size: CGSize) -> CGFloat {
+    ///
+    /// **The board yields to the deck, not the other way round.** The height it may take is the
+    /// screen less the chrome, less the names, less the card the deck wants. It used to be
+    /// `max(240, size.height - 388)`, and the `max` was the bug: on a screen shorter than that sum
+    /// the board kept its 240 and the deck paid the difference — on a phone on its side, all of it,
+    /// silently, `opacity(0)`, with every action on the cards gone (docs/adr/0024). `minBoard` is
+    /// still the floor for a screen too short for a board at all; what changed is that the deck's
+    /// room is now part of the sum rather than what was left after it.
+    static func boardSide(in size: CGSize, accessibilityText: Bool = false) -> CGFloat {
         let byWidth = size.width - 16
-        let byHeight = max(240, size.height - 388)
-        return (min(byWidth, byHeight) / 8).rounded(.down) * 8
+        // And at an accessibility text size it gives back what the rows above it cost when they
+        // grow — capped growth, but growth (see `chromeType`). A board is a grid: 312pt of it is
+        // still a board to look at, where a card squeezed by the labels to 104pt is two lines of
+        // itself and nothing else. `DeckFloor` reads the largest text size back off the render.
+        let byHeight =
+            size.height - (chrome + railReserve + cardWanted)
+            - (accessibilityText ? accessibilityChrome : 0)
+        return (min(byWidth, max(minBoard, byHeight)) / 8).rounded(.down) * 8
+    }
+
+    /// What the rows above the board take when the reader's text is at an accessibility size: the
+    /// capped growth of two player bars, the standing strip and the record, measured at the largest
+    /// size the system offers (240pt of chrome against 178 at the default), rounded to a whole
+    /// number of board squares.
+    static let accessibilityChrome: CGFloat = 64
+
+    /// What the deck is left under the record on a screen the layout has been handed this much
+    /// height — the sum the column comes to, written out so a test can hold it without a window.
+    /// The deck takes exactly this by being the one flexible child of a column whose other children
+    /// are fixed, which is why `deck` needs no measurement of its own (docs/adr/0024).
+    ///
+    /// That height is what `proxy.size.height` is: the glass less the status bar and the navigation
+    /// bar, and including the home-indicator band, because the deck is drawn down to the glass
+    /// (`.ignoresSafeArea(edges: .bottom)`). On a 402×874 phone it is 758, which is the figure
+    /// `DeckFloor` measures back off `game-in-play.png`: 368 of board, 212 of deck.
+    static func deckRoom(readerHeight: CGFloat, width: CGFloat) -> CGFloat {
+        readerHeight - chrome - boardSide(in: CGSize(width: width, height: readerHeight))
     }
 
     private var board: some View {

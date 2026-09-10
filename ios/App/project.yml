@@ -39,8 +39,16 @@ targets:
         CFBundleDisplayName: 棋镜
         UILaunchScreen:
           UIColorName: ""
+        # The phone is held in portrait (docs/adr/0024). The deck is the bottom of this screen and
+        # it is sized out of what the board leaves behind; on a phone on its side there is 402pt of
+        # height for a board, two bars, a record and five cards, and what the deck did about that
+        # was disappear — taking every card's actions with it. The iPad has the height for all four
+        # ways up, so it keeps them.
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         # Recognition itself never leaves the device. What does leave it is the saved game and

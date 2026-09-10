@@ -247,7 +247,12 @@ plan being written, a question being asked, a square being scanned, or a Line be
 五步 spends the Stint that finds the mate, so the unguarded version tore down the walk that paid
 for the news (docs/adr/0023).
 The card itself starts with the one-line subtitle, not with its name again. It occupies
-the room under the record; a body longer than that scrolls inside the card.
+the room under the record; a body longer than that scrolls inside the card, and fades at its
+bottom only while there is more of it than fits. **That room is part of what the board is sized
+against**: the deck's chrome, its names and the card it wants are taken off the board's height
+before the board's own minimum is applied, so the board gives way and the deck never does
+(docs/adr/0024). A phone is therefore held in portrait — 402 points of height is no board, no
+record and five cards.
 _Avoid_: carousel, sections, panels, accordion
 
 **Drill**:

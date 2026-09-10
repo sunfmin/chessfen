@@ -110,6 +110,10 @@ struct DeckRail<Card: Hashable>: View {
         }
         .padding(.top, 8)
         .padding(.bottom, 4)
+        // The five names are a label like the rows above them, and a capped one: an index that runs
+        // off both edges of the phone is not an index, and 练习 is the name it loses (see
+        // `chromeType`).
+        .chromeType()
     }
 
     private func segment(_ card: Card) -> some View {
@@ -321,7 +325,7 @@ struct CardFigures: View {
                     Spacer(minLength: 6)
                     if let value = row.value {
                         Text(value)
-                            .font(.clock(row.isProminent ? 15 : 14, weight: row.isProminent ? .semibold : .regular))
+                            .clockFont(row.isProminent ? 15 : 14, weight: row.isProminent ? .semibold : .regular)
                             .foregroundStyle(row.tint)
                     }
                 }
@@ -352,13 +356,19 @@ struct CardNote: View {
 /// chopped. A cut sentence looks like a bug; a fading one looks like a card that can be pulled up,
 /// which is exactly what it is.
 struct CardFade: View {
+    /// How tall it is, and that is not a matter of taste: a card's column ends with this much
+    /// padding, so nothing readable is ever underneath. Shorter than a line of text and the fade
+    /// does the opposite of its job — a cut line shows through it with its bottom missing, which
+    /// is exactly what it is here to stop looking like.
+    static let height: CGFloat = 22
+
     var body: some View {
         LinearGradient(
             colors: [Palette.raised.opacity(0), Palette.raised],
             startPoint: .top,
             endPoint: .bottom
         )
-        .frame(height: 22)
+        .frame(height: Self.height)
         .allowsHitTesting(false)
     }
 }

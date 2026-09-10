@@ -90,12 +90,7 @@ extension View {
 }
 
 extension Font {
-    /// Numbers that change while you watch them. Rounded digits read as the numerals on a
-    /// chess clock, and monospaced ones do not shuffle the layout as they tick.
-    static func clock(_ size: CGFloat, weight: Font.Weight = .semibold) -> Font {
-        .system(size: size, weight: weight, design: .rounded).monospacedDigit()
-    }
-
+    /// A move, in the face a scoresheet is set in.
     static let notation = Font.system(.footnote, design: .monospaced)
 
     /// The name on a card. Serif, and it is the only serif in the app: chess is written down in
@@ -103,6 +98,56 @@ extension Font {
     /// the same face as their own body text is a deck of five paragraphs. In Chinese it resolves to
     /// 宋体, which is exactly the book voice this is borrowing.
     static let cardName = Font.system(.subheadline, design: .serif).weight(.semibold)
+}
+
+extension View {
+    /// Numbers that change while you watch them, at the reader's own text size.
+    ///
+    /// Rounded digits read as the numerals on a chess clock, and monospaced ones do not shuffle the
+    /// layout as they tick. The size used to be fixed, which was a quiet lie on a card: the
+    /// sentences beside a 层级 or a Score grow with the reader and the number did not, so the
+    /// biggest thing on the card stayed the size it happened to be designed at while everything it
+    /// is compared against moved away from it. Growth is capped at 1.4× — a number is a number,
+    /// and the rows it sits in are a strip under a board and rows of a card, which stop fitting
+    /// before a hedge-fund-sized digit stops being readable.
+    func clockFont(_ size: CGFloat, weight: Font.Weight = .semibold) -> some View {
+        modifier(ClockFont(size: size, weight: weight))
+    }
+
+    /// The words that are labels — who is playing, what the clock is, the record's chips, the five
+    /// names — stop growing at the first accessibility size. The card under the board grows all the
+    /// way to the last one.
+    ///
+    /// Not a quiet override of the reader's setting: the card is what the app is for, and its
+    /// sentences are the only text on this screen anybody has to *read*. The rows above it are
+    /// status, and they are also the only rows whose growth is not paid for by anything — the board
+    /// is sized from a budget (`GameScreen.boardSide`) and the deck takes what is left. At the
+    /// largest size those four rows took a hundred points off the deck to say 「黑方 引擎 跟着我」
+    /// at 40pt, and left the card 42pt tall. Capped, they still grow by a fifth and the card keeps
+    /// the room it was designed with.
+    func chromeType() -> some View {
+        dynamicTypeSize(...DynamicTypeSize.accessibility1)
+    }
+}
+
+private struct ClockFont: ViewModifier {
+    // The default is the wrapper's own syntax saying which argument is which; every use of this
+    // modifier states the size it was designed at, and the environment scales it from there.
+    @ScaledMetric(relativeTo: .body) private var grown: CGFloat = 0
+    private let cap: CGFloat
+    private let weight: Font.Weight
+
+    init(size: CGFloat, weight: Font.Weight) {
+        _grown = ScaledMetric(wrappedValue: size, relativeTo: .body)
+        cap = size * 1.4
+        self.weight = weight
+    }
+
+    func body(content: Content) -> some View {
+        content.font(
+            .system(size: min(grown, cap), weight: weight, design: .rounded).monospacedDigit()
+        )
+    }
 }
 
 // ------------------------------------------------------------------ controls
@@ -358,7 +403,7 @@ struct ScoreCell: View {
 
     var body: some View {
         Text(score?.displayText ?? "—")
-            .font(.clock(prominent ? 15 : 14, weight: prominent ? .semibold : .regular))
+            .clockFont(prominent ? 15 : 14, weight: prominent ? .semibold : .regular)
             .foregroundStyle(prominent ? Palette.analysis : Palette.inkSoft)
     }
 }
