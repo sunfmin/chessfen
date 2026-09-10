@@ -124,6 +124,46 @@ enum ScreenImage {
         }
     }
 
+    /// A picture as RGBA pixels, so a test can hold a screen to something the words cannot say.
+    ///
+    /// The board's edges and the advantage bar's two ends are the things worth this: a bar whose
+    /// white end is on the left when Black is at the bottom of the board reads 「优势条」 to the
+    /// accessibility tree exactly as well as the right way round, and says the opposite of the
+    /// number printed beside it to the one person who can see it.
+    struct Pixels {
+        let bytes: [UInt8]
+        let width: Int
+        let height: Int
+
+        init?(of url: URL) {
+            guard let image = UIImage(contentsOfFile: url.path)?.cgImage else { return nil }
+            let width = image.width
+            let height = image.height
+            var bytes = [UInt8](repeating: 0, count: width * height * 4)
+            guard
+                let context = CGContext(
+                    data: &bytes, width: width, height: height, bitsPerComponent: 8,
+                    bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                )
+            else { return nil }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            self.bytes = bytes
+            self.width = width
+            self.height = height
+        }
+
+        /// What it looks like at one pixel — top-left origin, the way a picture is looked at.
+        func colour(x: Int, y: Int) -> (r: Int, g: Int, b: Int) {
+            let offset = (y * width + x) * 4
+            return (Int(bytes[offset]), Int(bytes[offset + 1]), Int(bytes[offset + 2]))
+        }
+
+        /// Three pixels to the point on a screen drawn by this suite, which some of these readings
+        /// have to be stated in to mean anything.
+        func pixelsPerPoint(of size: CGSize) -> CGFloat { CGFloat(width) / size.width }
+    }
+
     /// Everything on screen that has a word attached to it.
     private static func words(in view: UIView) -> [String] {
         var found: [String] = []

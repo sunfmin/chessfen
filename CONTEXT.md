@@ -146,6 +146,15 @@ _Avoid_: branch, alternative, undo history, side line
 The first move of the highest-ranked Line of a completed Analysis.
 _Avoid_: suggestion, hint, recommendation
 
+**优势条**:
+The Score as a length under the board: the side at the bottom of the board owns the left end of it
+and wears that side's own colour, because a colour on this screen is a piece's colour and never a
+left one or a right one. The number beside it stays White-relative — `+3.00` is White three pawns
+up whichever way the board is turned — so the two answer different questions: the number says who is
+winning, the bar says how much of the board in front of you is theirs (docs/adr/0025). Over when the
+game is: a finished game has no Score to draw, and the bar carries the result instead.
+_Avoid_: eval bar, gauge, meter, advantage meter, evaluation graph
+
 **Controller**:
 Who moves for one colour — the player by hand, or the engine. Each colour has its own,
 either can be changed at any point in a Game, and all four combinations are meaningful:

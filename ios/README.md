@@ -96,7 +96,7 @@ xcodebuild test -project Chessfen.xcodeproj -scheme Chessfen \
 open out/game-in-play.png
 ```
 
-Fifty pictures land in `ios/App/out`: a game under way, a board straight off a photograph, one
+A picture per state lands in `ios/App/out`: a game under way, a board straight off a photograph, one
 filed into a collection, a reopened game, the engine on its own clock, an engine that has run
 its Stint out, the app playing itself, a Variation offered where it branches, a mate, practice,
 one square named as this move's 要害 with the sentence that says why, an outpost drawn as a route
@@ -106,7 +106,11 @@ terms, and the engine's answer once they asked for it — a line halfway through
 layer following it, and the whole screen at night. `DeckGalleryTests` photographs the five cards of
 the deck one at a time as well (`deck-01-key` … `deck-05-drill`), which is what anybody redesigning
 them has to be able to lay out on a table — including 五步 with 五步计划 under it, the same card
-drafting and then judged. They are not in the repository — they are written to be looked at, and
+drafting and then judged. `DeckFloorTests` and `EvalBarTests` photograph the sizes and the text
+sizes the rest of the suite cannot reach — a 375-wide phone, the largest accessibility text, and the
+board both ways up — because those are the states whose failures are silent: a deck with no room and
+a bar whose ends do not turn with the board both read out to the accessibility tree exactly like the
+correct ones. They are not in the repository — they are written to be looked at, and
 they are rewritten by every run.
 
 The only thing faked is the search. `Engine` is a protocol the app's `EngineService` conforms

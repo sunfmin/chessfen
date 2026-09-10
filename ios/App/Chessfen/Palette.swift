@@ -328,13 +328,21 @@ struct EvalBar: View {
 
     var body: some View {
         let white = finish?.whiteShare ?? advantageFraction(score)
-        let fraction = orientation == .whiteAtBottom ? white : 1 - white
+        // The side at the bottom of the board is the side at the left of the bar — and its colour,
+        // because the bar's two ends are the pieces' colours and not "the left one and the right
+        // one". The growing end used to be White whatever way up the board was, so with Black at the
+        // bottom the bar said the exact opposite of the number printed beside it, to the only person
+        // who could see either (docs/adr/0025).
+        let bottomIsWhite = orientation == .whiteAtBottom
+        let share = bottomIsWhite ? white : 1 - white
+        let bottomTint = bottomIsWhite ? Palette.barWhite : Palette.barBlack
+        let topTint = bottomIsWhite ? Palette.barBlack : Palette.barWhite
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
-                Rectangle().fill(Palette.barBlack)
+                Rectangle().fill(topTint)
                 Rectangle()
-                    .fill(Palette.barWhite)
-                    .frame(width: proxy.size.width * fraction)
+                    .fill(bottomTint)
+                    .frame(width: proxy.size.width * share)
                 // A draw is the one result that is genuinely half and half, so it cannot be said
                 // with a length: it is said by taking both colours off the bar. Nobody won it.
                 if finish == .drawn {
@@ -353,7 +361,7 @@ struct EvalBar: View {
         // Outlined, or the white half vanishes into the page and an even position reads as a bar
         // that is only half there.
         .overlay(Capsule().stroke(Palette.walnut.opacity(0.35), lineWidth: 0.5))
-        .animation(.easeOut(duration: 0.35), value: fraction)
+        .animation(.easeOut(duration: 0.35), value: share)
         .accessibilityLabel("优势条")
         .accessibilityValue(finish?.chinese ?? score?.displayText ?? "未知")
     }
