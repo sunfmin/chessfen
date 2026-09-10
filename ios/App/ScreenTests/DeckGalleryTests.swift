@@ -189,6 +189,64 @@ struct DeckGallery {
         #expect(rendered.says("第 2/4 步"))
     }
 
+    /// 五步计划 lives under 五步, because the two are one card about looking five moves ahead: the
+    /// five the engine would play, drawn on the board, and five of your own with one reason over
+    /// the whole of them (docs/adr/0021, 0023).
+    ///
+    /// It was a card of its own and went with the ten when the deck was cut to five — the session
+    /// kept all of it and nothing on the phone could reach it, which is a feature that goes missing
+    /// without a single test going red. This is the test that says it is reachable.
+    @Test("4 · 五步 — 五步计划 is the entry under the engine's line")
+    func walkCarriesThePlan() async throws {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
+        let engine = ScriptedEngine(Self.searching, isEndless: true)
+        let session = GameSession.fresh(game)
+        session.attach(engine: engine, library: nil)
+        session.applyReview(
+            game.plies.indices.map { ply in
+                ReviewedPly(
+                    score: .centipawns(20),
+                    line: ply == 5 ? ["Nxe5", "Nxe5", "d4", "Bd6"] : []
+                )
+            },
+            startEvaluation: nil,
+            depth: 18
+        )
+        session.jump(toPly: 6)
+
+        let rendered = await ScreenImage.write("deck-04-walk-plan") {
+            screen(session, engine: engine, opening: .walk)
+        }
+        #expect(rendered.says("回到开头"), "the engine's Line is still the card's first half")
+        #expect(rendered.says("在棋盘上走五步，说一个理由，让引擎判对错。"))
+        #expect(rendered.says("开始写"))
+
+        // The press starts it and the walk stands down: one board, one hypothesis.
+        session.startPlan()
+        await hop()
+        let drafting = await ScreenImage.write("deck-04-walk-plan-drafting") {
+            screen(session, engine: engine, opening: .walk)
+        }
+        #expect(session.planDraft != nil)
+        #expect(session.walk == nil, "a plan being written owns the board")
+        #expect(drafting.says("在棋盘上随便走。走一步，下面就重算一次后面五步。"))
+
+        // A move of your own, one reason over the line, and 交卷 — all of it read back off the card.
+        session.playInPlan(try #require(session.board.state.move(matching: "d2d4")))
+        session.choose(.attack)
+        session.aim(at: try #require(Square("c5")))
+        session.commitPlan()
+        await hop()
+        let judged = await ScreenImage.write("deck-04-walk-plan-judged") {
+            screen(session, engine: engine, opening: .walk)
+        }
+        #expect(session.planDraft == nil)
+        #expect(!session.game.plans(atPly: 6).isEmpty, "交卷 wrote the line into the record")
+        #expect(judged.says("这条线进了棋谱，是这一步的一个变着。"))
+        #expect(judged.says("说对了"), "and the one reason it was all for is judged")
+        #expect(judged.says("第 1 步 d4 的时候成立"), "with the step that made the claim true named")
+    }
+
     // ------------------------------------------------------------------ 5 · 练习
 
     @Test("5 · 练习 — the question, answered, with all three moves side by side")

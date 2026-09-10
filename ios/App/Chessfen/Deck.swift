@@ -81,17 +81,14 @@ struct CardSearching: View {
     }
 }
 
-/// The handle, and the one thing it has to say: this can be pulled. A grabber, not a button —
-/// tapping it does nothing; only a drag changes the height.
-
-
 // ====================================================================== the rail
 
 /// The five names in a segmented row, on the page, hugging the card's outside bottom.
 /// Tapping one turns the card; swiping the page still does.
 ///
 /// The names used to live inside each card, under a row of dots that did not say which card was
-/// which. Five two-character titles fit in one capsule, and then the card can start with its
+/// which — and there were ten of them, grouped in four clusters with the group named at the end of
+/// the rail. Five two-character titles fit in one capsule, and then the card can start with its
 /// answer rather than with its own name again.
 struct DeckRail<Card: Hashable>: View {
     let cards: [Card]

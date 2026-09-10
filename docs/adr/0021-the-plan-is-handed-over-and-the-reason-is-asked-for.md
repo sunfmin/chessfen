@@ -126,3 +126,23 @@ which is a wiring problem and not a design one.
 
 > docs/adr/0018 — a verb that cannot be wrong does not get a slot. The 护 change here is that
 > rule applied to a verb that could be wrong but almost never was.
+
+## Where it lives, amended
+
+The plan was a card of the deck for as long as the deck had ten, and when the deck was cut to five
+(docs/adr/0023) the card went and took the way in with it: `startPlan` stayed public, the Study
+tests went on calling it, and nothing on the phone could reach it. Nothing failed, which is the
+whole problem with deleting a view — the session was never the part that was missing.
+
+**It is the second half of 五步 now.** The engine's five drawn on the board and five of your own
+with one reason over the whole of them are one subject — looking five moves ahead — so that card
+carries both: the transport at the top, 五步计划 under it, entered by 「开始写」 rather than by a
+swipe. The session already kept them off each other's board (a plan ends the walk, a walk is
+refused over a draft), and the walk stands down while a plan is being written, so the card never
+offers a transport that would be refused. Leaving the card throws an unwritten draft away, exactly
+as leaving the plan's own card used to; what was 交卷'd is a Variation in the Game and is not
+touched.
+
+**The engine still speaks first here and nowhere else.** That is the exception this ADR is about,
+and re-housing the plan does not widen it: the five moves are still the engine's, the claim is
+still the player's, and it is still judged move by move by the same checker.

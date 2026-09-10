@@ -413,7 +413,12 @@ struct GameScreenScreenshots {
             "practice points at the one switch that makes the engine talk"
         )
         #expect(!rendered.says("+0.38"), "no Score anywhere while practising")
-        #expect(session.analysis == nil)
+        // One search did run, and it is the dealt card's own Stint: **dealing a card is an
+        // arrival**, so 要害 answers while it is the card in front, and what it found is kept for
+        // the card rather than for the board (docs/adr/0019, 0023). Practice hides the engine's
+        // opinion; it does not stop the engine. What must never happen is any of it reaching the
+        // board, which is what the words above are checking.
+        #expect(session.analysis != nil, "the card in front asked, so a search ran")
     }
 
     /// A card spending a Stint has to say so, and how deep it has got. A number that quietly
@@ -568,6 +573,83 @@ struct GameScreenScreenshots {
         #expect(rendered.says("被将"), "and the bar says what the board already shows")
     }
 
+    /// The same game, one move on, with the position on screen a past Ply — so the line the card's
+    /// own Stint finds is the mate, and the deck is showing 五步 while it does.
+    ///
+    /// A mate is news and may take the eye (docs/adr/0023), but not out from under work in
+    /// progress: 五步 spends the Stint that finds this mate, so a deck that jumped here would be
+    /// tearing down the very walk that paid for the news.
+    @Test("a mate turning up does not take the deck off a line being walked")
+    func mateNewsDoesNotStealAWalk() async throws {
+        let opera = "4kb1r/p2n1ppp/4q3/4p1B1/4P3/1Q6/PPP2PPP/2KR4 w - - 0 1"
+        let game = try #require(Game(startFEN: opera, uciMoves: ["b3b8", "d7b8"]))
+        let engine = ScriptedEngine(
+            [],
+            byPosition: [
+                (try #require(Game(startFEN: opera))).state.fen: Analysis(
+                    depth: 10,
+                    lines: [
+                        Line(
+                            score: .mate(in: 2),
+                            uciMoves: ["b3b8", "d7b8", "d1d8"],
+                            san: ["Qb8+", "Nxb8", "Rd8#"]
+                        )
+                    ]
+                )
+            ]
+        )
+        let session = GameSession.fresh(game, controllers: [.white: .hand, .black: .engine])
+        session.attach(engine: engine, library: nil)
+        session.jump(toPly: 0)
+        _ = await ScreenImage.write("game-walk-keeps-its-card") {
+            screen(session, engine: engine, opening: .walk)
+        }
+        await hop()
+        #expect(session.mateNews != nil, "the news is real — this card's own Stint is what found it")
+        #expect(session.walk != nil, "and the Line it was walking survived it")
+        #expect(
+            !session.isFindingTactics,
+            "with no jump to 杀招, whose arrival is what turns the probe on"
+        )
+    }
+
+    /// The other half of the same rule: with nothing in progress the news still takes the eye,
+    /// which is what 「直接给予提示」 amounts to on a deck (docs/adr/0023).
+    @Test("with nothing in progress the news still takes the eye")
+    func mateNewsStillTakesTheEye() async throws {
+        let opera = "4kb1r/p2n1ppp/4q3/4p1B1/4P3/1Q6/PPP2PPP/2KR4 w - - 0 1"
+        let game = try #require(Game(startFEN: opera))
+        let engine = ScriptedEngine(
+            [],
+            byPosition: [
+                game.state.fen: Analysis(
+                    depth: 10,
+                    lines: [
+                        Line(
+                            score: .mate(in: 2),
+                            uciMoves: ["b3b8", "d7b8", "d1d8"],
+                            san: ["Qb8+", "Nxb8", "Rd8#"]
+                        )
+                    ]
+                )
+            ]
+        )
+        let session = GameSession.fresh(game, controllers: [.white: .hand, .black: .engine])
+        session.attach(engine: engine, library: nil)
+        // Dealt to 要害 — the card that acts is not the news — and the search that finds the mate
+        // is that card's own Stint, arriving a hop later.
+        _ = await ScreenImage.write("game-news-takes-the-eye") {
+            screen(session, engine: engine, opening: .key)
+        }
+        await hop()
+
+        #expect(session.mateNews != nil)
+        #expect(
+            session.isFindingTactics,
+            "the deck moved to 杀招, and arriving there is what turns the probe on"
+        )
+    }
+
     /// The same game, the same engine, the same moves played into it — and nothing whispered.
     /// This is the screenshot the default is answerable to: a person reading it should not be able
     /// to work out what the engine thinks of the position, and should be in no doubt that the app
@@ -588,7 +670,10 @@ struct GameScreenScreenshots {
         #expect(!rendered.says("d4 exd4 cxd4 Bb6"))
         #expect(!rendered.says("O-O d6 d4 Bb6"))
         #expect(!rendered.says("d3 d6 O-O a6"))
-        #expect(session.analysis == nil, "nothing reached the screen to be drawn")
+        #expect(
+            session.analysis != nil,
+            "the dealt card spent its own Stint — and none of it reached the screen to be drawn"
+        )
 
         // And the screen accounts for the silence rather than wearing the face of a broken engine.
         #expect(rendered.says("练习"))

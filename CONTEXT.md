@@ -231,16 +231,21 @@ carries a one-line subtitle under its name. **The card you are on is the card th
 arriving turns its layer on and leaving turns it off, so the board draws the one card in
 front of you. A swipe onto 要害 / 杀招 / 战术 / 五步 spends a Stint the first time this
 position is asked about, even during Practice: the swipe is the asking and the board stays
-silent. What that search found is kept for the position, so paging to another card of the
+silent. Dealing the deck is an arrival too, so opening a game on 要害 spends the first one.
+What that search found is kept for the position, so paging to another card of the
 same Ply does not wind the clock again. While it is climbing, and still after it has
 stopped, the card names the Depth as 层级 — a spinner with no figure is the engine
 looking dead (docs/adr/0019). 练习 does not — the player moves first,
 then the card says what the move bought, what it cost, and what the engine would have done
 (练习 on a past Ply is a Drill; on any other card a move from there is a Variation, named
-on the record). 复盘 is
-no longer a card: a uniform-depth pass is a press in the ⋯ menu. The five names sit in a
-centered capsule at the bottom of the screen, in the home-indicator band; tapping one or
-swiping the page are the same turn.
+on the record). 五步 carries two halves: the engine's Line, and 五步计划 under it. 复盘 is
+no longer a card: a uniform-depth pass is a press in the ⋯ menu, and the three worst moves are
+the questions 练习 walks. The five names sit in a centered capsule at the bottom of the screen,
+in the home-indicator band; tapping one or swiping the page are the same turn.
+**A card that is already at work is not moved by news**: 步杀消息 takes the eye, but never off a
+plan being written, a question being asked, a square being scanned, or a Line being walked —
+五步 spends the Stint that finds the mate, so the unguarded version tore down the walk that paid
+for the news (docs/adr/0023).
 The card itself starts with the one-line subtitle, not with its name again. It occupies
 the room under the record; a body longer than that scrolls inside the card.
 _Avoid_: carousel, sections, panels, accordion
@@ -292,7 +297,9 @@ Playing the engine's Line out on the main board a Ply at a time, with the 要害
 following each step and one cumulative sentence saying where the whole line arrived.
 Ephemeral by definition: no Variation is made, nothing reaches the PGN, and leaving it
 restores the position exactly — a Line is a hypothesis and nothing was played. The
-concrete form of "seeing five moves ahead", as against being told that one should.
+concrete form of "seeing five moves ahead", as against being told that one should. The card
+named 五步, and its second half is 五步计划: the engine's five on the board, and five of your own
+with one reason over them, are one subject (docs/adr/0021).
 _Avoid_: playback, animation, preview, autoplay, simulation, 走马灯
 
 **五步计划**:
@@ -300,7 +307,8 @@ A Variation at most five Ply long, carrying one Intent judged over the whole lin
 over its first move. The unbuilt consequence of docs/adr/0017, finally built. The cap is about
 what can be checked rather than about how far people see: past about five Ply the opponent has
 had enough replies that no claim about the position is falsifiable, and an Intent that cannot
-be told false is not one (docs/adr/0018). Opening it draws the engine's best five on the board
+be told false is not one (docs/adr/0018). Opening it — 「开始写」, under the engine's five on the
+五步 card — draws the engine's best five on the board
 and leaves the board live: you move on it — the engine's move or your own — and the five are
 recomputed from wherever that leaves you (docs/adr/0021). What you *walked* is the plan; what
 is drawn ahead of you is advice and is never committed. Walking past five is free; it is 交卷

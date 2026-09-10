@@ -99,8 +99,8 @@ extension Font {
     static let notation = Font.system(.footnote, design: .monospaced)
 
     /// The name on a card. Serif, and it is the only serif in the app: chess is written down in
-    /// tournament books and 棋谱, both of which are set in serif, and a deck of ten cards named in
-    /// the same face as their own body text is a deck of ten paragraphs. In Chinese it resolves to
+    /// tournament books and 棋谱, both of which are set in serif, and a deck of five cards named in
+    /// the same face as their own body text is a deck of five paragraphs. In Chinese it resolves to
     /// 宋体, which is exactly the book voice this is borrowing.
     static let cardName = Font.system(.subheadline, design: .serif).weight(.semibold)
 }
