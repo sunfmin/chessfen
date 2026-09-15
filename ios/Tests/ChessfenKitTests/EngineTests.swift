@@ -199,7 +199,7 @@ struct EngineTests {
         }
 
         // And the Line the search produced comes back with it, which is the whole point of
-        // asking a Review for one: nothing else in the app can afford to (docs/adr/0020).
+        // asking a Review for one: nothing else in the app can afford to (docs/adr/0021).
         #expect(reviewed.allSatisfy { !$0.line.isEmpty }, "a Review that kept no lines")
         #expect(
             reviewed.allSatisfy { $0.line.count <= Game.Ply.lineLimit },

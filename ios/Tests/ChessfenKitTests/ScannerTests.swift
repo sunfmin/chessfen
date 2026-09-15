@@ -15,7 +15,7 @@ private func move(_ uci: String, in game: Game) throws -> Move {
 
 /// The half of the layer that answers instead of volunteering. Everything else on the board speaks
 /// after a Guess is committed; this speaks when somebody points at a square, and about nothing else
-/// (docs/adr/0015, 0020).
+/// (docs/adr/0015, 0021).
 @Test("pointing at a square lists every piece that can reach it, cheapest first")
 func scanningListsTheWaysIn() throws {
     // A black pawn on d5, and three white pieces that can take it.
@@ -45,7 +45,7 @@ func nothingReachesIt() throws {
 
 // ------------------------------------------------------------------ what a trial says
 
-@Test("a trial says what the move is for, in the same seven verbs a player declares in")
+@Test("a trial says what the move is for, in the same seven verbs a player declares in", .speaking(.chinese))
 func aTrialNamesItsVerb() throws {
     let game = try position("4k3/8/8/3p4/4P3/2N5/8/3RK3 w - - 0 1")
     let played = try move("e4d5", in: game)
@@ -59,7 +59,7 @@ func aTrialNamesItsVerb() throws {
     #expect(trial.gains.first?.hasPrefix("吃 d5：") == true)
 }
 
-@Test("a trial onto a square their pawns can never attack again says so")
+@Test("a trial onto a square their pawns can never attack again says so", .speaking(.chinese))
 func aTrialOntoAnOutpost() throws {
     // Both pawns that could ever have attacked d5 are already past it, so d5 is a hole: whoever
     // gets there stays.
@@ -70,7 +70,7 @@ func aTrialOntoAnOutpost() throws {
     #expect(!trial.costs.contains { $0.hasPrefix("站不住") }, "and nothing can take it there")
 }
 
-@Test("a trial onto a square where the piece can be taken says so, and names the taker")
+@Test("a trial onto a square where the piece can be taken says so, and names the taker", .speaking(.chinese))
 func aTrialThatCannotStand() throws {
     let game = try position("4k3/8/4p3/8/8/2N5/8/4K3 w - - 0 1")
     let trial = try #require(game.tryOut(try move("c3d5", in: game)))
@@ -78,7 +78,7 @@ func aTrialThatCannotStand() throws {
     #expect(trial.costs.contains("站不住：兵从 e6 就能吃它，对方 1 个子看着 d5，自己 0 个接应。"))
 }
 
-@Test("a trial that can be kicked off by a pawn says that instead")
+@Test("a trial that can be kicked off by a pawn says that instead", .speaking(.chinese))
 func aTrialThatCanBeKickedOff() throws {
     // Nothing attacks d5 yet, but the pawn on c7 can come to c6 and does the job then.
     let game = try position("4k3/2p5/8/8/8/2N5/8/4K3 w - - 0 1")
@@ -87,7 +87,7 @@ func aTrialThatCanBeKickedOff() throws {
     #expect(trial.costs.contains("吃不掉，但赶得走：对方的兵推上来就能攻 d5。"))
 }
 
-@Test("a trial that takes a guard away from your own king says which square")
+@Test("a trial that takes a guard away from your own king says which square", .speaking(.chinese))
 func aTrialThatLoosensTheKing() throws {
     // The knight on f3 is the second thing looking at h2. Send it to the middle and the king is
     // the only one left.
@@ -97,7 +97,7 @@ func aTrialThatLoosensTheKing() throws {
     #expect(trial.costs.contains("自己王边上的 h2 少了看守。"))
 }
 
-@Test("a trial that stops guarding one of your own pieces says which one")
+@Test("a trial that stops guarding one of your own pieces says which one", .speaking(.chinese))
 func aTrialThatAbandonsAGuard() throws {
     // The rook on a1 is the only thing holding the knight on a4, which the rook on h4 is looking
     // at. Step off the file and the knight is nobody's.
@@ -107,7 +107,7 @@ func aTrialThatAbandonsAGuard() throws {
     #expect(trial.costs.contains("走了以后 马 a4 没人管了。"))
 }
 
-@Test("a move nobody can read still gets tried, and says so where the verb would go")
+@Test("a move nobody can read still gets tried, and says so where the verb would go", .speaking(.chinese))
 func aTrialWithNoReadableVerb() throws {
     let game = try position("4k3/8/8/8/8/8/8/4K3 w - - 0 1")
     let trial = try #require(game.tryOut(try move("e1d1", in: game)))

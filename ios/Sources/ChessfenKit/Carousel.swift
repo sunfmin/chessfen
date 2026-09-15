@@ -3,7 +3,7 @@
 /// A carousel that only recites moves is a carousel nobody learns from: you watch five plies go by,
 /// the position is different, and the difference is exactly what a beginner cannot see. So the end
 /// of the line is compared with the start and the difference is said in one sentence, out of the
-/// same fixed templates over checkable facts the rest of the layer uses (docs/adr/0018, 0020).
+/// same fixed templates over checkable facts the rest of the layer uses (docs/adr/0018, 0021).
 public struct LineOutcome: Hashable, Sendable {
     /// How many plies were walked.
     public let steps: Int
@@ -117,7 +117,7 @@ extension Game {
 ///
 /// 走马灯: the concrete form of "seeing five moves ahead", as against being told that one should.
 /// Ephemeral by definition — no Variation is made, nothing reaches the PGN, and leaving it restores
-/// the position exactly, because a Line is a hypothesis and nothing in it was played (docs/adr/0020).
+/// the position exactly, because a Line is a hypothesis and nothing in it was played (docs/adr/0021).
 /// It costs no engine time either: the Line is the one the Review already stored.
 public struct Walk: Hashable, Sendable {
     public let line: [String]
@@ -146,7 +146,7 @@ public struct Walk: Hashable, Sendable {
 /// Two halves, and keeping them apart is the whole of it. `steps` is what you actually played —
 /// that is the plan, it is what gets an Intent and what gets judged. `ahead` is the engine's best
 /// five from wherever you have got to: advice, recomputed after every move, never committed, and
-/// never mistaken for something you claimed (docs/adr/0017, 0021).
+/// never mistaken for something you claimed (docs/adr/0017, 0022).
 ///
 /// The board is always at the tip of `steps`. There is no scrubbing back and forth, because there
 /// is nothing to scrub: the position on the glass is the position you walked to, and the way back
@@ -188,7 +188,7 @@ public struct PlanDraft: Hashable, Sendable {
     /// What the board shows: everything walked, always.
     public var played: [String] { sans }
     /// What the layer reads each square against — the engine's next five, which is exactly the
-    /// second net docs/adr/0020 asks for and the one case where it costs nothing to have one.
+    /// second net docs/adr/0021 asks for and the one case where it costs nothing to have one.
     public var remaining: [String] { aheadSans }
 
     public init(ply: Int, steps: [Step] = [], ahead: [Step] = []) {
@@ -203,7 +203,7 @@ public struct PlanDraft: Hashable, Sendable {
 /// The row under a numbered arrow. A line handed over as five moves is five moves — the thing a
 /// club player cannot do with it is say why each one is there, which is the whole of what they
 /// were going to have to learn. So every Ply goes through the same reader a single hypothesis
-/// does: the verb it answers to, what it buys, and what it costs (docs/adr/0020, 0021).
+/// does: the verb it answers to, what it buys, and what it costs (docs/adr/0021, 0022).
 public struct PlanNote: Hashable, Sendable {
     /// Counting from one, the way the arrow on the board and the row under it are numbered.
     public let step: Int

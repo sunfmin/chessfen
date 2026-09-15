@@ -331,7 +331,7 @@ public final class EngineService: @unchecked Sendable {
     /// Each ply comes back with the Line its search produced as well as its Score. The Line is
     /// free here and expensive anywhere else: this is the one pass that visits every position of
     /// a Game, and a board asking for a continuation later would be starting a Stint
-    /// (docs/adr/0019, 0020).
+    /// (docs/adr/0020, 0021).
     ///
     /// `onPly` reports each result as it lands, because a Review of a long game is a wait
     /// worth showing progress through rather than a spinner. It is called from the engine's

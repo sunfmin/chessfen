@@ -74,7 +74,7 @@ struct LibraryScreen: View {
                     if case .starting = engine.status {
                         HStack(spacing: 6) {
                             ProgressView().controlSize(.small)
-                            Text("引擎启动中").eyebrow()
+                            Text(localized("library.engineStarting")).eyebrow()
                         }
                     }
                 }
@@ -143,23 +143,23 @@ struct LibraryScreen: View {
                 }
                 recognise(.file(url))
             case .failure(let error):
-                failure = ("没能拿到图片", error.localizedDescription)
+                failure = (localized("library.noPicture"), error.localizedDescription)
             }
         }
         .alert(failure?.title ?? "", isPresented: .constant(failure != nil)) {
-            Button("好") { failure = nil }
+            Button(localized("ok")) { failure = nil }
         } message: {
             Text(failure?.message ?? "")
         }
-        .alert("重命名作品集", isPresented: .constant(renamingCollection != nil)) {
-            TextField("作品集名字", text: $collectionDraft)
-            Button("好") {
+        .alert(localized("collection.rename"), isPresented: .constant(renamingCollection != nil)) {
+            TextField(localized("collection.name"), text: $collectionDraft)
+            Button(localized("ok")) {
                 if let old = renamingCollection, let name = trimmed(collectionDraft) {
                     library.renameCollection(old, to: name)
                 }
                 renamingCollection = nil
             }
-            Button("取消", role: .cancel) { renamingCollection = nil }
+            Button(localized("cancel"), role: .cancel) { renamingCollection = nil }
         }
     }
 
@@ -170,16 +170,16 @@ struct LibraryScreen: View {
     private var masthead: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text("棋镜")
+                Text(localized("app.name"))
                     .font(.system(size: 34, weight: .bold))
                     .tracking(6)
                     .foregroundStyle(Palette.ink)
-                Text("CHESSFEN")
+                Text(localized("app.mark"))
                     .font(.caption2.weight(.medium))
                     .tracking(3)
                     .foregroundStyle(Palette.inkSoft)
             }
-            Text("对着棋盘拍一张，接着往下下。")
+            Text(localized("library.tagline"))
                 .font(.footnote)
                 .foregroundStyle(Palette.inkSoft)
         }
@@ -198,7 +198,7 @@ struct LibraryScreen: View {
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "camera.fill").font(.title3)
-                        Text("拍棋盘").font(.headline)
+                        Text(localized("library.photograph")).font(.headline)
                         Spacer(minLength: 0)
                     }
                     .foregroundStyle(Palette.parchment)
@@ -214,17 +214,17 @@ struct LibraryScreen: View {
                     Button {
                         isPhotoPickerOpen = true
                     } label: {
-                        Label("从相册选", systemImage: "photo.on.rectangle")
+                        Label(localized("library.fromAlbum"), systemImage: "photo.on.rectangle")
                     }
                     Button {
                         paste()
                     } label: {
-                        Label("粘贴截图", systemImage: "doc.on.clipboard")
+                        Label(localized("library.paste"), systemImage: "doc.on.clipboard")
                     }
                     Button {
                         isFileImporterOpen = true
                     } label: {
-                        Label("从文件选", systemImage: "folder")
+                        Label(localized("library.fromFiles"), systemImage: "folder")
                     }
                 } label: {
                     Image(systemName: "chevron.down")
@@ -245,7 +245,7 @@ struct LibraryScreen: View {
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "plus")
-                    Text("从开局摆起").font(.subheadline.weight(.medium))
+                    Text(localized("library.fromStart")).font(.subheadline.weight(.medium))
                     Spacer(minLength: 0)
                 }
                 .foregroundStyle(Palette.ink)
@@ -260,7 +260,7 @@ struct LibraryScreen: View {
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "link")
-                    Text("导入棋局").font(.subheadline.weight(.medium))
+                    Text(localized("import.title")).font(.subheadline.weight(.medium))
                     Spacer(minLength: 0)
                 }
                 .foregroundStyle(Palette.ink)
@@ -279,10 +279,10 @@ struct LibraryScreen: View {
     /// not become one, so they stay exactly as they were: a list.
     private var games: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("对局记录").eyebrow().padding(.top, 6)
+            Text(localized("library.games")).eyebrow().padding(.top, 6)
 
             if library.entries.isEmpty {
-                Text("走出第一步，这局就会记在这里。")
+                Text(localized("library.empty"))
                     .font(.footnote)
                     .foregroundStyle(Palette.inkSoft)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -300,7 +300,7 @@ struct LibraryScreen: View {
                 if library.collections.count > 1 {
                     HStack(spacing: 6) {
                         Image(systemName: "tray").font(.caption2).foregroundStyle(Palette.inkSoft)
-                        Text("未归类")
+                        Text(localized("library.unfiled"))
                             .font(.footnote.weight(.semibold))
                             .foregroundStyle(Palette.ink)
                         Spacer(minLength: 0)
@@ -327,10 +327,10 @@ struct LibraryScreen: View {
                     .frame(width: 30, height: 30)
                     .background(Palette.alarm, in: RoundedRectangle(cornerRadius: 8))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("老毛病")
+                    Text(localized("habits"))
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(Palette.ink)
-                    Text("你反复犯的那几个错，从对局里数出来")
+                    Text(localized("habits.card"))
                         .font(.caption)
                         .foregroundStyle(Palette.inkSoft)
                 }
@@ -360,7 +360,7 @@ struct LibraryScreen: View {
                     Text(name)
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(Palette.ink)
-                    Text("\(count) 局")
+                    Text(localized("collection.games", plural: count))
                         .font(.caption)
                         .foregroundStyle(Palette.inkSoft)
                 }
@@ -378,7 +378,7 @@ struct LibraryScreen: View {
                 collectionDraft = name
                 renamingCollection = name
             } label: {
-                Label("重命名作品集", systemImage: "pencil")
+                Label(localized("collection.rename"), systemImage: "pencil")
             }
         }
     }
@@ -399,7 +399,7 @@ struct LibraryScreen: View {
             Palette.ink.opacity(0.45).ignoresSafeArea()
             VStack(spacing: 12) {
                 ProgressView().tint(Palette.analysis)
-                Text("在认棋盘").eyebrow()
+                Text(localized("library.recognising")).eyebrow()
             }
             .padding(28)
             .background(Palette.raised, in: RoundedRectangle(cornerRadius: 16))
@@ -410,7 +410,7 @@ struct LibraryScreen: View {
 
     private func paste() {
         guard let image = BoardImageLoader.fromClipboard() else {
-            failure = ("剪贴板里没有图片", "截个图再回来试试。")
+            failure = (localized("library.noClipboard.title"), localized("library.noClipboard.message"))
             return
         }
         recognise(.image(image))
@@ -504,35 +504,35 @@ struct GameList: View {
                 row(entry)
             }
         }
-        .alert("给这一局起个名字", isPresented: .constant(renaming != nil)) {
-            TextField("名字", text: $nameDraft)
-            Button("好") {
+        .alert(localized("game.name.title"), isPresented: .constant(renaming != nil)) {
+            TextField(localized("game.name.field"), text: $nameDraft)
+            Button(localized("ok")) {
                 if let entry = renaming { library.rename(entry, to: trimmed(nameDraft)) }
                 renaming = nil
             }
-            Button("取消", role: .cancel) { renaming = nil }
+            Button(localized("cancel"), role: .cancel) { renaming = nil }
         } message: {
-            Text("作品集里按名字排，所以「第 002 题」这样的名字会排在你想的地方。留空就用存下来的时间。")
+            Text(localized("game.name.explained"))
         }
         // Filing asks for the name in the same breath, because in a collection the name *is* the
         // order: a game put into one without being named sits wherever its timestamp falls, which is
         // never where it belongs in a set someone is working through.
         .alert(filingTitle, isPresented: .constant(filing != nil)) {
             if filing?.collection == nil {
-                TextField("作品集名字", text: $collectionDraft)
+                TextField(localized("collection.name"), text: $collectionDraft)
             }
-            TextField("这一局叫什么", text: $nameDraft)
-            Button("好") { commitFiling() }
-            Button("取消", role: .cancel) { filing = nil }
+            TextField(localized("game.name.field.long"), text: $nameDraft)
+            Button(localized("ok")) { commitFiling() }
+            Button(localized("cancel"), role: .cancel) { filing = nil }
         } message: {
-            Text("名字决定它在作品集里排第几，也决定练习时上一局下一局的顺序。")
+            Text(localized("game.file.explained"))
         }
     }
 
     private var filingTitle: String {
         guard let filing else { return "" }
-        guard let collection = filing.collection else { return "新建作品集" }
-        return "归到「\(collection)」"
+        guard let collection = filing.collection else { return localized("collection.new") }
+        return localized("game.file.into", collection)
     }
 
     private func commitFiling() {
@@ -593,7 +593,7 @@ struct GameList: View {
                 nameDraft = entry.name ?? ""
                 renaming = entry
             } label: {
-                Label("重命名", systemImage: "pencil")
+                Label(localized("rename"), systemImage: "pencil")
             }
             Menu {
                 // The collections that exist, with a tick against the one this game is already in,
@@ -608,23 +608,23 @@ struct GameList: View {
                 Button {
                     beginFiling(entry, into: nil)
                 } label: {
-                    Label("新建作品集…", systemImage: "folder.badge.plus")
+                    Label(localized("collection.new.ellipsis"), systemImage: "folder.badge.plus")
                 }
                 if entry.collection != nil {
                     Button {
                         library.file(entry, under: nil)
                     } label: {
-                        Label("移出作品集", systemImage: "tray.and.arrow.up")
+                        Label(localized("collection.remove"), systemImage: "tray.and.arrow.up")
                     }
                 }
             } label: {
-                Label("归到作品集", systemImage: "folder")
+                Label(localized("collection.file"), systemImage: "folder")
             }
             Divider()
             Button(role: .destructive) {
                 library.delete(entry)
             } label: {
-                Label("删除", systemImage: "trash")
+                Label(localized("delete"), systemImage: "trash")
             }
         }
     }
@@ -649,7 +649,7 @@ struct CollectionScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
-                Text("\(entries.count) 局 · 按名字排")
+                Text(localized("collection.sorted", plural: entries.count))
                     .font(.footnote)
                     .foregroundStyle(Palette.inkSoft)
                     .padding(.bottom, 2)
@@ -657,7 +657,7 @@ struct CollectionScreen: View {
                 if entries.isEmpty {
                     // Reachable: the last game can be moved out or deleted from this very screen. A
                     // collection is only the games claiming it, so at that moment it stops existing.
-                    Text("这个作品集空了。把棋局归进来，它就回到列表里。")
+                    Text(localized("collection.empty"))
                         .font(.footnote)
                         .foregroundStyle(Palette.inkSoft)
                         .padding(.vertical, 10)
@@ -686,7 +686,7 @@ struct CollectionScreen: View {
                 } label: {
                     Image(systemName: "plus")
                 }
-                .accessibilityLabel("导入棋局")
+                .accessibilityLabel(localized("import.title"))
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -702,9 +702,9 @@ struct CollectionScreen: View {
             // land in here, not in a new collection (docs/adr/0014).
             ImportSheet(targetCollection: name)
         }
-        .alert("重命名作品集", isPresented: $isRenaming) {
-            TextField("作品集名字", text: $draft)
-            Button("好") {
+        .alert(localized("collection.rename"), isPresented: $isRenaming) {
+            TextField(localized("collection.name"), text: $draft)
+            Button(localized("ok")) {
                 let fresh = draft.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !fresh.isEmpty, fresh != name else { return }
                 library.renameCollection(name, to: fresh)
@@ -713,7 +713,7 @@ struct CollectionScreen: View {
                 // exists, which reads as having lost fifty games.
                 path[path.count - 1] = .collection(fresh)
             }
-            Button("取消", role: .cancel) {}
+            Button(localized("cancel"), role: .cancel) {}
         }
     }
 }

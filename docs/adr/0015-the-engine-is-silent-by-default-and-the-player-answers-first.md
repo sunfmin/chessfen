@@ -49,11 +49,11 @@ sequence is fixed: **the player answers, and only then does the engine.**
   during play it would be the blunder-check performed on the player's behalf, which is
   the one thing they are here to learn to do.
 
-  > Sharpened by [ADR 0020](0020-the-layer-names-a-few-squares-instead-of-reporting-them-all.md): during a Game
+  > Sharpened by [ADR 0021](0021-the-layer-names-a-few-squares-instead-of-reporting-them-all.md): during a Game
   > the layer now draws nothing at all on its own initiative, and answers a tap about one
   > square instead. After a Guess is committed it appears by itself — that is the moment the
   > engine is already speaking, so a second tap to reach the reading buys nothing.
 
-  > Opened, narrowly, by [ADR 0022](0022-a-tactics-finder-can-speak-during-a-game.md): a second
+  > Opened, narrowly, by [ADR 0023](0023-a-tactics-finder-can-speak-during-a-game.md): a second
   > switch, off by default, may name one Tactic on the latest position. Practice, the Drill,
   > and everything the live board still refuses to draw are unchanged.

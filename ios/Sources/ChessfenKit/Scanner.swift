@@ -3,7 +3,7 @@
 /// The scanner is the half of the layer that answers a question instead of volunteering one, and
 /// that is the whole of why it exists: before a Guess is committed nothing draws itself, because a
 /// king-ring painted unprompted is the blunder check performed on the player's behalf, which is the
-/// one thing they are here to learn to do (docs/adr/0015, 0020). Point at a square and the app
+/// one thing they are here to learn to do (docs/adr/0015, 0021). Point at a square and the app
 /// answers about that square. Point at nothing and it says nothing.
 public struct Scan: Hashable, Sendable {
     /// One way of getting there: which piece, from where, and the move that does it.
@@ -35,7 +35,7 @@ public struct Trial: Hashable, Sendable {
     public let move: Move
     public let san: String
     /// What the move is *for*, read with the same reader the engine's own Line goes through, so
-    /// the two answers are written in the same seven verbs (docs/adr/0020).
+    /// the two answers are written in the same seven verbs (docs/adr/0021).
     public let intent: Intent
     public let gains: [String]
     public let costs: [String]
@@ -213,7 +213,7 @@ public struct ScanAnswer: Hashable, Sendable {
     public let best: String
     public let score: Score?
     /// The engine's move read through the seven verbs, so its reason and the player's are written
-    /// in the same words (docs/adr/0020). Nil when the Line could not be read.
+    /// in the same words (docs/adr/0021). Nil when the Line could not be read.
     public let reading: LineReading?
     /// Whether the engine's move is the one that was tried.
     public let isSameAsTrial: Bool

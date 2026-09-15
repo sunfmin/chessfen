@@ -17,11 +17,11 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     public static let tagName = "Source"
 
     public var tagValue: String { rawValue }
-    public var chinese: String {
+    public var label: String {
         switch self {
-        case .fresh: "手摆"
-        case .recognised: "识别"
-        case .imported: "导入"
+        case .fresh: localized("origin.fresh")
+        case .recognised: localized("origin.recognised")
+        case .imported: localized("origin.imported")
         }
     }
     public var symbol: String {
@@ -97,7 +97,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     ///
     /// One exception, and it is the one moment it is allowed: committing a Guess turns it on. At
     /// that moment the engine is already speaking, so the tap it would cost buys nothing
-    /// (docs/adr/0020).
+    /// (docs/adr/0021).
     public private(set) var showsControlChange = false
     /// The verb chosen, waiting for the Square it is about. A claim with no target is not a claim
     /// yet, which is why this is not an Intent.
@@ -119,7 +119,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     ///
     /// Armed by a tap and by nothing else. The scanner is the only thing the layer is allowed to
     /// say before a Guess is committed, and it only ever answers about the square somebody chose
-    /// (docs/adr/0015, 0020) — so arming it is a deliberate act and never a state the screen
+    /// (docs/adr/0015, 0021) — so arming it is a deliberate act and never a state the screen
     /// arrives in.
     public private(set) var isScannerArmed = false
     /// The square that was pointed at, and every piece of the side to move that can reach it.
@@ -128,7 +128,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     public private(set) var trial: Trial?
     /// The Line being played out on the board, when one is.
     ///
-    /// 走马灯 (docs/adr/0020). The Line is the one somebody already paid for — a Review's or a
+    /// 走马灯 (docs/adr/0021). The Line is the one somebody already paid for — a Review's or a
     /// Reveal's — so watching it costs no engine time, and nothing in it is played: the Game, the
     /// PGN and the Variations are all untouched, and leaving puts the board back exactly.
     public private(set) var walk: Walk?
@@ -138,7 +138,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// canvas is a wall: the club player who could already write the line down did not need the
     /// feature, and everyone else got an empty box. What is asked of them instead is the harder
     /// half and the half that was always the point — the line is given, the *reason* is theirs,
-    /// and it is judged (docs/adr/0021).
+    /// and it is judged (docs/adr/0022).
     public private(set) var planDraft: PlanDraft?
     /// What each move of the plan is for, and what it gives away — one per step, in order.
     public private(set) var planNotes: [PlanNote] = []
@@ -147,7 +147,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     private var planTask: Task<Void, Never>?
     /// How the last committed plan was judged, and at which step.
     public private(set) var planCheck: PlanCheck?
-    /// Where that plan arrived, by the same reckoning the carousel uses (docs/adr/0020).
+    /// Where that plan arrived, by the same reckoning the carousel uses (docs/adr/0021).
     public private(set) var planOutcome: LineOutcome?
     /// What the engine said about the scanned position — only ever after somebody asked.
     public private(set) var scanAnswer: ScanAnswer?
@@ -262,7 +262,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// and the answer, so it has to be found off every time rather than wherever it was left.
     public private(set) var isPractising = true
 
-    /// Whether a Tactic may be named on the latest position (docs/adr/0022).
+    /// Whether a Tactic may be named on the latest position (docs/adr/0023).
     ///
     /// Off at the start of every Game, never written to PGN, silent on a past Ply. Practice
     /// can stay on: then the board has no Score and no candidate Lines, only the shot.
@@ -274,8 +274,8 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// The probe's own Analysis, kept only so a mate it happened to see can be reported.
     ///
     /// The finder's search is not advice — it is bounded, it was asked a question about shots, and
-    /// practice is allowed to keep it (docs/adr/0022). A mate in it is news, and news is not the
-    /// engine's opinion either, so it may be read out where a Score may not (docs/adr/0023). What
+    /// practice is allowed to keep it (docs/adr/0023). A mate in it is news, and news is not the
+    /// engine's opinion either, so it may be read out where a Score may not (docs/adr/0024). What
     /// is *not* kept is a Score, a Depth or a candidate list: nothing else in here reaches a screen.
     private var probedAnalysis: Analysis?
     /// Analyses already paid for, keyed by the FEN they were found from. A swipe onto another
@@ -591,7 +591,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     ///
     /// Nil when the finder is off. It talks about whichever position is on screen, a past Ply
     /// included: the finder is a card of its own now, and swiping onto it is the asking
-    /// (docs/adr/0023, amending 0022).
+    /// (docs/adr/0024, amending 0023).
     public var tacticPrompt: String? {
         guard isFindingTactics, !viewed.isOver else { return nil }
         if isProbingTactics, tactic == nil { return "在看有没有战术" }
@@ -603,7 +603,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     }
 
     /// The mate anybody can see from the position on screen, whoever it belongs to
-    /// (docs/adr/0023).
+    /// (docs/adr/0024).
     ///
     /// **No search of its own.** It reads whichever one has already run: the standing Analysis
     /// when the engine is talking, and the finder's bounded probe when it is not. So the app
@@ -614,7 +614,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// Any position the eye is on, the latest or a past one. A mate on a Ply somebody walked back
     /// to is the same fact about the same board, and the card carrying it is one swipe away from
     /// 考一遍 rather than on top of it — so looking is a thing a person does on purpose, and the
-    /// question is not answered before it is asked (docs/adr/0023, amending 0022).
+    /// question is not answered before it is asked (docs/adr/0024, amending 0023).
     public var mateNews: MateNews? {
         guard !viewed.isOver else { return nil }
         guard let source = analysis ?? probedAnalysis else { return nil }
@@ -758,11 +758,11 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     ///
     /// Mid-walk that is what the Line still expects, which is why the 要害格 layer follows the plan
     /// step by step rather than re-answering the same question five times: the second net moves with
-    /// the board (docs/adr/0020).
+    /// the board (docs/adr/0021).
     public var boardContinuation: [String] {
         // A plan being built is its own second net: what the layer judges each step against is the
         // rest of *your* plan, which is the one case where no engine is needed to say whether a
-        // square mattered — you have already said what you are going to do with it (docs/adr/0020).
+        // square mattered — you have already said what you are going to do with it (docs/adr/0021).
         if let planDraft { return planDraft.remaining }
         if let walk { return walk.remaining }
         return viewedContinuation
@@ -1080,7 +1080,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// which the app already has a name for (docs/adr/0017).
     ///
     /// The five moves arrive from the engine rather than from the player, and that is the one place
-    /// on this screen where the engine goes first (docs/adr/0021). What it does not hand over is the
+    /// on this screen where the engine goes first (docs/adr/0022). What it does not hand over is the
     /// claim: the reason is still declared, still in the seven verbs, and still judged move by move.
     public func startPlan() {
         guard planDraft == nil, !isAtLatest, cursor < game.plies.count else { return }
@@ -1184,7 +1184,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// the five that were there a move ago. Warm, each answer is the last one rolled forward by one
     /// move. The line still changes when the engine genuinely changes its mind — the tail of a PV is
     /// searched shallower than its head, so playing a move buys it a ply of depth and sometimes a
-    /// different idea — but that change now means something (docs/adr/0021).
+    /// different idea — but that change now means something (docs/adr/0022).
     private func lookAhead() {
         guard let engine, let draft = planDraft, draft.ahead.isEmpty else { return }
         let position = board
@@ -1331,7 +1331,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// The Line is whichever one somebody already paid for — the Review's for this Ply, or the one
     /// a committed Guess's search produced. No search is started to play a carousel: an app that
     /// went and fetched a line when somebody pressed play would be spending a Stint on a picture
-    /// (docs/adr/0019, 0020). Nothing to play means nothing happens and the screen says why.
+    /// (docs/adr/0020, 0021). Nothing to play means nothing happens and the screen says why.
     public func startWalk(line: [String]? = nil) {
         // Not over a plan: the board would show one line and the arrows another, and the plan has a
         // transport of its own for exactly this.
@@ -1453,7 +1453,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         // The one moment the layer is allowed to appear by itself. Before a Guess is committed
         // it would be the blunder-check performed on the player's behalf (docs/adr/0015); at the
         // commit the engine is already talking, and hiding the reading behind another tap buys
-        // nothing (docs/adr/0020).
+        // nothing (docs/adr/0021).
         showsControlChange = true
         isRevealing = true
         revealTask?.cancel()
@@ -1471,7 +1471,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
             }
             // Analysed rather than merely evaluated: `evaluate` throws the Line away, and the
             // Line after the Guess is what the board reads to say which squares mattered. Same
-            // search, same Depth, one more thing kept (docs/adr/0020).
+            // search, same Depth, one more thing kept (docs/adr/0021).
             var afterGuess: Line?
             for await snapshot in engine.analyse(guessed, budget: .depth(depth), lines: 1) {
                 if Task.isCancelled { return }
@@ -1506,7 +1506,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
                 guessLine: Array((afterGuess?.san ?? []).prefix(Game.Ply.lineLimit)),
                 // Read from the Line the same search produced, not asked for separately: the
                 // engine gives a number and a sequence of moves and never a reason, and this is
-                // the reason (docs/adr/0020).
+                // the reason (docs/adr/0021).
                 bestReading: before.reading(of: best?.san ?? []),
                 intent: declared,
                 intentCheck: check
@@ -1817,7 +1817,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         // be doing right now" has to include "nothing, nobody is watching".
         guard let engine, !position.isOver, !engine.isPaused else { return }
 
-        // Wherever the eye is, not only on the latest position (docs/adr/0023). The engine still
+        // Wherever the eye is, not only on the latest position (docs/adr/0024). The engine still
         // only *plays* from the latest one — `isEngineTurn` says so — so a probe at a past Ply
         // costs one bounded search and moves nothing.
         if isFindingTactics {
@@ -1834,7 +1834,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
     /// engine back to whatever it was going to do — its own move, or a Stint of advice.
     ///
     /// Before, not after: a prompt that lands once the opponent has already moved is a
-    /// post-mortem (docs/adr/0022). The table is left warm on purpose.
+    /// post-mortem (docs/adr/0023). The table is left warm on purpose.
     private func probeTactics(on position: Game, using engine: any Engine) {
         if recallCachedAnalysis(), let found = analysis {
             tactic = Tactic.confirmed(in: position, analysis: found)
@@ -2118,7 +2118,7 @@ public enum GameOrigin: String, Hashable, Sendable, Codable {
         save()
     }
 
-    /// The same, from a pass that kept the Line each Score came out of (docs/adr/0020).
+    /// The same, from a pass that kept the Line each Score came out of (docs/adr/0021).
     public func applyReview(_ reviewed: [ReviewedPly], startEvaluation: Score?, depth: Int) {
         game.applyReview(reviewed, startEvaluation: startEvaluation, depth: depth)
         save()

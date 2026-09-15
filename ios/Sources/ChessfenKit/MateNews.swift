@@ -1,5 +1,5 @@
 /// A mate the engine can already see from the position on screen, whoever it belongs to
-/// (docs/adr/0023).
+/// (docs/adr/0024).
 ///
 /// The one thing on this screen that is **news** rather than an answer: nobody asked for it, and
 /// it is not the engine's opinion — a Score is a judgement and 「你三步之后不在了」 is a fact. That

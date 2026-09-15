@@ -1,4 +1,4 @@
-/// A square the board judged worth drawing, and the reason it is worth drawing (docs/adr/0020).
+/// A square the board judged worth drawing, and the reason it is worth drawing (docs/adr/0021).
 ///
 /// The layer used to paint every square a move changed hands over — nine or ten of them, in two
 /// colours, with a legend that counted them. That is a diff, and a player cannot act on a diff:
@@ -278,7 +278,7 @@ extension Game {
     ) -> String {
         // Every one of these says the square, then who it belongs to now, then *what that lets
         // somebody do*. The last clause is the one that used to be missing: 「d7 补上了」 is a fact
-        // about a map, and a player asked to act on a map asks 然后呢 (docs/adr/0020, 0021).
+        // about a map, and a player asked to act on a map asks 然后呢 (docs/adr/0021, 0022).
         let what: String =
             switch (kind, isGain, isTheKingsOwnSquare) {
             case (.ownKing, false, true):
@@ -381,7 +381,7 @@ extension Game {
 ///
 /// "You let go of d5" is a fact about a map. "Their knight is three moves from d5 and no pawn of
 /// yours will ever attack it again" is a fact about the game, and it is the one a player can do
-/// something about. This is the second half of the 然后呢 (docs/adr/0020).
+/// something about. This is the second half of the 然后呢 (docs/adr/0021).
 public struct Occupation: Hashable, Sendable {
     public let piece: Piece
     public let from: Square
@@ -404,7 +404,7 @@ extension Rules {
     /// board as it stands, treating its own side's pieces as walls and the other side's as squares
     /// it may land on. Nobody replies. What it answers is "how far away is that knight", which is
     /// the question a player actually asks about an outpost — not "can this be forced", which is a
-    /// search and would cost a Stint (docs/adr/0019).
+    /// search and would cost a Stint (docs/adr/0020).
     ///
     /// Nil when the piece cannot get there within `horizon` moves. Three by default: a piece four
     /// moves away from a square is not a fact about this position.
@@ -528,7 +528,7 @@ extension Rules {
 /// The mirror of an Occupation, and the half of a move's cost that never shows up as anything
 /// changing hands: a square you are shut out of was never yours to lose. 「管住了 d5」 and 「站不上
 /// 去」 are both true of the same square, and only the second one explains why the position feels
-/// stuck (docs/adr/0020).
+/// stuck (docs/adr/0021).
 public struct ShutOut: Hashable, Sendable {
     public let piece: Piece
     public let from: Square

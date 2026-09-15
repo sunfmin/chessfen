@@ -104,13 +104,13 @@ struct BoardView: View {
     /// Where a scanned square can be reached from: pieces of the side to move, dashed.
     ///
     /// Dashed and in the player's own colour, because a way in is a possibility and not a move —
-    /// the solid marks on this board all belong to something that happened (docs/adr/0020).
+    /// the solid marks on this board all belong to something that happened (docs/adr/0021).
     var ways: Set<Square> = []
     /// The one to three squares the move is actually about, in order, most important first.
     ///
     /// Not every square that changed hands. Ten squares in two colours is a diff, and a player
     /// cannot act on a diff — so the rules propose and the engine disposes, and what reaches the
-    /// board is what survived both (docs/adr/0020). Numbered, because each one has a sentence
+    /// board is what survived both (docs/adr/0021). Numbered, because each one has a sentence
     /// under the board and a square with no number cannot be matched to one.
     var key: [KeySquare] = []
     /// A whole plan at once: one numbered arrow per move, yours and the answers to them.
@@ -191,7 +191,7 @@ struct BoardView: View {
             )
         }
         .aspectRatio(1, contentMode: .fit)
-        .accessibilityLabel("棋盘")
+        .accessibilityLabel(localized("board"))
         .onAppear { tracked.settle(to: pieces) }
         .onChange(of: pieces) { _, placement in
             // Snappy rather than smooth: a move should land, not glide. Long enough to see

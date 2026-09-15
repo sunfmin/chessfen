@@ -19,17 +19,15 @@ struct ImportSheet: View {
 
         var label: String {
             switch self {
-            case .link: "链接"
-            case .player: "最近对局"
+            case .link: localized("import.door.link")
+            case .player: localized("import.door.player")
             }
         }
 
         var explainer: String {
             switch self {
-            case .link:
-                "贴一个链接——一个 lichess 研究，或者一局棋——里面的每一局会变成作品集里的一局。"
-            case .player:
-                "填一个 lichess 用户名，把最近几局拉下来。上飞机前干这一步。"
+            case .link: localized("import.door.link.explained")
+            case .player: localized("import.door.player.explained")
             }
         }
     }
@@ -74,9 +72,9 @@ struct ImportSheet: View {
 
                     switch door {
                     case .link:
-                        field("PGN 链接", text: $input, keyboard: .URL)
+                        field(localized("import.field.link"), text: $input, keyboard: .URL)
                     case .player:
-                        field("lichess 用户名", text: $player, keyboard: .default)
+                        field(localized("import.field.player"), text: $player, keyboard: .default)
                         howMany
                     }
 
@@ -84,13 +82,13 @@ struct ImportSheet: View {
 
                     switch session.phase {
                     case .idle:
-                        primaryButton("获取棋谱", isEnabled: canFetch, action: fetch)
+                        primaryButton(localized("import.fetch"), isEnabled: canFetch, action: fetch)
                     case .fetching:
-                        waiting("在下载棋谱…")
+                        waiting(localized("import.fetching"))
                     case .ready(let plan):
                         ready(plan)
                     case .importing:
-                        waiting("在写入…")
+                        waiting(localized("import.writing"))
                     case .done(let outcome):
                         done(outcome)
                     case .failed(let error):
@@ -100,14 +98,14 @@ struct ImportSheet: View {
                 .padding(16)
             }
             .background(Palette.parchment)
-            .navigationTitle("导入棋局")
+            .navigationTitle(localized("import.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Palette.parchment, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .tint(Palette.analysis)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("取消") { dismiss() }
+                    Button(localized("cancel")) { dismiss() }
                 }
             }
             .onAppear(perform: prefill)
@@ -137,7 +135,7 @@ struct ImportSheet: View {
     /// "the last few" and "enough for a flight", and neither is a number anyone has in mind.
     private var howMany: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("拉几局").eyebrow()
+            Text(localized("import.howMany")).eyebrow()
             HStack(spacing: 8) {
                 ForEach([5, 10, 20, 50], id: \.self) { many in
                     Button {
@@ -174,11 +172,11 @@ struct ImportSheet: View {
     @ViewBuilder
     private var collection: some View {
         if let targetCollection {
-            Text("导入到「\(targetCollection)」").eyebrow()
+            Text(localized("import.into", targetCollection)).eyebrow()
         } else {
             VStack(alignment: .leading, spacing: 6) {
-                Text("导入到作品集").eyebrow()
-                TextField("作品集名字", text: $collectionDraft)
+                Text(localized("import.intoCollection")).eyebrow()
+                TextField(localized("collection.name"), text: $collectionDraft)
                     .font(.subheadline)
                     .foregroundStyle(Palette.ink)
                     .padding(.horizontal, 14)
@@ -206,12 +204,12 @@ struct ImportSheet: View {
                         .foregroundStyle(Palette.inkSoft)
                 }
                 if plan.chapters.count > 5 {
-                    Text("还有 \(plan.chapters.count - 5) 局…")
+                    Text(localized("import.more", plural: plan.chapters.count - 5))
                         .font(.footnote)
                         .foregroundStyle(Palette.inkSoft)
                 }
                 if plan.unreadable > 0 {
-                    Text("有 \(plan.unreadable) 局没能读出来，会跳过。")
+                    Text(localized("import.unreadable", plural: plan.unreadable))
                         .font(.footnote)
                         .foregroundStyle(Palette.alarm)
                 }
@@ -220,14 +218,17 @@ struct ImportSheet: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Palette.raised, in: RoundedRectangle(cornerRadius: 12))
 
-            primaryButton("导入 \(plan.chapters.count) 局", isEnabled: canImport, action: importNow)
+            primaryButton(
+                localized("import.apply", plural: plan.chapters.count),
+                isEnabled: canImport, action: importNow
+            )
         }
     }
 
     private func summary(of plan: PGNImport.ImportPlan) -> String {
-        let many = "\(plan.chapters.count) 局"
+        let many = localized("import.plan.games", plural: plan.chapters.count)
         guard let suggested = plan.suggestedCollection else { return many }
-        return "「\(suggested)」· \(many)"
+        return localized("import.plan.named", suggested, many)
     }
 
     private func done(_ outcome: PGNImport.ImportOutcome) -> some View {
@@ -241,7 +242,7 @@ struct ImportSheet: View {
                     input = ""
                     collectionDraft = ""
                 } label: {
-                    Text("再导入一个")
+                    Text(localized("import.again"))
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(Palette.ink)
                         .padding(.horizontal, 16)
@@ -252,7 +253,7 @@ struct ImportSheet: View {
                 Button {
                     dismiss()
                 } label: {
-                    Text("完成")
+                    Text(localized("done"))
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(Palette.parchment)
                         .padding(.horizontal, 16)
@@ -281,7 +282,7 @@ struct ImportSheet: View {
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Palette.alarm.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
-            primaryButton("重试", isEnabled: true, action: fetch)
+            primaryButton(localized("retry"), isEnabled: true, action: fetch)
         }
     }
 

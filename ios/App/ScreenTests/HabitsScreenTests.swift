@@ -7,7 +7,7 @@ import Testing
 /// 老毛病, photographed — and held to the one promise it makes: a count and a way back to the
 /// move, never a rating and never a percentage (docs/adr/0018).
 @MainActor
-@Suite(.serialized)
+@Suite(.serialized, .speaking(.chinese))
 struct HabitsScreenshots {
     private static func played(_ moves: [String]) throws -> Game {
         try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: moves))

@@ -193,7 +193,7 @@ struct EngineClock {
     // ------------------------------------------------------------------- the Stint
 
     /// The advisory search used to deepen for as long as it was left alone, which on a phone put
-    /// down on a table is for ever. It now runs a Stint and stops (docs/adr/0019).
+    /// down on a table is for ever. It now runs a Stint and stops (docs/adr/0020).
     @Test("advice runs its Stint and then stops, keeping what it found")
     func adviceStopsAfterItsStint() async throws {
         let engine = ScriptedEngine(Self.searching, isEndless: true)

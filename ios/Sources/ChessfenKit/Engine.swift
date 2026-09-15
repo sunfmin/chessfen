@@ -49,7 +49,7 @@ public protocol Engine: AnyObject, Sendable {
     func evaluate(_ game: Game, budget: SearchBudget) async -> Score?
     /// One `ReviewedPly` per ply: the Score after that ply, and the Line the same search
     /// produced. The Line is picked up here because this is the only search that visits every
-    /// position of a Game, and fetching it later would cost a Stint (docs/adr/0019, 0020).
+    /// position of a Game, and fetching it later would cost a Stint (docs/adr/0020, 0021).
     func review(
         _ game: Game, depth: Int, onPly: (@Sendable (Int, ReviewedPly) -> Void)?
     ) async -> [ReviewedPly]

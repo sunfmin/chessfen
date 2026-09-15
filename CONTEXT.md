@@ -103,14 +103,14 @@ What the engine reports about a Position: a Score, a Depth, and one or more Line
 while it runs and its answer keeps changing, so an Analysis is always a snapshot at a
 Depth, never a verdict. It belongs to a screen someone is looking at: the engine does not
 take one up while the app is away (docs/adr/0009), and it runs in Stints rather than for
-as long as it is left alone (docs/adr/0019). Never mutates a Game.
+as long as it is left alone (docs/adr/0020). Never mutates a Game.
 _Avoid_: evaluation (ambiguous with the engine's static eval), hint, suggestion
 
 **Stint**:
 Ten seconds of advice, after which the engine stops and the strip under the board offers
 another. The unit an Analysis is bought in — a clock the session keeps rather than a
 budget handed to the engine, so a search that belongs to a screen is still refused while
-the app is away (docs/adr/0019). Arriving at a card that reads a Line spends one, even
+the app is away (docs/adr/0020). Arriving at a card that reads a Line spends one, even
 during Practice: the swipe is the asking and the board stays silent. What ends one is the
 clock; what ends the *silence* after it is a person pressing 再算 10 秒. Says nothing about
 the engine's own move, which is bounded by Thinking Time, or about a Review, which is
@@ -151,7 +151,7 @@ The Score as a length under the board: the side at the bottom of the board owns 
 and wears that side's own colour, because a colour on this screen is a piece's colour and never a
 left one or a right one. The number beside it stays White-relative — `+3.00` is White three pawns
 up whichever way the board is turned — so the two answer different questions: the number says who is
-winning, the bar says how much of the board in front of you is theirs (docs/adr/0025). Over when the
+winning, the bar says how much of the board in front of you is theirs (docs/adr/0026). Over when the
 game is: a finished game has no Score to draw, and the bar carries the result instead.
 _Avoid_: eval bar, gauge, meter, advantage meter, evaluation graph
 
@@ -205,14 +205,14 @@ A shot for the side to move that wins material or mates. The rules propose it �
 winning capture, a double attack — and a short search confirms the engine would play it, or
 else names a forcing line the rules did not. Named in a sentence the rules code can check,
 in the seven Intent verbs where they fit, never as a motif. Whose it is follows who is to
-move: after you play it is theirs, after they play it is yours (docs/adr/0022).
+move: after you play it is theirs, after they play it is yours (docs/adr/0023).
 _Avoid_: fork, pin, skewer, puzzle, combo, tactic puzzle
 
 **战术发现器**:
 What lets a Tactic be named on the position on screen. Off at the start of every Game and never
 written to PGN, like Practice — but **arriving at the 战术 card of 一叠卡片 turns it on**, and
 leaving turns it off again unless somebody flipped its switch by hand: swiping onto the card is
-the asking (docs/adr/0023). It talks about whichever Ply is on screen, a past one included, and
+the asking (docs/adr/0024). It talks about whichever Ply is on screen, a past one included, and
 Practice can stay on: then the board has no Score and no candidate Lines, only the shot if there
 is one. 战术 on screen.
 _Avoid_: hint mode, blunder check, coach, assistant
@@ -221,7 +221,7 @@ _Avoid_: hint mode, blunder check, coach, assistant
 A mate the engine can already see from the position on screen, said out loud without being
 asked. The one thing allowed to speak first, because it is a fact rather than a judgement: a
 Score can be argued with, 「你三步之后不在了」 cannot, and a fact withheld is a trick
-(docs/adr/0015, 0023). Never starts a search — it reads whichever one already ran, the standing
+(docs/adr/0015, 0024). Never starts a search — it reads whichever one already ran, the standing
 Analysis or 战术发现器's probe, so Practice with the finder off says nothing. Whose mate it is
 comes out of the sign of one White-relative number and which Controllers a person holds: 你有
 2 步杀 / 对方 2 步杀 / 白方 2 步杀. Every clause of its sentence is counted by replaying the
@@ -244,7 +244,7 @@ silent. Dealing the deck is an arrival too, so opening a game on 要害 spends t
 What that search found is kept for the position, so paging to another card of the
 same Ply does not wind the clock again. While it is climbing, and still after it has
 stopped, the card names the Depth as 层级 — a spinner with no figure is the engine
-looking dead (docs/adr/0019). 练习 does not — the player moves first,
+looking dead (docs/adr/0020). 练习 does not — the player moves first,
 then the card says what the move bought, what it cost, and what the engine would have done
 (练习 on a past Ply is a Drill; on any other card a move from there is a Variation, named
 on the record). 五步 carries two halves: the engine's Line, and 五步计划 under it. 复盘 is
@@ -254,13 +254,13 @@ in the home-indicator band; tapping one or swiping the page are the same turn.
 **A card that is already at work is not moved by news**: 步杀消息 takes the eye, but never off a
 plan being written, a question being asked, a square being scanned, or a Line being walked —
 五步 spends the Stint that finds the mate, so the unguarded version tore down the walk that paid
-for the news (docs/adr/0023).
+for the news (docs/adr/0024).
 The card itself starts with the one-line subtitle, not with its name again. It occupies
 the room under the record; a body longer than that scrolls inside the card, and fades at its
 bottom only while there is more of it than fits. **That room is part of what the board is sized
 against**: the deck's chrome, its names and the card it wants are taken off the board's height
 before the board's own minimum is applied, so the board gives way and the deck never does
-(docs/adr/0024). A phone is therefore held in portrait — 402 points of height is no board, no
+(docs/adr/0025). A phone is therefore held in portrait — 402 points of height is no board, no
 record and five cards.
 _Avoid_: carousel, sections, panels, accordion
 
@@ -270,7 +270,7 @@ engine silent, and a move — with an Intent, when one is asked for — has to b
 before anything is revealed. The player's examination, as against a Review, which is the
 engine's report. Neither a screen of its own nor a mode: it is what the 练习 card is when
 the engine's opinion is off and the Ply being looked at is a past one (docs/adr/0015,
-amended by 0023: the card in front is the one that acts). A past Ply on any other card is
+amended by 0024: the card in front is the one that acts). A past Ply on any other card is
 still the Game — a move played there is a Variation, named on the record.
 _Avoid_: puzzle, quiz, test, exercise, training — and not Review
 
@@ -293,7 +293,7 @@ What one move did to the map of who holds which squares, split by which way each
 for the side that played it: the squares it took a grip on and the squares it let go of. Two
 sets and not one — a move's gains and its costs are opposite facts. Not what the board draws:
 it is the **candidate pool** a 要害格 is chosen out of, because ten squares in two colours is
-a diff and a player cannot act on a diff (docs/adr/0020). Only ever computed for a past
+a diff and a player cannot act on a diff (docs/adr/0021). Only ever computed for a past
 position, and always about that position's last Ply, which is the Guess when there is one.
 _Avoid_: influence, coverage, heat map, territory, diff
 
@@ -313,7 +313,7 @@ Ephemeral by definition: no Variation is made, nothing reaches the PGN, and leav
 restores the position exactly — a Line is a hypothesis and nothing was played. The
 concrete form of "seeing five moves ahead", as against being told that one should. The card
 named 五步, and its second half is 五步计划: the engine's five on the board, and five of your own
-with one reason over them, are one subject (docs/adr/0021).
+with one reason over them, are one subject (docs/adr/0022).
 _Avoid_: playback, animation, preview, autoplay, simulation, 走马灯
 
 **五步计划**:
@@ -324,7 +324,7 @@ had enough replies that no claim about the position is falsifiable, and an Inten
 be told false is not one (docs/adr/0018). Opening it — 「开始写」, under the engine's five on the
 五步 card — draws the engine's best five on the board
 and leaves the board live: you move on it — the engine's move or your own — and the five are
-recomputed from wherever that leaves you (docs/adr/0021). What you *walked* is the plan; what
+recomputed from wherever that leaves you (docs/adr/0022). What you *walked* is the plan; what
 is drawn ahead of you is advice and is never committed. Walking past five is free; it is 交卷
 the cap closes. Stored as an ordinary Variation — the Game
 and the PGN already know how to hold one — with the Intent on its first Ply carrying how far it
@@ -378,7 +378,7 @@ _Avoid_: preview, sandbox, temporary move, simulation
 **Line Reading**:
 What the engine's Line is *for*, in the same seven verbs an Intent declares in — read out of
 the moves rather than declared by anybody, because an engine gives a number and a sequence of
-moves and never a reason (docs/adr/0020). Every verb it prints is proposed by the reader and
+moves and never a reason (docs/adr/0021). Every verb it prints is proposed by the reader and
 then confirmed by the same checker that tells a declared Intent false, so the two cannot
 drift and the app can be told wrong about its own reading. It names the recommendation and at
 most one later move of the mover's own — 「攻 e5」, 「护 f2，往后第 3 步 d4 再 挡 d4」 — and 说不清
@@ -408,3 +408,21 @@ One time a Failure Mode happened: the Game's file, the Ply, and one sentence abo
 board said. The unit a count is made of, and the way back — a Failure Mode that could not
 name the moves it was counted from would be a grade with extra steps.
 _Avoid_: instance, hit, event, record, entry
+
+### The words
+
+**Language**:
+One of the eight the app speaks — Chinese, English, French, Japanese, Korean, German,
+Spanish, Portuguese. Chinese is the one it was written in and the one every other falls
+back to key by key, so an untranslated sentence appears in Chinese rather than as a key
+(docs/adr/0019).
+_Avoid_: locale (that is the Foundation object dates and numbers are formatted with),
+translation, region
+
+**Speech**:
+Which Language the app is talking in right now: the one the person chose, or failing that
+the best match for the phone's own list. Not the system's resolution but ours, because the
+choice is the app's to keep — a phone in English held by somebody who reads chess in
+Chinese is the ordinary case — and because a test can then scope one language around
+itself without disturbing another running beside it.
+_Avoid_: current locale, language setting, i18n

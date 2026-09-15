@@ -5,14 +5,14 @@ Two decisions, taken together because the second is what made the first affordab
 ## A mate is news
 
 docs/adr/0015 keeps the engine quiet: no Score, no arrow, nothing whispering a move until the
-player has answered first. docs/adr/0022 opened that by exactly one crack — a Tactic, on the
+player has answered first. docs/adr/0023 opened that by exactly one crack — a Tactic, on the
 latest position, behind a switch. **A mate walks through the same crack, and does it on the
 strength of being a different kind of statement.** A Score is a judgement and can be argued
 with. 「你三步之后不在了」 is a fact, and a fact withheld is not teaching, it is a trick.
 
 **步杀消息 announces itself. It never starts a search.** It reads whichever search has already
 run: the standing Analysis when the engine's opinion is on, or 战术发现器's bounded probe when
-it is not (`depth 10`, docs/adr/0022). Practice with the finder off has searched nothing, so it
+it is not (`depth 10`, docs/adr/0023). Practice with the finder off has searched nothing, so it
 says nothing — the quiet default of docs/adr/0015 is intact, and there is one engine still
 (docs/adr/0009).
 
@@ -24,7 +24,7 @@ board. 「不管是对方的还是我方的」 is therefore not a second feature
 Every clause of the sentence is counted, not asserted: the line is replayed and the rules asked
 how many of the answers were the only legal move, and whether the line actually ends in mate. A
 mate Score whose line stops short is still news and says so. Like every other sentence in the
-layer (docs/adr/0020), it can be told it was wrong.
+layer (docs/adr/0021), it can be told it was wrong.
 
 The line draws as numbered arrows in the same violet-and-red as 五步计划, capped at six plies.
 五步计划 stops at five for what can be **checked** (docs/adr/0018); this stops at six for what
@@ -57,7 +57,7 @@ taught before you can use.
 your own with one reason over them are one subject — looking five moves ahead — and the session
 already keeps the two off each other's board: starting a plan ends the walk, and starting a walk
 is refused over a draft. It was a card of its own until the deck was cut to five
-(docs/adr/0021), and it went unreachable with them; anything a cutting of the deck takes off the
+(docs/adr/0022), and it went unreachable with them; anything a cutting of the deck takes off the
 screen has to be re-housed or retired on purpose, because nothing about a view that stops being
 referenced is red — the tests call the session, and the session was never the part that was
 missing.
@@ -98,7 +98,7 @@ opens a game spends its Stint like any other arrival. The alternative was a firs
 「滑到这张卡会算 10 秒」 while it was the card in front and the engine was already there — the deal
 ran before `attach`, so the one card nobody had to swipe to was the one card that never asked.
 
-**杀招 and 战术 speak about a past Ply too**, which is a straight amendment to docs/adr/0022's
+**杀招 and 战术 speak about a past Ply too**, which is a straight amendment to docs/adr/0023's
 「a past Ply is still a Drill, and the finder is silent there」. Both are cards of their own now,
 one swipe from 练习 rather than printed on top of it, so going to look is a thing somebody does
 on purpose — and a mate on a Ply you walked back to is the same fact about the same board. The

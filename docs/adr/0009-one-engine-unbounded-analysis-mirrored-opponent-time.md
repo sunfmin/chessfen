@@ -10,7 +10,7 @@ Search is **unbounded** when advising: iterative deepening runs for as long as t
 leaves it, and the UI re-renders every `info` update, so the recommended move and score
 visibly change as depth climbs. Reproducibility is explicitly given up.
 
-> Amended by [ADR 0019](0019-advice-runs-in-ten-second-stints-and-the-strip-says-so.md):
+> Amended by [ADR 0020](0020-advice-runs-in-ten-second-stints-and-the-strip-says-so.md):
 > the advisory search is still asked for unbounded — everything below about the pause gate
 > turns on that — but it is stopped after ten seconds by a clock the session keeps, because
 > "for as long as the player leaves it" is for ever on a phone put down on a table.

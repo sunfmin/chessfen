@@ -1,6 +1,6 @@
 # The deck's room is part of the board's budget, and a phone is held in portrait
 
-docs/adr/0023 put one card at a time under the board and made the card the whole of what a
+docs/adr/0024 put one card at a time under the board and made the card the whole of what a
 position can do. That deck is sized — `peek - railHeight` — out of whatever the board leaves, and
 what the board leaves was `size.height - 388` with a `max(240, …)` over it. **The `max` was a
 second decision nobody had taken.** On a screen shorter than the sum the board kept its minimum and
@@ -98,4 +98,4 @@ is whatever is left. `DeckFloor` renders that size and holds the card, the names
   if the row is added and the budget is not.
 - The deck is still exactly as tall as the room it is given, so a sparse card still wears empty
   panel and a full one still cuts a row where the viewport ends. That is the price of a board that
-  does not move when the cards change (docs/adr/0023) and it is not paid here.
+  does not move when the cards change (docs/adr/0024) and it is not paid here.

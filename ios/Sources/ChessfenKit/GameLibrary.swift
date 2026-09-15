@@ -60,15 +60,15 @@ import Foundation
         }
 
         public var detail: String {
-            if isDownloading { return "正在从 iCloud 下载…" }
-            guard let pgn else { return "无法读取" }
+            if isDownloading { return localized("library.entry.downloading") }
+            guard let pgn else { return localized("library.entry.unreadable") }
             let date = pgn.tag("Date") ?? ""
             let result = pgn.game.resultToken
             let moves = (pgn.game.plies.count + 1) / 2
-            var parts = ["\(origin.chinese)", date, "\(moves) 回合"]
-            parts.append(result == "*" ? "未结束" : result)
+            var parts = [origin.label, date, localized("library.entry.moves", plural: moves)]
+            parts.append(result == "*" ? localized("library.entry.unfinished") : result)
             let branches = pgn.game.plies.reduce(0) { $0 + $1.variations.count }
-            if branches > 0 { parts.append("\(branches) 条分叉") }
+            if branches > 0 { parts.append(localized("library.entry.branches", plural: branches)) }
             return parts.joined(separator: " · ")
         }
     }
@@ -131,7 +131,7 @@ import Foundation
         let stem = url.deletingPathExtension().lastPathComponent
         let stamp = stem.hasPrefix("chessfen-") ? String(stem.dropFirst("chessfen-".count)) : stem
         guard let date = stampFormatter.date(from: stamp) else { return stem }
-        return readableFormatter.string(from: date)
+        return readable(date)
     }
 
     // ------------------------------------------------------------------ naming
@@ -384,9 +384,14 @@ import Foundation
     }()
 
     /// The same instant as something to read in a list.
-    private nonisolated static let readableFormatter: DateFormatter = {
+    ///
+    /// Built per call rather than kept, because it is spelt in whatever language the app is
+    /// currently speaking — and asked for as a template, so each language puts the day, the month
+    /// and the hour in its own order: 8月30日 21:14, Aug 30 at 21:14, 30 août 21:14.
+    nonisolated static func readable(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "M月d日 HH:mm"
-        return formatter
-    }()
+        formatter.locale = Speech.locale
+        formatter.setLocalizedDateFormatFromTemplate("Md HH:mm")
+        return formatter.string(from: date)
+    }
 }

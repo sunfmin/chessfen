@@ -7,7 +7,7 @@ private func position(_ fen: String) throws -> Game {
 
 /// 走马灯: the Line played out on the board, and one sentence saying where it arrived. Without that
 /// sentence a carousel is reciting moves — the position is different afterwards and the difference
-/// is exactly what a beginner cannot see (docs/adr/0020).
+/// is exactly what a beginner cannot see (docs/adr/0021).
 @Test("a line that wins a piece says which piece, from either side's count")
 func theOutcomeCountsWhatWasTaken() throws {
     // White takes the knight on d5 with a pawn; Black takes the pawn back with the king.

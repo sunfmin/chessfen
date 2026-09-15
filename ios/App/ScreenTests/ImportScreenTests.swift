@@ -10,7 +10,7 @@ import Testing
 /// Serialized and on the main actor for the same reason the game screen tests are: there is
 /// one screen, and two of these rendering at once would be photographing the wrong window.
 @MainActor
-@Suite(.serialized)
+@Suite(.serialized, .speaking(.chinese))
 struct ImportScreenScreenshots {
     /// A two-chapter study in the shape lichess exports, with chapters named like the ones a
     /// person has actually named. Kept here rather than shared with the kit's tests, because

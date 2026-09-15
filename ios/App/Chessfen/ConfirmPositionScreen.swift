@@ -125,7 +125,7 @@ struct ConfirmPositionScreen: View {
             done
         }
         .background(Palette.parchment)
-        .navigationTitle("改棋子")
+        .navigationTitle(localized("edit.title"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Palette.parchment, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
@@ -140,32 +140,34 @@ struct ConfirmPositionScreen: View {
                         Button {
                             isPictureShowing = true
                         } label: {
-                            Label("看照片", systemImage: "photo")
+                            Label(localized("edit.seePhoto"), systemImage: "photo")
                         }
                     }
                     Button {
                         isAdvancedShowing.toggle()
                     } label: {
                         Label(
-                            isAdvancedShowing ? "收起易位和吃过路兵" : "易位和吃过路兵",
+                            localized(
+                                isAdvancedShowing ? "edit.advanced.hide" : "edit.advanced.show"
+                            ),
                             systemImage: "slider.horizontal.3"
                         )
                     }
                     Button {
                         UIPasteboard.general.string = draft.fen
                     } label: {
-                        Label("复制 FEN", systemImage: "doc.on.doc")
+                        Label(localized("edit.copyFEN"), systemImage: "doc.on.doc")
                     }
                     Divider()
                     Button {
                         draft.reset()
                     } label: {
-                        Label("摆成开局", systemImage: "arrow.counterclockwise")
+                        Label(localized("edit.reset"), systemImage: "arrow.counterclockwise")
                     }
                     Button(role: .destructive) {
                         draft.clear()
                     } label: {
-                        Label("清空棋盘", systemImage: "trash")
+                        Label(localized("edit.clear"), systemImage: "trash")
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -178,7 +180,7 @@ struct ConfirmPositionScreen: View {
                     photoImage
                         .resizable()
                         .scaledToFit()
-                        .navigationTitle("照片")
+                        .navigationTitle(localized("edit.photo"))
                         .navigationBarTitleDisplayMode(.inline)
                 }
             }
@@ -191,11 +193,11 @@ struct ConfirmPositionScreen: View {
     /// screen opens on, and telling someone they are about to put a piece down when they are about
     /// to take one off is worse than saying nothing.
     private var hint: String {
-        if isShowingPhotoAlone { return "这是照片本身，点格子不改子" }
+        if isShowingPhotoAlone { return localized("edit.hint.photo") }
         return switch brush {
-        case .none: "先选一个棋子，再点格子"
-        case .eraser: "点格子把子拿走"
-        case .piece: "点格子放下，点同一格拿走"
+        case .none: localized("edit.hint.pick")
+        case .eraser: localized("edit.hint.erase")
+        case .piece: localized("edit.hint.place")
         }
     }
 
@@ -266,11 +268,11 @@ struct ConfirmPositionScreen: View {
         if hasBoardPhoto {
             HStack(spacing: 10) {
                 ChipCluster(
-                    title: "照片",
+                    title: localized("edit.photo"),
                     options: [
-                        .init(value: PhotoMode.off, label: "关"),
-                        .init(value: PhotoMode.under, label: "叠着看"),
-                        .init(value: PhotoMode.alone, label: "只看照片"),
+                        .init(value: PhotoMode.off, label: localized("edit.photo.off")),
+                        .init(value: PhotoMode.under, label: localized("edit.photo.under")),
+                        .init(value: PhotoMode.alone, label: localized("edit.photo.alone")),
                     ],
                     selection: photo
                 ) { mode in
@@ -293,7 +295,7 @@ struct ConfirmPositionScreen: View {
     private var peek: some View {
         HStack(spacing: 5) {
             Image(systemName: isPeeking ? "eye.fill" : "eye").font(.footnote)
-            Text("按住看").font(.footnote.weight(.medium))
+            Text(localized("edit.peek")).font(.footnote.weight(.medium))
         }
         .foregroundStyle(isPeeking ? Palette.parchment : Palette.ink)
         .padding(.horizontal, 12)
@@ -380,7 +382,7 @@ struct ConfirmPositionScreen: View {
         VStack(spacing: 10) {
             if !draft.possibleCastling.isEmpty {
                 HStack(spacing: 8) {
-                    Text("易位权").eyebrow()
+                    Text(localized("edit.castling")).eyebrow()
                     Spacer(minLength: 0)
                     ForEach(castlingRights, id: \.right) { entry in
                         Button {
@@ -398,15 +400,18 @@ struct ConfirmPositionScreen: View {
             }
             if !draft.possibleEnPassantSquares.isEmpty {
                 HStack {
-                    Text("吃过路兵").eyebrow()
+                    Text(localized("edit.enPassant")).eyebrow()
                     Spacer()
                     Menu {
-                        Button("无") { draft.enPassant = nil }
+                        Button(localized("edit.none")) { draft.enPassant = nil }
                         ForEach(draft.possibleEnPassantSquares, id: \.self) { square in
                             Button(square.description) { draft.enPassant = square }
                         }
                     } label: {
-                        Chip(label: draft.enPassant?.description ?? "无", isOn: draft.enPassant != nil)
+                        Chip(
+                            label: draft.enPassant?.description ?? localized("edit.none"),
+                            isOn: draft.enPassant != nil
+                        )
                     }
                 }
             }
@@ -420,14 +425,14 @@ struct ConfirmPositionScreen: View {
             if let issue = draft.verdict.issue {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill").font(.caption)
-                    Text(issue.chinese).font(.footnote)
+                    Text(issue.label).font(.footnote)
                 }
                 .foregroundStyle(Palette.alarm)
             }
             Button {
                 finish()
             } label: {
-                Text(isCorrection ? "用这个局面" : "开始新对局")
+                Text(localized(isCorrection ? "edit.useThis" : "edit.startGame"))
                     .font(.headline)
                     .foregroundStyle(Palette.parchment)
                     .frame(maxWidth: .infinity)
@@ -489,7 +494,10 @@ struct ConfirmPositionScreen: View {
     }
 
     private var castlingRights: [(right: Character, label: String)] {
-        [("K", "白 O-O"), ("Q", "白 O-O-O"), ("k", "黑 O-O"), ("q", "黑 O-O-O")]
+        [
+            ("K", localized("edit.castling.K")), ("Q", localized("edit.castling.Q")),
+            ("k", localized("edit.castling.k")), ("q", localized("edit.castling.q")),
+        ]
             .filter { draft.possibleCastling.contains($0.0) }
             .map { (right: $0.0, label: $0.1) }
     }

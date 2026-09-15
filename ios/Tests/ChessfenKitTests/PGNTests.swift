@@ -185,7 +185,7 @@ func setTagKeepsOrder() throws {
 // ---------------------------------------------------- the lines a Review kept
 
 /// The Line the Review's own search produced, kept because it is the only free copy of it there
-/// will ever be: asking again later would cost a Stint (docs/adr/0019, 0020).
+/// will ever be: asking again later would cost a Stint (docs/adr/0020, 0021).
 @Test("the lines a Review kept survive being written out and read back")
 func pgnRoundTripsTheReviewsLines() throws {
     var game = try #require(Game(startFEN: start, uciMoves: ["e2e4", "e7e5", "g1f3"]))

@@ -1,6 +1,6 @@
 # A Ply's evaluation belongs to a Review, and to nothing else
 
-> Extended by [ADR 0020](0020-the-layer-names-a-few-squares-instead-of-reporting-them-all.md): a Review now keeps
+> Extended by [ADR 0021](0021-the-layer-names-a-few-squares-instead-of-reporting-them-all.md): a Review now keeps
 > the Line it produced alongside the Score, under the same rule — nothing but a Review
 > writes either. The Line is what lets the board say which squares a move actually cost,
 > and keeping it costs no engine time, because the search that produced the Score produced

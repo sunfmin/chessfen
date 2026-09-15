@@ -5,7 +5,7 @@ import Testing
 
 /// The one board as a study: browse back, answer, then be told (docs/adr/0015).
 @MainActor
-@Suite struct StudyTests {
+@Suite(.speaking(.chinese)) struct StudyTests {
     /// Four plies, so ply 3 is a real question with a real answer already in the file.
     private static let opening = ["e2e4", "e7e5", "g1f3", "b8c6"]
 
@@ -205,7 +205,7 @@ import Testing
         #expect(session.planOutcome?.steps == 5)
     }
 
-    /// The whole of what docs/adr/0021 is about: the board is a place to try a line out, and the
+    /// The whole of what docs/adr/0022 is about: the board is a place to try a line out, and the
     /// engine keeps five moves ahead of wherever you have got to.
     ///
     /// A blank five-move canvas was a wall — the player who could already write the line down did
@@ -268,7 +268,7 @@ import Testing
     /// Measured against Stockfish, walking its own line four moves at depth 14: cleared between
     /// searches, the tail is rewritten at every step; left warm, each answer is the last one rolled
     /// forward one move. Nothing in a plan shows a Score, so nothing in it needs the Depth to be
-    /// uncontaminated — and continuity is what makes it a plan (docs/adr/0021).
+    /// uncontaminated — and continuity is what makes it a plan (docs/adr/0022).
     @Test("looking ahead does not throw away what the last look-ahead learned")
     func theLookAheadKeepsItsTable() async throws {
         let before = try game(["e2e4", "e7e5"])
@@ -462,7 +462,7 @@ import Testing
     // ---------------------------------------------------------------- 走马灯
 
     /// The Line the Review already stored, played out on the main board. Nothing is written and no
-    /// search is started: watching a plan happen is worth a picture, not a Stint (docs/adr/0019, 0020).
+    /// search is started: watching a plan happen is worth a picture, not a Stint (docs/adr/0020, 0021).
     private func reviewedSession(_ engine: any Engine) throws -> GameSession {
         let session = try session(engine)
         session.applyReview(
@@ -586,7 +586,7 @@ import Testing
     // ---------------------------------------------------------------- the scanner
 
     /// The scanner is the one thing allowed to talk before a Guess is in, and it only ever talks
-    /// about the square somebody pointed at (docs/adr/0015, 0020).
+    /// about the square somebody pointed at (docs/adr/0015, 0021).
     @Test("pointing at a square answers about it, and the trial never reaches the game")
     func theScannerAnswersAboutOneSquare() throws {
         let engine = PositionalEngine([:])
@@ -687,7 +687,7 @@ import Testing
     /// The engine gives a number and a sequence of moves and never a reason. The Reveal carries the
     /// reason anyway, read out of that same sequence with the same rules code that judges the
     /// player's own claim — so 「我说的是攻 c5，引擎那步是为了攻 e5」 is a comparison and not a
-    /// translation exercise (docs/adr/0020).
+    /// translation exercise (docs/adr/0021).
     @Test("the reveal carries what the engine's own move is for, in the same seven verbs")
     func theEnginesMoveIsTranslated() async throws {
         let before = try game(["e2e4", "e7e5"])

@@ -41,12 +41,12 @@ public struct Reveal: Hashable, Sendable {
     /// Free, and only free here: the search that scored the Guess produced these moves and used
     /// to drop them. It is what lets the board say which of the squares the Guess changed hands
     /// over actually mattered, which is a question about where the game goes next
-    /// (docs/adr/0020). Empty when the search could not be made.
+    /// (docs/adr/0021). Empty when the search could not be made.
     public let guessLine: [String]
     /// What the engine's own recommendation is for, in the same seven verbs the player declares in.
     ///
     /// Read out of the Line the search already produced and never declared by anybody, so it is a
-    /// reason the same checker can be pointed at (docs/adr/0020). Nil when the engine could not be
+    /// reason the same checker can be pointed at (docs/adr/0021). Nil when the engine could not be
     /// asked; 说不清 inside, when it was asked and none of the seven can honestly carry the answer.
     public let bestReading: LineReading?
 
@@ -89,8 +89,8 @@ public struct Reveal: Hashable, Sendable {
 ///
 /// The Line used to be thrown away. It is the answer to "and then what?" — which of the squares a
 /// move changed hands over actually mattered is a question about where the game goes next, and the
-/// search that produced the Score produced those moves too (docs/adr/0020). Keeping it costs no
-/// engine time. Asking for it later would cost a Stint (docs/adr/0019), which is the whole reason
+/// search that produced the Score produced those moves too (docs/adr/0021). Keeping it costs no
+/// engine time. Asking for it later would cost a Stint (docs/adr/0020), which is the whole reason
 /// it is picked up on the way past rather than fetched when somebody looks.
 public struct ReviewedPly: Hashable, Sendable {
     public let score: Score?

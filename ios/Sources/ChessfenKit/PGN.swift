@@ -126,7 +126,7 @@ public struct PGN: Hashable, Sendable {
             }
             // The Line the same search produced, in the same braced convention. SAN rather than
             // UCI: it is read back by replaying it, so either would do, and only one of the two
-            // is a thing a person opening the file in anything else can read (docs/adr/0020).
+            // is a thing a person opening the file in anything else can read (docs/adr/0021).
             if !ply.line.isEmpty {
                 comment.append("[%line \(ply.line.joined(separator: " "))]")
             }

@@ -1,4 +1,4 @@
-/// A shot for the side to move that wins material or mates (docs/adr/0022).
+/// A shot for the side to move that wins material or mates (docs/adr/0023).
 ///
 /// The rules propose and a short search disposes, the same two-net order as 要害格. The
 /// sentence is a template over facts the rules code can check — in the seven Intent verbs

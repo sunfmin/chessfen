@@ -10,7 +10,7 @@ suite had ever been taken of a flipped board.
 **The bar is board-relative: the side at the bottom of the board owns the left end, in that side's
 own colour.** The colours on this screen are the pieces' colours and never "the left one and the
 right one" — the arrows, the rings and the key squares are all drawn that way (docs/adr/0018,
-0020) — and the bar is the one place where a colour *is* the whole of the statement rather than a
+0021) — and the bar is the one place where a colour *is* the whole of the statement rather than a
 decoration on top of one. So which end grows is a question about the board and nothing else.
 
 **The Score beside it stays White-relative, deliberately.** `+3.00` means White is three pawns up

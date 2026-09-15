@@ -332,7 +332,7 @@ struct EvalBar: View {
         // because the bar's two ends are the pieces' colours and not "the left one and the right
         // one". The growing end used to be White whatever way up the board was, so with Black at the
         // bottom the bar said the exact opposite of the number printed beside it, to the only person
-        // who could see either (docs/adr/0025).
+        // who could see either (docs/adr/0024).
         let bottomIsWhite = orientation == .whiteAtBottom
         let share = bottomIsWhite ? white : 1 - white
         let bottomTint = bottomIsWhite ? Palette.barWhite : Palette.barBlack
@@ -362,8 +362,8 @@ struct EvalBar: View {
         // that is only half there.
         .overlay(Capsule().stroke(Palette.walnut.opacity(0.35), lineWidth: 0.5))
         .animation(.easeOut(duration: 0.35), value: share)
-        .accessibilityLabel("优势条")
-        .accessibilityValue(finish?.chinese ?? score?.displayText ?? "未知")
+        .accessibilityLabel(localized("standing.bar"))
+        .accessibilityValue(finish?.label ?? score?.displayText ?? localized("standing.unknown"))
     }
 }
 
@@ -376,10 +376,10 @@ extension EvalBar.Finish {
         }
     }
 
-    var chinese: String {
+    var label: String {
         switch self {
-        case .won(let colour): "\(colour.chinese)胜"
-        case .drawn: "和棋"
+        case .won(let colour): localized("standing.won", colour.label)
+        case .drawn: localized("standing.drawn")
         }
     }
 

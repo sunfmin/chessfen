@@ -30,7 +30,7 @@ struct DeckSurface<Head: View, Content: View>: View {
 /// How far the engine has got on this card: the word, and the Depth as a figure of its own.
 ///
 /// A caption that swallowed the number ("正在算 · 深 26") read as a spinner with no account of
-/// itself. The Depth is the account (docs/adr/0019) — while it climbs, and still after it
+/// itself. The Depth is the account (docs/adr/0020) — while it climbs, and still after it
 /// has stopped, so a cache hit does not look like the engine never ran.
 struct CardSearching: View {
     let progress: GameSession.SearchProgress?

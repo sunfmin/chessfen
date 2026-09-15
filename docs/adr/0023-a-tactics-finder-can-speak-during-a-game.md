@@ -12,7 +12,7 @@ finder is silent there.
 
 A **Tactic** is a shot for the side to move that wins material or mates. The rules propose
 (mate, a winning capture, a double attack) and a short search disposes — the same two-net
-order as 要害格 (docs/adr/0020). The sentence is a template over facts the rules code can
+order as 要害格 (docs/adr/0021). The sentence is a template over facts the rules code can
 check, in the seven Intent verbs where they fit. Motif names (fork, pin, skewer) do not
 get a slot: they cannot be told false.
 
@@ -29,6 +29,6 @@ The finder is refused while the app is away, with every other search.
 - Two switches on one strip. docs/adr/0015 paid to avoid that; this ADR spends it, on
   purpose, and keeps the cost visible: both still start off, both still belong to this Game.
 - The board may draw **one** arrow, the shot, while the finder is on. Hanging pieces, 要害格,
-  and the control layer stay off the live position (docs/adr/0015, 0020).
+  and the control layer stay off the live position (docs/adr/0015, 0021).
 - A half-second delay before an engine reply is accepted: the prompt has to land before
   the opponent moves, or it is a post-mortem.

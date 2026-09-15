@@ -41,7 +41,7 @@ allowed to speak is a tap that buys nothing.
 every Ply at one uniform Depth (docs/adr/0016), and to produce each Score the engine already
 produces the Line this ADR needs. It kept the Score and dropped the Line. Now it keeps both,
 written into the Ply's PGN braces beside the evaluation. No new search is started, so the ten
-seconds an Analysis is bought in (docs/adr/0019) are untouched, and a phone stays cool.
+seconds an Analysis is bought in (docs/adr/0020) are untouched, and a phone stays cool.
 
 ## Consequences
 

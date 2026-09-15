@@ -11,9 +11,9 @@ import UIKit
 /// silent: a screen short enough that the board kept its own minimum left the deck nothing, and a
 /// deck with no room is not a smaller deck — it is `opacity(0)`, with every card's actions gone and
 /// nothing in the accessibility tree to say so. The deck is the bottom of this screen and the board
-/// is the thing that gives way to it (docs/adr/0024).
+/// is the thing that gives way to it (docs/adr/0025).
 @MainActor
-@Suite(.serialized)
+@Suite(.serialized, .speaking(.chinese))
 struct DeckFloor {
     /// Every screen the app can be held on, as (name, width, glass height, top chrome, bottom
     /// inset). Top chrome is the status bar plus an inline navigation bar; the bottom inset is the
@@ -64,7 +64,7 @@ struct DeckFloor {
         #expect(abs(card - 137) <= 8, "an iPhone SE's card came out at \(card)pt")
     }
 
-    /// Why the phone is held in portrait (docs/adr/0024). This is the failure the picture suite
+    /// Why the phone is held in portrait (docs/adr/0025). This is the failure the picture suite
     /// could not see: nothing on the screen says the deck has gone.
     @Test("a phone on its side has no room for a deck")
     func aPhoneOnItsSideHasNoRoom() {
@@ -101,7 +101,7 @@ struct DeckFloor {
     private static let italian = ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5", "c2c3", "g8f6"]
 
     /// The same shape of opinion `game-in-play` is photographed with — one Line with a continuation,
-    /// because 要害 reads the squares a move mattered over off the rest of it (docs/adr/0020) — so
+    /// because 要害 reads the squares a move mattered over off the rest of it (docs/adr/0021) — so
     /// the card in front is as full as a card gets.
     private static let searching = [
         Analysis(

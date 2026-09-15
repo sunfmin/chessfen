@@ -10,6 +10,7 @@ struct AboutScreen: View {
     @Environment(EngineHost.self) private var engine
     @Environment(GameLibrary.self) private var library
     @Environment(\.dismiss) private var dismiss
+    @Bindable private var language = LanguageSetting.shared
 
     private static let source = URL(string: "https://github.com/sunfmin/chessfen")!
 
@@ -19,23 +20,46 @@ struct AboutScreen: View {
                 Section {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text("棋镜").font(.title2.bold())
-                            Text("Chessfen").eyebrow()
+                            Text(localized("app.name")).font(.title2.bold())
+                            Text(localized("app.mark")).eyebrow()
                         }
-                        Text("拍下棋盘，认出局面，接着下。识别和引擎都在这台设备上跑；对局存在你自己的 iCloud 里。只有你从链接导入棋谱的时候，才会去下载那个链接。")
+                        Text(localized("about.what"))
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 4)
                 }
 
-                Section("版本") {
-                    row("棋镜", Self.version)
-                    row("引擎", "Stockfish 18")
+                // The language, high up and named in itself, so somebody handed a phone speaking
+                // a language they do not read can find the way out of it. Following the phone is
+                // the top row and the one everybody starts on; the other eight say what they are
+                // in their own words, because a list of languages written in one language is a
+                // list only the people who already read that language can use.
+                Section {
+                    Picker(selection: $language.chosen) {
+                        Text(localized("about.language.system")).tag(Language?.none)
+                        ForEach(Language.allCases) { candidate in
+                            Text(candidate.endonym).tag(Language?.some(candidate))
+                        }
+                    } label: {
+                        Text(localized("about.language"))
+                    }
+                    .pickerStyle(.navigationLink)
+                } header: {
+                    Text(localized("about.language"))
+                } footer: {
+                    Text(localized("about.language.explained"))
+                }
+
+                Section(localized("about.version")) {
+                    row(localized("app.name"), Self.version)
+                    row(localized("about.engine"), "Stockfish 18")
                     switch engine.status {
-                    case .ready: row("引擎状态", "已就绪")
-                    case .starting: row("引擎状态", "启动中")
-                    case .unavailable: row("引擎状态", engine.unavailableReason ?? "")
+                    case .ready: row(localized("about.engineStatus"), localized("about.ready"))
+                    case .starting:
+                        row(localized("about.engineStatus"), localized("about.starting"))
+                    case .unavailable:
+                        row(localized("about.engineStatus"), engine.unavailableReason ?? "")
                     }
                 }
 
@@ -43,40 +67,39 @@ struct AboutScreen: View {
                 // game that is on every device and one that is on this one, and the only way to
                 // tell from inside the app that iCloud is switched on.
                 Section {
-                    row("对局存放在", library.folder.isCloud ? "iCloud 云盘" : "本机")
+                    row(
+                        localized("about.storedIn"),
+                        localized(library.folder.isCloud ? "about.iCloud" : "about.thisDevice")
+                    )
                 } header: {
-                    Text("存储")
+                    Text(localized("about.storage"))
                 } footer: {
                     Text(
-                        library.folder.isCloud
-                            ? "每一局都是一个 PGN 文件，存在 iCloud 云盘的「棋镜」文件夹里，在「文件」App 里可以直接打开、拷走或删掉。改动会同步到你登录同一个 Apple 账户的其他设备。"
-                            : "每一局都是一个 PGN 文件，目前只存在这台设备上。打开「设置 → Apple 账户 → iCloud 云盘」之后，已有的对局会自动搬进 iCloud，并同步到你的其他设备。"
+                        localized(
+                            library.folder.isCloud
+                                ? "about.storage.cloud" : "about.storage.local"
+                        )
                     )
                 }
 
                 Section {
                     Link(destination: Self.source) {
-                        Label("源代码", systemImage: "chevron.left.forwardslash.chevron.right")
+                        Label(
+                            localized("about.source"),
+                            systemImage: "chevron.left.forwardslash.chevron.right"
+                        )
                     }
                 } header: {
-                    Text("许可")
+                    Text(localized("about.licence"))
                 } footer: {
-                    Text(
-                        """
-                        本应用内置 Stockfish，按 GNU GPL v3 发布，因此本应用整体也按 GPL v3 发布：\
-                        你可以自由使用、研究、修改和再分发它，条件是分发时一并给出源代码和同样的许可。\
-                        完整许可文本见源代码仓库里的 LICENSE 文件。
-
-                        棋子图形来自 python-chess 的 Cburnett 棋子集（CC BY-SA 3.0）。
-                        """
-                    )
+                    Text(localized("about.licence.explained"))
                 }
             }
-            .navigationTitle("关于")
+            .navigationTitle(localized("about"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("完成") { dismiss() }
+                    Button(localized("done")) { dismiss() }
                 }
             }
         }

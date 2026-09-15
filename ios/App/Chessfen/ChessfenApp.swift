@@ -11,6 +11,9 @@ struct ChessfenApp: App {
         return EngineHost.Nets(big: big, small: small)
     })
     @State private var library = GameLibrary()
+    /// What language every word on every screen comes out in. Read before the first screen is
+    /// built, so a person who chose one gets it on the launch screen rather than one frame later.
+    @State private var language = LanguageSetting.shared
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
@@ -18,6 +21,12 @@ struct ChessfenApp: App {
             LibraryScreen()
                 .environment(engine)
                 .environment(library)
+                .environment(language)
+                // The one thing in the app that rebuilds every screen: the words on all of them
+                // change at once, and there is no other way to tell SwiftUI that a plain function
+                // call started answering differently. Changing language is a deliberate, rare act
+                // — the price is the navigation stack, which is a fair one for it.
+                .id(language.current)
                 // The kit's `Sounds` is a seam holding whichever Feedback was installed on the
                 // way up; the app installs its own, and everything that plays goes through it.
                 .task { _ = SystemFeedback.shared }

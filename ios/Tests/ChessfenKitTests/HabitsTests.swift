@@ -260,7 +260,7 @@ func theFilesAreTheTruth() throws {
     #expect(Habits.over(entries).habit(.noReason) == nil)
 }
 
-@Test("nothing in the tally is a rating or a percentage")
+@Test("nothing in the tally is a rating or a percentage", .speaking(.chinese))
 func noFakeNumbers() throws {
     let habits = Habits.over(try fiveModes())
     let words =

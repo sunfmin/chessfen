@@ -90,7 +90,7 @@ func aGuessIsNotAPlan() throws {
 
 // ------------------------------------------------------------------ and whether it held
 
-@Test("a plan is judged over the whole line, and the step that made it true is named")
+@Test("a plan is judged over the whole line, and the step that made it true is named", .speaking(.chinese))
 func aPlanIsJudgedOverTheLine() throws {
     // The rook takes the fifth rank on the third ply of the plan, and that is when 占 d5 becomes
     // true — not on the first move, which is what a one-Ply Intent would have been about.
@@ -105,7 +105,7 @@ func aPlanIsJudgedOverTheLine() throws {
     #expect(check.note != nil, "and what the board says, in the terms the claim was made in")
 }
 
-@Test("a plan whose claim never comes true is told so, with the state it actually left behind")
+@Test("a plan whose claim never comes true is told so, with the state it actually left behind", .speaking(.chinese))
 func aPlanThatNeverHeld() throws {
     let game = try position("4k3/8/8/8/8/8/8/R3K3 w - - 0 1")
     let check = try #require(
@@ -118,7 +118,7 @@ func aPlanThatNeverHeld() throws {
     #expect(check.note == "d5 还算不上你的：0 对 0")
 }
 
-@Test("only the mover's own moves can make their own claim true")
+@Test("only the mover's own moves can make their own claim true", .speaking(.chinese))
 func theOpponentsMovesDoNotCount() throws {
     // Black walks its rook onto a4 where White's rook is looking at it. That makes 攻 a4 true of
     // the position and it was not White's doing, so the plan does not get to claim it.
@@ -132,7 +132,7 @@ func theOpponentsMovesDoNotCount() throws {
     #expect(check.san == "Ra3")
 }
 
-@Test("说不清 over a plan is no claim, exactly as it is over one move")
+@Test("说不清 over a plan is no claim, exactly as it is over one move", .speaking(.chinese))
 func anUnclearPlanClaimsNothing() throws {
     let game = try position("4k3/8/8/8/8/8/8/R3K3 w - - 0 1")
     let check = try #require(Intent.unclear.check(plan: ["Ra3", "Kd8"], in: game))
@@ -148,7 +148,7 @@ func anUnplayablePlanIsRefused() throws {
     #expect(claim.check(plan: ["Qh8"], in: game) == nil)
 }
 
-@Test("a draft keeps what you walked apart from what the engine is showing")
+@Test("a draft keeps what you walked apart from what the engine is showing", .speaking(.chinese))
 func aDraftTracksItself() throws {
     var draft = PlanDraft(ply: 2)
     #expect(draft.isEmpty)
@@ -186,8 +186,8 @@ func aDraftTracksItself() throws {
 // ------------------------------------------------------- and what each step of it is for
 
 /// The half a handed-over line does not carry. Five moves is a line; five moves each with a reason
-/// and a cost is a plan somebody could have thought of themselves (docs/adr/0021).
-@Test("every move of a line gets its own verb, its own gain and its own cost")
+/// and a cost is a plan somebody could have thought of themselves (docs/adr/0022).
+@Test("every move of a line gets its own verb, its own gain and its own cost", .speaking(.chinese))
 func aPlanIsReadStepByStep() throws {
     let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: ["e2e4", "e7e5"]))
     let notes = try #require(game.readPlan(of: ["Bc4", "Nf6", "Nf3", "Nc6", "Ng5"]))

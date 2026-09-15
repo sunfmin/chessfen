@@ -14,8 +14,8 @@ private func move(_ uci: String, in game: Game) throws -> Move {
 }
 
 /// An engine gives a number and a sequence of moves and never a reason. This is the reason, derived
-/// from the moves with the same rules code that tells a declared Intent false (docs/adr/0020).
-@Test("a capture that wins material reads as 吃, on the square it happened")
+/// from the moves with the same rules code that tells a declared Intent false (docs/adr/0021).
+@Test("a capture that wins material reads as 吃, on the square it happened", .speaking(.chinese))
 func aWinningCaptureReadsAsTake() throws {
     // The white pawn on e4 takes an undefended pawn on d5.
     let game = try position("4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1")
@@ -25,7 +25,7 @@ func aWinningCaptureReadsAsTake() throws {
     #expect(read.goal == "进攻")
 }
 
-@Test("a trade that does not lose reads as 换, not as 吃")
+@Test("a trade that does not lose reads as 换, not as 吃", .speaking(.chinese))
 func anEvenTradeReadsAsTrade() throws {
     // Same capture, but the pawn on d5 is defended by one on c6: level, not winning.
     let game = try position("4k3/8/2p5/3p4/4P3/8/8/4K3 w - - 0 1")
@@ -34,7 +34,7 @@ func anEvenTradeReadsAsTrade() throws {
     #expect(read.goal == "交换")
 }
 
-@Test("a move that newly threatens a piece it outnumbers reads as 攻")
+@Test("a move that newly threatens a piece it outnumbers reads as 攻", .speaking(.chinese))
 func aNewThreatReadsAsAttack() throws {
     // The rook swings to a5 and looks at an undefended knight on d5 that nothing guards.
     let game = try position("4k3/8/8/3n4/8/8/8/R3K3 w - - 0 1")
@@ -43,7 +43,7 @@ func aNewThreatReadsAsAttack() throws {
     #expect(read.goal == "进攻")
 }
 
-@Test("a pawn looking at a queen reads as 攻, even when the queen is guarded")
+@Test("a pawn looking at a queen reads as 攻, even when the queen is guarded", .speaking(.chinese))
 func aPawnThreatToAQueenReadsAsAttack() throws {
     // Same position the checker uses: f4 looks at e3, f2 recaptures, and a queen for a pawn
     // is still a threat. h2 covers g3 so 占 cannot steal the reading.
@@ -53,7 +53,7 @@ func aPawnThreatToAQueenReadsAsAttack() throws {
     #expect(read.goal == "进攻")
 }
 
-@Test("f4 against a queen on e3 is 攻 e3, not 说不清")
+@Test("f4 against a queen on e3 is 攻 e3, not 说不清", .speaking(.chinese))
 func pawnPushAttackingTheQueenIsAttack() throws {
     // The position on the 要害 card: Black's f-pawn steps to f4 and looks at White's queen.
     // The queen is guarded by f2, so a count of hanging calls it 说不清; the exchange is a
@@ -73,7 +73,7 @@ func theDearestThreatWins() throws {
     #expect(read == .claim(.attack, try square("d8")), "the queen, not the rook")
 }
 
-@Test("a hanging piece moving to safety reads as 躲, naming what it ran from")
+@Test("a hanging piece moving to safety reads as 躲, naming what it ran from", .speaking(.chinese))
 func runningAwayReadsAsFlee() throws {
     // The white rook on a1 is attacked by the black bishop on b2 and defended by nothing. It runs
     // up to a4, which the bishop cannot reach and from which it threatens nothing — so 躲 is the
@@ -84,7 +84,7 @@ func runningAwayReadsAsFlee() throws {
     #expect(read.goal == "防御")
 }
 
-@Test("a move that guards a hanging piece of your own reads as 护")
+@Test("a move that guards a hanging piece of your own reads as 护", .speaking(.chinese))
 func guardingAHangingPieceReadsAsDefend() throws {
     // The white knight on e4 is looked at by the rook on e7 and by nothing of White's. The rook
     // swings to e1 and now guards it up the file.
@@ -94,7 +94,7 @@ func guardingAHangingPieceReadsAsDefend() throws {
     #expect(read.goal == "防御")
 }
 
-@Test("a move that steps into a line reads as 挡")
+@Test("a move that steps into a line reads as 挡", .speaking(.chinese))
 func interposingReadsAsBlock() throws {
     // White is in check from the rook on e8, which the black king guards, so taking it is not on
     // and threatening it proves nothing. The rook steps into the line instead.
@@ -107,8 +107,8 @@ func interposingReadsAsBlock() throws {
 /// 占 in this app means *control*, not occupation (docs/adr/0018): the rook that takes the fifth
 /// rank holds d5, and the knight that goes and stands on d5 does not — a piece does not attack the
 /// square it is on. So a move that takes a square from a distance reads as 占, and a move that walks
-/// onto one is named by the layer instead, as a 据点 (docs/adr/0020).
-@Test("a move that takes a square from a distance reads as 占")
+/// onto one is named by the layer instead, as a 据点 (docs/adr/0021).
+@Test("a move that takes a square from a distance reads as 占", .speaking(.chinese))
 func takingASquareFromADistanceReadsAsHold() throws {
     let game = try position("4k3/8/8/8/8/8/8/R3K3 w - - 0 1")
     let read = Intent.read(try move("a1a5", in: game), in: game)
@@ -116,7 +116,7 @@ func takingASquareFromADistanceReadsAsHold() throws {
     #expect(read.goal == "占位")
 }
 
-@Test("walking onto a square is not 占 of that square")
+@Test("walking onto a square is not 占 of that square", .speaking(.chinese))
 func walkingOntoASquareIsNotHold() throws {
     // The knight standing on d5 does not attack d5, so nothing about d5's control improved and the
     // reading cannot name it. What it names instead is a square the knight genuinely covers from
@@ -129,7 +129,7 @@ func walkingOntoASquareIsNotHold() throws {
 
 /// A verb that cannot be wrong does not get printed, and a move whose reason none of the seven can
 /// carry comes back 说不清 — exactly as a player's does (docs/adr/0018).
-@Test("a move none of the seven can honestly carry reads as 说不清")
+@Test("a move none of the seven can honestly carry reads as 说不清", .speaking(.chinese))
 func anUnreadableMoveIsSaidToBeUnreadable() throws {
     // A king shuffling on an empty board: nothing taken, nothing threatened, nothing rescued, and
     // the square it steps onto was already its own.
@@ -179,7 +179,7 @@ func theReadingIsDeterministic() throws {
 
 // ------------------------------------------------------------------ a whole line
 
-@Test("a line reads as the recommendation's own verb plus one later move of the mover's")
+@Test("a line reads as the recommendation's own verb plus one later move of the mover's", .speaking(.chinese))
 func aLineReadsAsAPlan() throws {
     // White's knight goes to d5 where it looks at the undefended rook on f6, Black's king steps
     // aside, and the knight takes it — 「攻 f6，往后第 3 步 Nxf6 再 吃 f6」.
@@ -204,7 +204,7 @@ func theOpponentsMovesAreNotThePlan() throws {
     #expect(reading.later?.step != 2)
 }
 
-@Test("a line whose rest reads as nothing says only what the first move is for")
+@Test("a line whose rest reads as nothing says only what the first move is for", .speaking(.chinese))
 func aLineWithNoPlanSaysOnlyTheFirstMove() throws {
     let game = try position("4k3/8/8/8/8/8/8/R3K3 w - - 0 1")
     let reading = try #require(game.reading(of: ["Ra5", "Kd8"]))
@@ -212,7 +212,7 @@ func aLineWithNoPlanSaysOnlyTheFirstMove() throws {
     #expect(reading.sentence == "占 d5")
 }
 
-@Test("an empty line, and one that will not replay, are refused rather than guessed at")
+@Test("an empty line, and one that will not replay, are refused rather than guessed at", .speaking(.chinese))
 func anUnreadableLineIsRefused() throws {
     let game = try position("4k3/8/8/8/8/8/8/4K3 w - - 0 1")
     #expect(game.reading(of: []) == nil)
@@ -226,7 +226,7 @@ func anUnreadableLineIsRefused() throws {
 
 // ------------------------------------------------------------------ 这步的要害
 
-@Test("the last ply is what this position's move is for, including at the latest")
+@Test("the last ply is what this position's move is for, including at the latest", .speaking(.chinese))
 func purposeReadsTheLastPlyEvenAtTheLatest() throws {
     let before = try position("4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1")
     var after = before
@@ -246,7 +246,7 @@ func purposeAtTheStartIsTheEnginesMove() throws {
     #expect(purpose.opening.intent == .claim(.take, try square("d5")))
 }
 
-@Test("the engine's later move of the same player can add a second verb")
+@Test("the engine's later move of the same player can add a second verb", .speaking(.chinese))
 func purposeAddsALaterOwnMoveFromTheContinuation() throws {
     let before = try position("4k3/8/5r2/8/8/2N5/8/4K3 w - - 0 1")
     var after = before
@@ -262,7 +262,7 @@ func purposeAddsALaterOwnMoveFromTheContinuation() throws {
     #expect(purpose.laterLine == "往后第 2 步 Nxf6 再 吃 f6")
 }
 
-@Test("a later half with a different goal names the goal, and still looks ahead rather than listing")
+@Test("a later half with a different goal names the goal, and still looks ahead rather than listing", .speaking(.chinese))
 func aLaterHalfOfADifferentGoalSaysSo() throws {
     // The number is a ply of the engine's Line. Bare 「第 4 步再防御：护 c7」 reads as if steps 1–3
     // were missing from this card; the SAN and 往后 are what stop that.

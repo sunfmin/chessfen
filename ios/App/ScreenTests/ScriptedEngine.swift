@@ -73,7 +73,7 @@ final class ScriptedEngine: Engine {
 
     /// One result per ply, walked down the script so a curve has something to be a curve about.
     /// The scripted Line rides along with the Score, because that is what the real pass does now
-    /// and a screen reading one must be able to be handed one (docs/adr/0020).
+    /// and a screen reading one must be able to be handed one (docs/adr/0021).
     func review(
         _ game: Game, depth: Int, onPly: (@Sendable (Int, ReviewedPly) -> Void)?
     ) async -> [ReviewedPly] {

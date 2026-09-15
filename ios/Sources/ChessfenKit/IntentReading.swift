@@ -18,7 +18,7 @@ public struct MoveReading: Hashable, Sendable {
 ///
 /// An engine gives a number and a sequence of moves and never a reason, so the reason is derived
 /// here — from the moves, with the same rules code that tells a declared Intent true or false
-/// (docs/adr/0018, 0020). Two things fall out of that, and they are the whole point of this type:
+/// (docs/adr/0018, 0021). Two things fall out of that, and they are the whole point of this type:
 ///
 /// 1. 「为什么好」 has an answer that can be checked rather than asserted. Every verb printed here
 ///    is one the app could also be told it got wrong.
@@ -141,7 +141,7 @@ extension Intent {
         // Somebody has to be looking at it. Any developing move adds a defender to *something*, so
         // a 护 that only asks whether the count went up is true of nearly every move and therefore
         // says nothing about any of them — 1.e4 e5 2.Bc4 read as 「护 a2」, which is a fact and not
-        // a reason. Defending what nobody is attacking is not a plan (docs/adr/0018, 0021).
+        // a reason. Defending what nobody is attacking is not a plan (docs/adr/0018, 0022).
         let helped = afterPieces.compactMap { square, piece -> Square? in
             guard piece.colour == mover, piece.kind != .king, square != move.to,
                 afterControl.attackers(of: square, by: mover)
@@ -166,7 +166,7 @@ extension Intent {
         // 占 — a square this move took control of, which is almost never the square it moved to: a
         // piece does not attack the square it stands on, so walking onto d5 *lowers* the count on
         // d5. 占 is control and not occupation (docs/adr/0018), and a move that walks onto a square
-        // is named by the layer instead, as a 据点 (docs/adr/0020).
+        // is named by the layer instead, as a 据点 (docs/adr/0021).
         //
         // Only empty squares on the opponent's side of the board are offered. Almost every move
         // newly controls *something*, so without that the verb would be true of everything and

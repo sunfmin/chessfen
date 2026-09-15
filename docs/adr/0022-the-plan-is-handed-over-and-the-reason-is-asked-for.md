@@ -45,7 +45,7 @@ engine at all until a Guess is committed. A plan starts from a line already on t
 asks what it accomplishes. Handing over the line does not answer that; it is the premise of
 it. The scanner is the test of whether this holds: it stayed exactly as it was — you point,
 you hear your own move's worth in your own terms, and the engine's opinion comes last and
-only on a tap (docs/adr/0020).
+only on a tap (docs/adr/0021).
 
 **A line the app cannot say anything about each step of is a line it should not hand over.**
 The rows are not decoration on the arrows. Five moves of engine notation is what every chess
@@ -130,7 +130,7 @@ which is a wiring problem and not a design one.
 ## Where it lives, amended
 
 The plan was a card of the deck for as long as the deck had ten, and when the deck was cut to five
-(docs/adr/0023) the card went and took the way in with it: `startPlan` stayed public, the Study
+(docs/adr/0024) the card went and took the way in with it: `startPlan` stayed public, the Study
 tests went on calling it, and nothing on the phone could reach it. Nothing failed, which is the
 whole problem with deleting a view — the session was never the part that was missing.
 

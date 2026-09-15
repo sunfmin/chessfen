@@ -58,6 +58,6 @@ affordable, because the bar the search produced is also the button that buys it 
   kind that the pause gate holds rather than refuses.
 
   > And it is a Review, not a Stint, that pays for everything in
-  > [ADR 0020](0020-the-layer-names-a-few-squares-instead-of-reporting-them-all.md): the squares a move cost are worked
+  > [ADR 0021](0021-the-layer-names-a-few-squares-instead-of-reporting-them-all.md): the squares a move cost are worked
   > out from the Line a Review already had in hand. A layer that started its own search
   > would put the heat this ADR removed straight back on.

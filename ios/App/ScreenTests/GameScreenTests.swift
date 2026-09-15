@@ -9,7 +9,7 @@ import Testing
 /// Serialized and on the main actor because there is one screen: two of these rendering at once
 /// would be two key windows, and whichever drew second would be photographing the other one.
 @MainActor
-@Suite(.serialized)
+@Suite(.serialized, .speaking(.chinese))
 struct GameScreenScreenshots {
     /// The Italian, eight plies in, White to move — a position anyone who plays reads at a glance,
     /// which is what a screenshot is for.
@@ -19,7 +19,7 @@ struct GameScreenScreenshots {
     /// What a study needs, as against a search that deepens.
     /// `then` is the rest of the Line in SAN. A Line of one move was enough while the only thing
     /// read off it was the arrow; the board now reads the continuation to say which squares a move
-    /// mattered over, so a fake engine has to be able to have one (docs/adr/0020).
+    /// mattered over, so a fake engine has to be able to have one (docs/adr/0021).
     static func opinion(
         _ score: Score, best: (uci: String, san: String)? = nil, then: [String] = []
     ) -> Analysis {
@@ -111,7 +111,7 @@ struct GameScreenScreenshots {
             "and not how fast the phone is going while it says it — that was a row of plumbing"
         )
         // How deep it has got, though, which is not the same thing: a search that stops after ten
-        // seconds (docs/adr/0019) has to account for itself, or a number that stopped moving is
+        // seconds (docs/adr/0020) has to account for itself, or a number that stopped moving is
         // indistinguishable from an engine that died. One figure, in the strip, and no speed.
         #expect(rendered.says("深 26"))
         #expect(!rendered.says("再算"), "and no offer of more while it is still inside its Stint")
@@ -120,7 +120,7 @@ struct GameScreenScreenshots {
         #expect(rendered.says("建议 d4"))
         #expect(!rendered.says("d4 exd4 cxd4"), "and not the whole line it is the head of")
         // The deck under the record, dealt from this position: what a live board can be asked,
-        // and nothing about a move that has not been played (docs/adr/0023). The runners-up have
+        // and nothing about a move that has not been played (docs/adr/0024). The runners-up have
         // a card of their own now — `deckReading` photographs it.
         #expect(rendered.says("要害"))
         #expect(rendered.says("杀招"))
@@ -267,7 +267,7 @@ struct GameScreenScreenshots {
     }
 
     /// Ten seconds later. The advisory search has run its Stint and stopped itself, which is the
-    /// whole point of a Stint (docs/adr/0019) — and the strip under the board has to say so, or a
+    /// whole point of a Stint (docs/adr/0020) — and the strip under the board has to say so, or a
     /// number that quietly stopped moving reads as an engine that died.
     @Test("when its Stint runs out the strip keeps the answer and offers another ten seconds")
     func adviceSpent() async throws {
@@ -415,14 +415,14 @@ struct GameScreenScreenshots {
         #expect(!rendered.says("+0.38"), "no Score anywhere while practising")
         // One search did run, and it is the dealt card's own Stint: **dealing a card is an
         // arrival**, so 要害 answers while it is the card in front, and what it found is kept for
-        // the card rather than for the board (docs/adr/0019, 0023). Practice hides the engine's
+        // the card rather than for the board (docs/adr/0020, 0024). Practice hides the engine's
         // opinion; it does not stop the engine. What must never happen is any of it reaching the
         // board, which is what the words above are checking.
         #expect(session.analysis != nil, "the card in front asked, so a search ran")
     }
 
     /// A card spending a Stint has to say so, and how deep it has got. A number that quietly
-    /// stops moving is indistinguishable from an engine that died (docs/adr/0019) — and that is
+    /// stops moving is indistinguishable from an engine that died (docs/adr/0020) — and that is
     /// as true on the card as it is on the strip.
     @Test("a card that is spending a Stint says so, and how deep it has got")
     func aSearchingCardNamesItsDepth() async throws {
@@ -441,7 +441,7 @@ struct GameScreenScreenshots {
     }
 
     /// Practice still on, the finder on: one shot named, no Score. This is the combination
-    /// docs/adr/0022 exists for.
+    /// docs/adr/0023 exists for.
     @Test("the tactics finder names a shot while practice stays on")
     func tacticsFinderDuringPractice() async throws {
         let fen = "4k3/8/8/3r4/8/8/8/3QK3 w - - 0 1"
@@ -460,7 +460,7 @@ struct GameScreenScreenshots {
         )
         let session = GameSession.fresh(game)
         session.attach(engine: engine, library: nil)
-        // Nobody flips the switch: swiping onto the card is the asking (docs/adr/0023).
+        // Nobody flips the switch: swiping onto the card is the asking (docs/adr/0024).
         let rendered = await ScreenImage.write("game-tactics-finder") {
             screen(session, engine: engine, opening: .tactics)
         }
@@ -482,7 +482,7 @@ struct GameScreenScreenshots {
     ///
     /// The screenshot the feature is answerable to: nobody asked, the deck is open at the news
     /// rather than at 问一格, the line is on the chips in the order it goes, and there is still not
-    /// a Score anywhere (docs/adr/0015, 0023).
+    /// a Score anywhere (docs/adr/0015, 0024).
     @Test("a mate on the board opens the deck by itself and says whose it is")
     func mateNewsIsOurs() async throws {
         let opera = "4kb1r/p2n1ppp/4q3/4p1B1/4P3/1Q6/PPP2PPP/2KR4 w - - 0 1"
@@ -533,7 +533,7 @@ struct GameScreenScreenshots {
     /// The same game one move on, from the other seat: 16.Qb8+ is on the board, the player is
     /// Black, and Black is the one being mated. One signed number, one code path, the other voice
     /// — and the line opens with the player's own best try rather than the opponent's plan, which
-    /// is a different sentence and says so (docs/adr/0023).
+    /// is a different sentence and says so (docs/adr/0024).
     @Test("the opponent's mate is the same news in the other voice, and opens with your own move")
     func mateNewsIsTheirs() async throws {
         let afterCheck = "1Q2kb1r/p2n1ppp/4q3/4p1B1/4P3/8/PPP2PPP/2KR4 b - - 0 1"
@@ -576,7 +576,7 @@ struct GameScreenScreenshots {
     /// The same game, one move on, with the position on screen a past Ply — so the line the card's
     /// own Stint finds is the mate, and the deck is showing 五步 while it does.
     ///
-    /// A mate is news and may take the eye (docs/adr/0023), but not out from under work in
+    /// A mate is news and may take the eye (docs/adr/0024), but not out from under work in
     /// progress: 五步 spends the Stint that finds this mate, so a deck that jumped here would be
     /// tearing down the very walk that paid for the news.
     @Test("a mate turning up does not take the deck off a line being walked")
@@ -614,7 +614,7 @@ struct GameScreenScreenshots {
     }
 
     /// The other half of the same rule: with nothing in progress the news still takes the eye,
-    /// which is what 「直接给予提示」 amounts to on a deck (docs/adr/0023).
+    /// which is what 「直接给予提示」 amounts to on a deck (docs/adr/0024).
     @Test("with nothing in progress the news still takes the eye")
     func mateNewsStillTakesTheEye() async throws {
         let opera = "4kb1r/p2n1ppp/4q3/4p1B1/4P3/1Q6/PPP2PPP/2KR4 w - - 0 1"
@@ -723,7 +723,7 @@ struct GameScreenScreenshots {
     /// step and one sentence saying where the whole thing arrives.
     ///
     /// The sentence is the point. Without it a carousel recites four moves, the position is
-    /// different at the end, and the difference is exactly what a beginner cannot see (docs/adr/0020).
+    /// different at the end, and the difference is exactly what a beginner cannot see (docs/adr/0021).
     @Test("the carousel walks the stored line, the layer follows, and one sentence says where it went")
     func carouselMidLine() async throws {
         let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
@@ -754,7 +754,7 @@ struct GameScreenScreenshots {
         #expect(rendered.says("五步"))
         // The layer redrew for the position the walk is standing in, not the one the game is in —
         // asked of the layer itself, because the squares it names are on the 要害 card and this
-        // screenshot is of the carousel's (docs/adr/0023).
+        // screenshot is of the carousel's (docs/adr/0024).
         #expect(session.boardContinuation == ["d4", "Bd6"])
         #expect(session.walkArrows.map(\.step) == [3, 4], "the arrows still ahead, numbered as the chips")
         #expect(
@@ -781,7 +781,7 @@ struct GameScreenScreenshots {
     /// and it answers about the square somebody pointed at and about nothing else (docs/adr/0015).
     /// The engine comes last and on a tap: you point at a square, you hear what your own move is
     /// worth in your own terms, and only then do you find out what the engine thought. Reversed, it
-    /// is a hint button (docs/adr/0020).
+    /// is a hint button (docs/adr/0021).
     @Test("the scanner lights the ways in, weighs the one you pick, and asks the engine last")
     func scannerWalkthrough() async throws {
         let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
@@ -812,7 +812,7 @@ struct GameScreenScreenshots {
         // And nothing else on this card has drawn itself: no answer, no Score, no search at all.
         // What the 要害 card would say over the same position is that card's business — the deck
         // keeps a neighbouring page alive, so a screenshot is held to its own card and to the
-        // session, never to another card's words (docs/adr/0023).
+        // session, never to another card's words (docs/adr/0024).
         #expect(!lit.says("引擎那步是为了"), "and no answer, because nothing was asked")
         #expect(!lit.says("深度 14"))
         #expect(session.analysis == nil)
@@ -853,6 +853,39 @@ struct GameScreenScreenshots {
         session.endScan()
         #expect(session.board.state.fen == session.viewed.state.fen)
         #expect(session.game.variations(atPly: 6).isEmpty)
+    }
+
+    /// The same question asked in French — the one screenshot here that proves eight tables of
+    /// words reached the app rather than only the one it was written in. Every other picture in
+    /// this file would look exactly the same if seven of them had been left behind, because a
+    /// missing language falls back to Chinese by design (docs/adr/0019).
+    ///
+    /// It is also the row that had to give. The eight answers to 为什么 are one character each
+    /// in Chinese and Prendre, Échanger, Défendre in French, so this is the picture that says
+    /// whether they wrapped onto a second line or were squeezed into ellipses.
+    @Test("the same question, asked in French", .speaking(.french))
+    func studyInFrench() async throws {
+        let game = try #require(Game(startFEN: PGN.standardStartFEN, uciMoves: Self.italian))
+        let session = GameSession.fresh(game)
+        session.jump(toPly: 6)
+        session.offer(try #require(session.viewed.state.move(matching: "d2d4")))
+
+        let rendered = await ScreenImage.write("game-study-french") {
+            screen(session, engine: ScriptedEngine(Self.searching, isEndless: true))
+        }
+
+        #expect(rendered.says("Vous jouez d4. Pourquoi ?"))
+        #expect(rendered.says("Dites d'abord à quoi sert ce coup."))
+        // All eight answers, the long ones included, and the two buttons under them.
+        for verb in ["Prendre", "Échanger", "Attaquer", "Défendre", "Fuir", "Bloquer", "Occuper"] {
+            #expect(rendered.says(verb), "the verb \(verb) is one of the eight answers")
+        }
+        #expect(rendered.says("Je ne sais pas"))
+        #expect(rendered.says("C'est mon coup"))
+        #expect(rendered.says("Reprendre"))
+        // And nothing has leaked back from the language it was all written in.
+        #expect(!rendered.says("说不清"))
+        #expect(!rendered.says("你会走哪一步"))
     }
 
     /// Committing a guess: your move, the engine's, and the one actually played, at one Depth.
@@ -910,7 +943,7 @@ struct GameScreenScreenshots {
         #expect(session.reveal?.intentCheck?.verdict == .held)
         // And the engine's own reason, in the same seven verbs the player just declared in — read
         // off the Line the same search produced, so the two claims can be compared and not merely
-        // translated (docs/adr/0020).
+        // translated (docs/adr/0021).
         #expect(session.reveal?.bestReading?.sentence == "护 f2，往后第 3 步 d4 再 攻 c5")
         #expect(rendered.says("引擎那步是为了"))
         #expect(rendered.says("护 f2"))
@@ -1012,7 +1045,7 @@ struct GameScreenScreenshots {
 
     /// Before the Guess is committed the layer has nothing to say, and says *that* rather than
     /// falling back on the diff it used to print. Drawing the reading here would be handing over
-    /// the answer to the question being asked (docs/adr/0015, 0020).
+    /// the answer to the question being asked (docs/adr/0015, 0021).
     @Test("a studied position rings what is hanging and holds the reading until the guess is in")
     func boardLayers() async throws {
         let (session, engine) = try await layered()
@@ -1061,7 +1094,7 @@ struct GameScreenScreenshots {
 
     /// An outpost, cashed in: the square, the piece that comes to it, and the walk between them.
     /// 「松开了 d5」 is a fact about a map; 「自己的马(c3)1 步就能走进来，到了就赶不走了」 is a fact
-    /// about the game (docs/adr/0020).
+    /// about the game (docs/adr/0021).
     @Test("an outpost is drawn as a route from the piece that would come to it")
     func anOutpostIsDrawnAsARoute() async throws {
         // Black's pawns on c5 and e5 are past d5 for ever. White's knight goes to c3, one move
@@ -1096,7 +1129,7 @@ struct GameScreenScreenshots {
 
     /// The one reading that is about your own pieces. The rook takes the fifth rank and d5 changes
     /// hands — and the knight that would like to stand there still cannot, which is a cost of the
-    /// move that never shows up as anything changing hands (docs/adr/0020).
+    /// move that never shows up as anything changing hands (docs/adr/0021).
     @Test("a square you took and still cannot stand on is drawn as one of yours")
     func aSquareYouAreShutOutOfIsDrawn() async throws {
         var game = try #require(
@@ -1142,7 +1175,7 @@ struct GameScreenScreenshots {
         #expect(rendered.says("红圈"), "the one mark on the board that needs a word, in the dark too")
         #expect(rendered.says("先交卷"), "and the reason the ranked squares are not here yet")
         // The guess and its claim are the drill's card and are photographed there — this one is
-        // about the two layers, and a card is held to its own words (docs/adr/0023).
+        // about the two layers, and a card is held to its own words (docs/adr/0024).
         #expect(session.guess?.san == "Qg5")
         #expect(session.declaredIntent?.target == Square("e5"))
     }
@@ -1250,7 +1283,7 @@ struct GameScreenScreenshots {
     /// in the environment. The engine is the only thing that is not the app's own.
     /// The screen, and — when a test is photographing something that lives on one card of the
     /// deck — the card to open on. The app decides that for itself from the position; a test says
-    /// so, the same way it says which game and which engine (docs/adr/0023).
+    /// so, the same way it says which game and which engine (docs/adr/0024).
     private func screen(
         _ session: GameSession, engine: any Engine, opening: GameScreen.Card? = nil
     ) -> some View {
@@ -1270,7 +1303,7 @@ struct GameScreenScreenshots {
 /// the screen once per ply, which is unusable and was invisible to every test that only read
 /// words. So this one reads pixels.
 @MainActor
-@Suite(.serialized)
+@Suite(.serialized, .speaking(.chinese))
 struct BoardStandsStill {
     private static let italian = ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5", "c2c3", "g8f6"]
 

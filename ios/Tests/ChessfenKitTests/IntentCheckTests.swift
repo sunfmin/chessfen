@@ -5,7 +5,7 @@ import Testing
 ///
 /// Sparse positions on purpose: the whole value of a verb is that the rules code can call it
 /// false, and a five-piece position is one a reader can check by eye against the assertion.
-@Suite struct IntentCheckTests {
+@Suite(.speaking(.chinese)) struct IntentCheckTests {
     private func check(
         _ fen: String, _ uci: String, _ intent: Intent
     ) throws -> IntentCheck {

@@ -27,7 +27,7 @@ public struct Game: Hashable, Sendable {
         /// The engine's expected continuation from the position *after* this move, in SAN,
         /// written by a **Review and by nothing else** — the same rule as `evaluation`, and for
         /// the same reason: a Line from a search at some other Depth cannot be compared with the
-        /// Lines around it (docs/adr/0016, 0020).
+        /// Lines around it (docs/adr/0016, 0021).
         ///
         /// Empty rather than optional. "The Review had nothing to say here" and "there has been
         /// no Review" are told apart by `reviewDepth`, which is where every other question about
@@ -51,7 +51,7 @@ public struct Game: Hashable, Sendable {
         ///
         /// Nil is the ordinary case: the reason for this move. A number means the Intent belongs to
         /// the whole line this Ply starts — a 五步计划 — and reading it as the reason for the first
-        /// move would be reading a sentence nobody said (docs/adr/0017, 0020). Capped at
+        /// move would be reading a sentence nobody said (docs/adr/0017, 0021). Capped at
         /// `planLimit`, because a claim about a longer line cannot be told false.
         public var intentSpan: Int?
         /// Whether this ply belongs to the Game's trunk — the line that was played, not a line
@@ -383,7 +383,7 @@ public struct Game: Hashable, Sendable {
     /// The same, from a pass that kept the Line each Score came out of.
     ///
     /// The Lines go in through here and through nowhere else, so "written by a Review" is a
-    /// property of the code rather than a rule somebody has to remember (docs/adr/0016, 0020).
+    /// property of the code rather than a rule somebody has to remember (docs/adr/0016, 0021).
     public mutating func applyReview(
         _ reviewed: [ReviewedPly], startEvaluation: Score?, depth: Int
     ) {

@@ -4,7 +4,7 @@ import Testing
 
 @testable import Chessfen
 
-/// The deck under the board, one card per picture (docs/adr/0023).
+/// The deck under the board, one card per picture (docs/adr/0024).
 ///
 /// Five cards, five PNGs, each with something real on it — a purpose, a mate with its arrows, a
 /// shot, a walked line, a question with its verbs. The other suite photographs the
@@ -14,7 +14,7 @@ import Testing
 /// So the assertions here are deliberately thin: each says only that the card it named is the card
 /// that drew and that the thing it exists to show is on it. The pictures are the point.
 @MainActor
-@Suite(.serialized)
+@Suite(.serialized, .speaking(.chinese))
 struct DeckGallery {
     private static let italian = ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5", "c2c3", "g8f6"]
     /// White drops the knight on e5 and Black recaptures — a position with something hanging in
@@ -191,7 +191,7 @@ struct DeckGallery {
 
     /// 五步计划 lives under 五步, because the two are one card about looking five moves ahead: the
     /// five the engine would play, drawn on the board, and five of your own with one reason over
-    /// the whole of them (docs/adr/0021, 0023).
+    /// the whole of them (docs/adr/0022, 0024).
     ///
     /// It was a card of its own and went with the ten when the deck was cut to five — the session
     /// kept all of it and nothing on the phone could reach it, which is a feature that goes missing
